@@ -23,10 +23,20 @@ if [ ! -f "$APK" ]; then
 fi
 
 echo "== aapt2 badging（包名/版本）=="
-aapt2 dump badging "$APK" | head -3
+BADGING=$(aapt2 dump badging "$APK")
+echo "$BADGING" | sed -n '1,3p'
+echo "$BADGING" | grep -q "package: name='com.gph.fable'" || {
+    echo "ERROR: badging 包名不是 com.gph.fable" >&2
+    exit 1
+}
 
 echo "== APK 内容清单（arm64 原生库）=="
-unzip -l "$APK" | grep '\.so'
+SO_LIST=$(unzip -l "$APK" | grep '\.so')
+echo "$SO_LIST"
+echo "$SO_LIST" | grep -q 'lib/arm64-v8a/libtermux-bootstrap.so' || {
+    echo "ERROR: APK 缺少 libtermux-bootstrap.so" >&2
+    exit 1
+}
 
 echo "== apksigner verify（签名）=="
 "$APKSIGNER" verify --print-certs "$APK"

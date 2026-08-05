@@ -178,7 +178,10 @@ android {
 
 dependencies {
     testImplementation "junit:junit:4.13.2"
-    testImplementation "org.robolectric:robolectric:4.10"
+    // Robolectric 4.10 在 JDK 17 下有已知的
+    // "ShadowActivityThread.reset: ActivityThread not set" 崩溃（ExoPlayer 等项目的
+    // 升级记录同样如此），降到 4.8.1 可稳定通过；仅影响本地单元测试。
+    testImplementation "org.robolectric:robolectric:4.8.1"
     coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:1.1.5"
 }
 
