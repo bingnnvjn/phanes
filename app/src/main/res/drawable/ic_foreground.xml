@@ -4,24 +4,24 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Keep in sync with non-adaptive ic_launcher.xml -->
+    <!-- Fable（寓言）图标前景：琥珀色终端提示符 >_，安全区内绘制 -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M34,38
-                          h6
-                          l12,16
-                          l-12,16
-                          h-6
-                          l12,-16
+        android:fillColor="#FFB454"
+        android:pathData="M31,36
+                          h7
+                          l14,18
+                          l-14,18
+                          h-7
+                          l14,-18
                           "
         />
 
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M56,66
-                          h18
-                          v4
-                          h-18
+        android:pathData="M56,68
+                          h21
+                          v5
+                          h-21
                           "
         />
 

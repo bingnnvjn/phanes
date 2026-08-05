@@ -4,7 +4,7 @@ plugins {
 
 ext {
     // The packageVariant defines the bootstrap variant that will be included in the app APK.
-    // This must be supported by com.termux.shared.termux.TermuxBootstrap.PackageVariant or app will
+    // This must be supported by com.gph.fable.shared.termux.TermuxBootstrap.PackageVariant or app will
     // crash at startup.
     // Bootstrap of a different variant must not be manually installed by the user after app installation
     // by replacing $PREFIX since app code is dependant on the variant used to build the APK.
@@ -45,7 +45,7 @@ android {
     }
 
     defaultConfig {
-        applicationId "com.termux"
+        applicationId "com.gph.fable"
         minSdk buildMinSdk
         targetSdk buildTargetSdk
         versionCode 1022
@@ -62,8 +62,8 @@ android {
                 project.ext.bootstrapMaxRelease ? "\"" + project.ext.bootstrapMaxRelease + "\"" : "null"
         buildConfigField "String", "TERMUX_PACKAGE_VARIANT", "\"" + project.ext.packageVariant + "\"" // Used by TermuxApplication class
 
-        manifestPlaceholders.TERMUX_PACKAGE_NAME = "com.termux"
-        manifestPlaceholders.TERMUX_APP_NAME = "Termux"
+        manifestPlaceholders.TERMUX_PACKAGE_NAME = "com.gph.fable"
+        manifestPlaceholders.TERMUX_APP_NAME = "Fable"
         manifestPlaceholders.TERMUX_API_APP_NAME = "Termux:API"
         manifestPlaceholders.TERMUX_BOOT_APP_NAME = "Termux:Boot"
         manifestPlaceholders.TERMUX_FLOAT_APP_NAME = "Termux:Float"
@@ -90,15 +90,24 @@ android {
 
     signingConfigs {
         debug {
-            storeFile file('<上游测试签名材料>')
-            keyAlias 'alias'
-            storePassword 'xrj45yWGLbsO7W0v'
-            keyPassword 'xrj45yWGLbsO7W0v'
+            // Fable 个人 keystore（工单 01）：debug 与 release 共用同一身份，
+            // 保证后续版本可覆盖安装更新。keystore 密码见 .scratch 工单记录。
+            storeFile file('../keystore/<旧签名材料>')
+            keyAlias 'fable'
+            storePassword 'Fable-GPH-2026!'
+            keyPassword 'Fable-GPH-2026!'
+        }
+        release {
+            storeFile file('../keystore/<旧签名材料>')
+            keyAlias 'fable'
+            storePassword 'Fable-GPH-2026!'
+            keyPassword 'Fable-GPH-2026!'
         }
     }
 
     buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled true
             shrinkResources false // Reproducible builds
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
@@ -130,6 +139,20 @@ android {
     testOptions {
         unitTests {
             includeAndroidResources = true
+            all {
+                // Robolectric 4.10 在 JDK 17 下需要模块 opens；测试 worker 不继承 daemon 的
+                // org.gradle.jvmargs，必须在这里显式补上。
+                jvmArgs '--add-opens=java.base/java.lang=ALL-UNNAMED',
+                        '--add-opens=java.base/java.lang.reflect=ALL-UNNAMED',
+                        '--add-opens=java.base/java.io=ALL-UNNAMED',
+                        '--add-opens=java.base/java.util=ALL-UNNAMED',
+                        '--add-opens=java.base/java.net=ALL-UNNAMED',
+                        '--add-opens=java.base/java.text=ALL-UNNAMED',
+                        '--add-opens=java.base/java.lang.invoke=ALL-UNNAMED',
+                        '--add-opens=java.base/java.time=ALL-UNNAMED',
+                        '--add-opens=java.base/java.util.concurrent=ALL-UNNAMED',
+                        '--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED'
+            }
         }
     }
 
@@ -143,10 +166,10 @@ android {
         variant.outputs.all { output ->
             if (variant.buildType.name == "debug") {
                 def abi = output.getFilter(com.android.build.OutputFile.ABI)
-                outputFileName = new File("termux-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-" + "debug") + "_" + (abi ? abi : "universal") + ".apk")
+                outputFileName = new File("fable-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-" + "debug") + "_" + (abi ? abi : "universal") + ".apk")
             } else if (variant.buildType.name == "release") {
                 def abi = output.getFilter(com.android.build.OutputFile.ABI)
-                outputFileName = new File("termux-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-" + "release") + "_" + (abi ? abi : "universal") + ".apk")
+                outputFileName = new File("fable-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-" + "release") + "_" + (abi ? abi : "universal") + ".apk")
             }
         }
     }
