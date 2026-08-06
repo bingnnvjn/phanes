@@ -198,7 +198,7 @@ def validateVersionName(String versionName) {
         throw new GradleException("The versionName '"  + versionName + "' is not a valid version as per semantic version '2.0.0' spec in the format 'major.minor.patch(-prerelease)(+buildmetadata)'. https://semver.org/spec/v2.0.0.html.")
 }
 
-def downloadBootstrap(String arch, String expectedChecksum, String version) {
+def downloadBootstrap(String arch, String expectedChecksum, String version, String remoteUrlOverride = null) {
     def digest = java.security.MessageDigest.getInstance("SHA-256")
 
     def localUrl = "src/main/cpp/bootstrap-" + arch + ".zip"
@@ -221,7 +221,8 @@ def downloadBootstrap(String arch, String expectedChecksum, String version) {
         }
     }
 
-    def remoteUrl = "https://github.com/termux/termux-packages/releases/download/bootstrap-" + version + "/bootstrap-" + arch + ".zip"
+    def remoteUrl = remoteUrlOverride != null ? remoteUrlOverride :
+        "https://github.com/termux/termux-packages/releases/download/bootstrap-" + version + "/bootstrap-" + arch + ".zip"
     logger.quiet("Downloading " + remoteUrl + " ...")
 
     file.parentFile.mkdirs()
@@ -254,7 +255,10 @@ task downloadBootstraps() {
         def packageVariant = project.ext.packageVariant
         if (packageVariant == "apt-android-7") {
             def version =  "2025.03.28-r1" + "+" + packageVariant
-            downloadBootstrap("aarch64", "c8d702b6f742935001c37cda81b8ac69504a95d5cf28f2899532dd8cd4b057eb", version)
+            // Fable fork: aarch64 bootstrap comes from the fable-bootstrap Release (com.gph.fable prefix),
+            // not from the official termux-packages Release (com.termux prefix).
+            downloadBootstrap("aarch64", "d9fc5f96691afdeb83ecffc0e9571a7e88cf127d775beefc53d9a0e353e0a601", version,
+                "https://github.com/bingnnvjn/fable-bootstrap/releases/download/bootstrap-2026.08.06-r2%2Bapt-android-7/bootstrap-aarch64.zip")
             downloadBootstrap("arm",     "f3bb9d1b32552b34fff41861dbf193ec5ba2848d67d779ac1c7256da6640f85d", version)
             downloadBootstrap("i686",    "36db3e1ac3547f9a174fd763bd9a484fa1a3449cdd81e1cf2408ff0454f839c6", version)
             downloadBootstrap("x86_64",  "1c124ec2396ee70a51b0b0a574f29aa659526aa2b9f558f993b2fb05d1e51855", version)
