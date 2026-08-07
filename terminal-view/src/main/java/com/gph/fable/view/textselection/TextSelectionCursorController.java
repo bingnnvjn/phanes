@@ -372,6 +372,10 @@ public class TextSelectionCursorController implements CursorController {
 
     /** Get the currently selected text. */
     public String getSelectedText() {
+        // 新路径（CoreAdapter）优先；旧路径/核心文本为空时回退 emulator 直读，
+        // 覆盖 transcript 跨行选择与 overlay 尚未同步的窗口期。
+        String coreText = terminalView.getCoreSelectionText();
+        if (coreText != null && !coreText.isEmpty()) return coreText;
         return terminalView.mEmulator.getSelectedText(mSelX1, mSelY1, mSelX2, mSelY2);
     }
 

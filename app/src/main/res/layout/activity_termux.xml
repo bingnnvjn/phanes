@@ -23,15 +23,21 @@
             android:layout_above="@+id/terminal_toolbar_view_pager"
             android:layout_height="match_parent">
 
-            <com.gph.fable.view.TerminalView
-                android:id="@+id/terminal_view"
+            <com.gph.fable.app.terminal.FableTerminalView
+                android:id="@+id/fable_terminal_view"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:defaultFocusHighlightEnabled="false"
-                android:focusableInTouchMode="true"
-                android:scrollbarThumbVertical="@drawable/terminal_scroll_shape"
-                android:scrollbars="vertical"
-                tools:ignore="UnusedAttribute" />
+                tools:ignore="UnusedAttribute">
+
+                <com.gph.fable.view.FableInputTerminalView
+                    android:id="@+id/terminal_input_view"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:defaultFocusHighlightEnabled="false"
+                    android:focusableInTouchMode="true"
+                    android:scrollbarThumbVertical="@drawable/terminal_scroll_shape"
+                    android:scrollbars="vertical" />
+            </com.gph.fable.app.terminal.FableTerminalView>
 
             <LinearLayout
                 android:id="@+id/left_drawer"

@@ -17,6 +17,8 @@ import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
+import com.gph.fable.terminal.adapter.CoreAdapter;
+
 /**
  * A terminal session, consisting of a process coupled to a terminal interface.
  * <p>
@@ -52,6 +54,24 @@ public final class TerminalSession extends TerminalOutput {
 
     /** Callback which gets notified when a session finishes or changes title. */
     TerminalSessionClient mClient;
+
+    /**
+     * CoreAdapter 缝（ADR-0003）：主终端 UI/会话接线只依赖该接口。
+     * 为 null 时保持旧路径（只喂 TerminalEmulator）。
+     */
+    private CoreAdapter mCoreAdapter;
+
+    /**
+     * 缝接入前的 PTY 输出字节环形缓冲（上限 {@link #BYTE_HISTORY_CAPACITY}）：
+     * 会话进程在 CoreAdapter 建立之前就可能已输出（冷启动 prompt、Activity 重建后
+     * 重挂已有会话），这些字节需在 setCoreAdapter 时回放，否则核心视图在收到新输出
+     * 前为空白（"打开即终端"不满足）。只在 mCoreAdapter == null 时收集；
+     * setCoreAdapter 回放后清空。
+     */
+    private static final int BYTE_HISTORY_CAPACITY = 1024 * 1024;
+    private byte[] mByteHistory = new byte[0];
+    private int mByteHistoryStart;
+    private int mByteHistorySize;
 
     /** The pid of the shell process. 0 if not started and -1 if finished running. */
     int mShellPid;
@@ -99,6 +119,27 @@ public final class TerminalSession extends TerminalOutput {
             mEmulator.updateTerminalSessionClient(client);
     }
 
+    /**
+     * 设置本会话的核心缝实现（fable-render 或旧路径适配器）。
+     * 字节交付点（{@link #initializeEmulator} 的 reader→main handler）与
+     * resize 都会经缝转发；PTY/进程/环境/生命周期逻辑不变。
+     */
+    public void setCoreAdapter(CoreAdapter coreAdapter) {
+        mCoreAdapter = coreAdapter;
+        if (coreAdapter != null && mByteHistorySize > 0) {
+            byte[] replay = drainByteHistory();
+            coreAdapter.write(replay, replay.length);
+        } else if (coreAdapter == null) {
+            // 会话带核心运行时解除缝（进程退出清理），丢弃未回放缓冲。
+            mByteHistoryStart = 0;
+            mByteHistorySize = 0;
+        }
+    }
+
+    public CoreAdapter getCoreAdapter() {
+        return mCoreAdapter;
+    }
+
     /** Inform the attached pty of the new size and reflow or initialize the emulator. */
     public void updateSize(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {
         if (mEmulator == null) {
@@ -107,6 +148,7 @@ public final class TerminalSession extends TerminalOutput {
             JNI.setPtyWindowSize(mTerminalFileDescriptor, rows, columns, cellWidthPixels, cellHeightPixels);
             mEmulator.resize(columns, rows, cellWidthPixels, cellHeightPixels);
         }
+        if (mCoreAdapter != null) mCoreAdapter.resize(columns, rows);
     }
 
     /** The terminal title as set through escape sequences or null if none set. */
@@ -228,6 +270,7 @@ public final class TerminalSession extends TerminalOutput {
     /** Reset state for terminal emulator state. */
     public void reset() {
         mEmulator.reset();
+        if (mCoreAdapter != null) mCoreAdapter.reset();
         notifyScreenUpdate();
     }
 
@@ -253,6 +296,13 @@ public final class TerminalSession extends TerminalOutput {
         mTerminalToProcessIOQueue.close();
         mProcessToTerminalIOQueue.close();
         JNI.close(mTerminalFileDescriptor);
+
+        // 会话进程已退出：核心渲染器不再需要，销毁并解除缝引用
+        // （fable-render 的渲染线程 Quit+join；容器侧再销毁是幂等的）。
+        if (mCoreAdapter != null) {
+            mCoreAdapter.destroy();
+            mCoreAdapter = null;
+        }
     }
 
     @Override
@@ -342,7 +392,9 @@ public final class TerminalSession extends TerminalOutput {
         public void handleMessage(Message msg) {
             int bytesRead = mProcessToTerminalIOQueue.read(mReceiveBuffer, false);
             if (bytesRead > 0) {
+                if (mCoreAdapter == null) appendByteHistory(mReceiveBuffer, bytesRead);
                 mEmulator.append(mReceiveBuffer, bytesRead);
+                if (mCoreAdapter != null) mCoreAdapter.write(mReceiveBuffer, bytesRead);
                 notifyScreenUpdate();
             }
 
@@ -361,13 +413,39 @@ public final class TerminalSession extends TerminalOutput {
                 exitDescription += " - press Enter]";
 
                 byte[] bytesToWrite = exitDescription.getBytes(StandardCharsets.UTF_8);
+                if (mCoreAdapter == null) appendByteHistory(bytesToWrite, bytesToWrite.length);
                 mEmulator.append(bytesToWrite, bytesToWrite.length);
+                if (mCoreAdapter != null) mCoreAdapter.write(bytesToWrite, bytesToWrite.length);
                 notifyScreenUpdate();
 
                 mClient.onSessionFinished(TerminalSession.this);
             }
         }
 
+    }
+
+    /** 追加 PTY 输出到环形缓冲（仅缝接入前收集；主线程调用）。 */
+    private void appendByteHistory(byte[] data, int len) {
+        if (mByteHistory.length == 0) mByteHistory = new byte[BYTE_HISTORY_CAPACITY];
+        if (len <= 0) return;
+        for (int i = 0; i < len; i++) {
+            mByteHistory[mByteHistoryStart] = data[i];
+            mByteHistoryStart = (mByteHistoryStart + 1) % mByteHistory.length;
+            if (mByteHistorySize < mByteHistory.length) mByteHistorySize++;
+        }
+    }
+
+    /** 取出并清空环形缓冲（保持字节顺序；主线程调用）。 */
+    private byte[] drainByteHistory() {
+        if (mByteHistorySize == 0) return new byte[0];
+        byte[] out = new byte[mByteHistorySize];
+        int start = (mByteHistoryStart - mByteHistorySize + mByteHistory.length) % mByteHistory.length;
+        for (int i = 0; i < mByteHistorySize; i++) {
+            out[i] = mByteHistory[(start + i) % mByteHistory.length];
+        }
+        mByteHistoryStart = 0;
+        mByteHistorySize = 0;
+        return out;
     }
 
 }

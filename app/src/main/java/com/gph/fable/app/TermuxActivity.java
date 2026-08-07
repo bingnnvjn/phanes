@@ -29,6 +29,7 @@ import android.widget.Toast;
 import com.gph.fable.R;
 import com.gph.fable.app.api.file.FileReceiverActivity;
 import com.gph.fable.app.terminal.TermuxActivityRootView;
+import com.gph.fable.app.terminal.FableTerminalView;
 import com.gph.fable.app.terminal.TermuxTerminalSessionActivityClient;
 import com.gph.fable.app.terminal.io.TermuxTerminalExtraKeys;
 import com.gph.fable.shared.activities.ReportActivity;
@@ -56,6 +57,7 @@ import com.gph.fable.shared.theme.NightMode;
 import com.gph.fable.shared.view.ViewUtils;
 import com.gph.fable.terminal.TerminalSession;
 import com.gph.fable.terminal.TerminalSessionClient;
+import com.gph.fable.view.FableInputTerminalView;
 import com.gph.fable.view.TerminalView;
 import com.gph.fable.view.TerminalViewClient;
 
@@ -90,6 +92,12 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
      * The {@link TerminalView} shown in  {@link TermuxActivity} that displays the terminal.
      */
     TerminalView mTerminalView;
+
+    /**
+     * 工单 15：Fable 渲染容器（每会话一个 fable-render 适配器 + SurfaceView）。
+     * 主终端正文由它承载；{@link #mTerminalView} 继续承担输入/手势/选择。
+     */
+    FableTerminalView mFableTerminalView;
 
     /**
      *  The {@link TerminalViewClient} interface implementation to allow for communication between
@@ -486,8 +494,10 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         mTermuxTerminalSessionActivityClient = new TermuxTerminalSessionActivityClient(this);
         mTermuxTerminalViewClient = new TermuxTerminalViewClient(this, mTermuxTerminalSessionActivityClient);
 
-        // Set termux terminal view
-        mTerminalView = findViewById(R.id.terminal_view);
+        // Set fable render container and inner input terminal view
+        mFableTerminalView = findViewById(R.id.fable_terminal_view);
+        mTerminalView = findViewById(R.id.terminal_input_view);
+        mFableTerminalView.setInputView((FableInputTerminalView) mTerminalView);
         mTerminalView.setTerminalViewClient(mTermuxTerminalViewClient);
 
         if (mTermuxTerminalViewClient != null)
@@ -879,6 +889,10 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
     public TerminalView getTerminalView() {
         return mTerminalView;
+    }
+
+    public FableTerminalView getFableTerminalView() {
+        return mFableTerminalView;
     }
 
     public TermuxTerminalViewClient getTermuxTerminalViewClient() {

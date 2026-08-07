@@ -43,7 +43,7 @@ import com.gph.fable.terminal.TerminalSession;
 import com.gph.fable.view.textselection.TextSelectionCursorController;
 
 /** View displaying and interacting with a {@link TerminalSession}. */
-public final class TerminalView extends View {
+public class TerminalView extends View {
 
     /** Log terminal view key and IME events. */
     private static boolean TERMINAL_VIEW_KEY_LOGGING_ENABLED = false;
@@ -1364,9 +1364,35 @@ public final class TerminalView extends View {
         return getTextSelectionCursorController().hide();
     }
 
-    private void renderTextSelection() {
+    void renderTextSelection() {
         if (mTextSelectionCursorController != null)
             mTextSelectionCursorController.render();
+    }
+
+    /**
+     * 供渲染路径子类（如 {@link com.gph.fable.view.FableInputTerminalView}）读取
+     * 当前选择矩形的受保护入口；out 依次为 selY1/selY2/selX1/selX2。
+     */
+    protected void getSelectionSelectors(int[] out) {
+        if (mTextSelectionCursorController != null) {
+            mTextSelectionCursorController.getSelectors(out);
+        } else if (out.length >= mDefaultSelectors.length) {
+            System.arraycopy(mDefaultSelectors, 0, out, 0, mDefaultSelectors.length);
+        }
+    }
+
+    /** 会话/尺寸变化后让光标闪烁线程指向当前 emulator。 */
+    protected void updateTerminalCursorBlinkerForEmulator() {
+        if (mTerminalCursorBlinkerRunnable != null)
+            mTerminalCursorBlinkerRunnable.setEmulator(mEmulator);
+    }
+
+    /**
+     * 渲染路径子类（如 {@link com.gph.fable.view.FableInputTerminalView}）可覆盖：
+     * 返回核心缝的选中文本（优先于旧路径 emulator 直读）；旧路径返回 null。
+     */
+    public String getCoreSelectionText() {
+        return null;
     }
 
     public boolean isSelectingText() {

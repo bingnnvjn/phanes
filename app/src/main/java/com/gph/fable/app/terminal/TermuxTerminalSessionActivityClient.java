@@ -293,7 +293,7 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     public void setCurrentSession(TerminalSession session) {
         if (session == null) return;
 
-        if (mActivity.getTerminalView().attachSession(session)) {
+        if (mActivity.getFableTerminalView() != null && mActivity.getFableTerminalView().attachSession(session)) {
             // notify about switched session if not already displaying the session
             notifyOfSessionChange();
         }
@@ -436,6 +436,8 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         if (service == null) return;
 
         int index = service.removeTermuxSession(finishedSession);
+        if (mActivity.getFableTerminalView() != null)
+            mActivity.getFableTerminalView().onSessionRemoved(finishedSession);
 
         int size = service.getTermuxSessionsSize();
         if (size == 0) {
