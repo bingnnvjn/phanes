@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shellow vs Ghostty —— Fable 渲染器研究对比报告</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel2: #1c2333;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --green-bg: rgba(63,185,80,.12);
+    --amber: #d29922;
+    --amber-bg: rgba(210,153,34,.12);
+    --red: #f85149;
+    --red-bg: rgba(248,81,73,.12);
+    --purple: #bc8cff;
+    --cyan: #39c5cf;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+    line-height: 1.7;
+    padding: 24px 16px 80px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+
+  header { text-align: center; padding: 36px 0 28px; }
+  header h1 { font-size: 1.9em; letter-spacing: .5px; }
+  header .sub { color: var(--muted); margin-top: 10px; font-size: .98em; }
+  header .meta { color: var(--muted); margin-top: 6px; font-size: .85em; }
+
+  .tagline {
+    background: linear-gradient(135deg, rgba(88,166,255,.14), rgba(188,140,255,.10));
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px 22px;
+    font-size: 1.05em;
+    margin-bottom: 34px;
+  }
+  .tagline b { color: var(--accent); }
+
+  h2 {
+    font-size: 1.35em;
+    margin: 46px 0 16px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  h2 .en { color: var(--muted); font-size: .62em; font-weight: 500; letter-spacing: 1px; text-transform: uppercase; }
+  h3 { font-size: 1.08em; margin: 22px 0 10px; color: var(--accent); }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+    margin: 14px 0;
+  }
+  .card.plain { border-left: 4px solid var(--cyan); }
+  .card.tech { border-left: 4px solid var(--purple); }
+
+  .say {
+    display: inline-block;
+    font-size: .72em;
+    padding: 2px 9px;
+    border-radius: 999px;
+    margin-right: 8px;
+    vertical-align: 1px;
+  }
+  .say.plain { background: rgba(57,197,207,.15); color: var(--cyan); }
+  .say.tech { background: rgba(188,140,255,.15); color: var(--purple); }
+
+  .badge {
+    display: inline-block;
+    font-size: .8em;
+    font-weight: 600;
+    padding: 2px 10px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .badge.yes { background: var(--green-bg); color: var(--green); }
+  .badge.part { background: var(--amber-bg); color: var(--amber); }
+  .badge.no { background: var(--red-bg); color: var(--red); }
+
+  /* 状态徽章（表格里用） */
+  .st { text-align: center; font-size: 1.05em; white-space: nowrap; }
+  .st .tag { display: block; font-size: .72em; font-weight: 600; margin-top: 2px; }
+  .st.yes { color: var(--green); } .st.yes .tag { color: var(--green); }
+  .st.part { color: var(--amber); } .st.part .tag { color: var(--amber); }
+  .st.no { color: var(--red); } .st.no .tag { color: var(--red); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--panel);
+    border-radius: 12px;
+    overflow: hidden;
+    font-size: .93em;
+    margin: 14px 0;
+  }
+  th, td {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background: var(--panel2);
+    color: var(--accent);
+    font-size: .88em;
+    letter-spacing: .3px;
+  }
+  tr:last-child td { border-bottom: none; }
+  td.comp { font-weight: 600; white-space: nowrap; }
+  td .dim { color: var(--muted); font-size: .82em; }
+  tr:hover td { background: rgba(88,166,255,.04); }
+
+  /* 流程图 */
+  .flow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin: 12px 0;
+  }
+  .fnode {
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: .88em;
+    flex: 1 1 150px;
+    min-width: 150px;
+  }
+  .fnode b { display: block; font-size: .95em; margin-bottom: 2px; }
+  .fnode small { color: var(--muted); font-size: .78em; }
+  .farrow { color: var(--muted); font-size: 1.2em; flex: 0 0 auto; }
+
+  .flow-col { display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 10px 0; }
+  .fnode.wide { width: 100%; }
+  .farrow-v { color: var(--muted); font-size: 1.1em; line-height: 1; }
+
+  /* 三层模型 */
+  .layers { display: flex; flex-direction: column; gap: 10px; margin: 16px 0; }
+  .layer {
+    border-radius: 12px;
+    padding: 14px 18px;
+    border: 1px solid var(--border);
+  }
+  .layer.l1 { background: rgba(88,166,255,.10); }
+  .layer.l2 { background: rgba(57,197,207,.08); }
+  .layer.l3 { background: rgba(188,140,255,.08); }
+  .layer .name { font-weight: 700; font-size: 1.02em; }
+  .layer .name .num { color: var(--muted); margin-right: 8px; }
+  .layer .desc { color: var(--muted); font-size: .88em; margin-top: 3px; }
+
+  /* 官方架构三大块 */
+  .arch-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin: 16px 0; }
+  .arch {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 18px;
+  }
+  .arch h4 { color: var(--accent); font-size: 1em; margin-bottom: 8px; }
+  .arch ul { padding-left: 18px; font-size: .88em; color: var(--text); }
+  .arch li { margin: 5px 0; }
+  .arch .plainnote { color: var(--muted); font-size: .82em; margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 8px; }
+
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: .85em; color: var(--muted); margin: 8px 0 18px; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin: 14px 0; }
+  .mcard { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
+  .mcard .mnum { color: var(--purple); font-weight: 700; font-size: .9em; }
+  .mcard h4 { font-size: 1em; margin: 4px 0 8px; }
+  .mcard .src { font-size: .84em; margin-bottom: 6px; }
+  .mcard .src b { color: var(--green); }
+  .mcard .imp { font-size: .86em; color: var(--text); }
+  .mcard .imp b { color: var(--amber); }
+
+  .callout {
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin: 12px 0;
+    font-size: .92em;
+    border: 1px solid var(--border);
+  }
+  .callout.green { background: var(--green-bg); }
+  .callout.amber { background: var(--amber-bg); }
+  .callout.red { background: var(--red-bg); }
+
+  .footnote {
+    color: var(--muted);
+    font-size: .82em;
+    margin-top: 46px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+  .footnote a { color: var(--accent); text-decoration: none; }
+  .footnote a:hover { text-decoration: underline; }
+
+  code {
+    background: #21262d;
+    border-radius: 5px;
+    padding: 1px 6px;
+    font-size: .88em;
+    color: var(--cyan);
+  }
+  @media (max-width: 640px) {
+    header h1 { font-size: 1.45em; }
+    th, td { padding: 9px 10px; font-size: .87em; }
+    .st .tag { font-size: .64em; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Shellow vs Ghostty</h1>
+    <div class="sub">Fable（寓言）渲染器研究对比报告 —— 以 Ghostty 官方渲染器为"天花板"，看安卓端最接近的实现 Shellow 做到了哪一步</div>
+    <div class="meta">调研日期：2026-08-07 ｜ 范围：libghostty-vt 核心不变，只对比"渲染状态 → 画法层" ｜ 全部信息经一手来源核实</div>
+  </header>
+
+  <div class="tagline">
+    <b>一句话结论：</b>Ghostty 官方渲染器定义了"高性能终端渲染"的完整架构；Shellow 是安卓上最接近这套架构的现成开源实现（Rust + wgpu + Vulkan），
+    已经实现了约 <b>60% 的核心技术</b>（字形图集、一次 draw call、文本整形、脏行跟踪、选择/搜索叠加），
+    剩下 40% 是简化版或占位（正文不走官方迭代器、图集整张重传、没有彩色 emoji、符号自绘是占位）。
+    <b>Fable 的路线 = 以 Shellow 为骨架，按官方思路补齐这 40%。</b>
+  </div>
+
+  <!-- ============ 白话版结论 ============ -->
+  <h2><span class="en">Plain Language</span> 白话版：三个结论</h2>
+
+  <div class="card plain">
+    <span class="say plain">白话</span>
+    <b>第一，显卡画字是必须的，官方用的是一套"高性能三件套"。</b>
+    <p style="margin-top:6px">手机 CPU 一个个画字会卡。官方的方法是：先把用到的字"烤"成一张纹理图集（像把菜谱提前做成预制菜），
+    然后一条命令把一屏的字一起画出去（批量），最后只重画有变化的那几行（不整屏重来）。这三件事，就是终端渲染性能的核心。</p>
+  </div>
+
+  <div class="card plain">
+    <span class="say plain">白话</span>
+    <b>第二，Shellow 是安卓上把这套三件套做得最全的现成代码。</b>
+    <p style="margin-top:6px">它是 GitHub 上一个开源手机终端 + Codex 客户端（Apache-2.0，安卓 Google Play 测试版、iOS TestFlight 都在跑）。
+    它的架构和我们 Fable 几乎一模一样：Kotlin/Compose 壳 + Rust 内核 + ghostty 核心 + wgpu 渲染。等于有人替我们先把最难的路趟了一遍。</p>
+  </div>
+
+  <div class="card plain">
+    <span class="say plain">白话</span>
+    <b>第三，但它"偷懒"了几处，我们要补。</b>
+    <p style="margin-top:6px">它读正文是一个格子一个格子地要数据（慢）；字形图集一有新增就整张重新上传（浪费）；没有彩色 emoji 通道；
+    画边框线这类符号用的是临时噪点占位（不好看）。这些正好是官方架构里已经给出答案的部分 —— 我们照着官方补齐即可。</p>
+  </div>
+
+  <!-- ============ 三层模型 ============ -->
+  <h2><span class="en">Mental Model</span> 先建立坐标系：终端渲染的三层</h2>
+
+  <div class="layers">
+    <div class="layer l1">
+      <div class="name"><span class="num">①</span>核心（引擎）＝ libghostty-vt</div>
+      <div class="desc">负责解析终端字节流、维护屏幕格子、滚动缓冲。它不认识屏幕，只维护"数据"。<b>Fable 已定：这层不变。</b></div>
+    </div>
+    <div class="layer l2">
+      <div class="name"><span class="num">②</span>渲染状态 ＝ 核心交给画家的"数据包"</div>
+      <div class="desc">脏标记（哪几行变了）、每格文字/颜色/样式、配色板、光标位置。官方用 C API（<code>ghostty_render_state_*</code>），Rust 侧有安全封装。</div>
+    </div>
+    <div class="layer l3">
+      <div class="name"><span class="num">③</span>画法层 ＝ 怎么把数据变成像素（本文主角）</div>
+      <div class="desc">字形图集、GPU 绘制、shader、脏行上传。官方渲染器和 Shellow 渲染器都在这层，只是实现深度不同。</div>
+    </div>
+  </div>
+
+  <p style="color:var(--muted); font-size:.88em">本次对比只发生在第 ③ 层：同一个核心、同一份渲染状态数据，两家"画法层"分别做到了什么程度。</p>
+
+  <!-- ============ 官方架构解剖 ============ -->
+  <h2><span class="en">Ghostty Official</span> 官方渲染器架构解剖（2026-05 大重构后）</h2>
+
+  <p style="color:var(--muted)">官方渲染器在 2026 年 5 月做了一次大重构：把原来分开的 Metal / OpenGL 两套逻辑，统一成"一个通用渲染器 + 图形 API 抽象层"。整体拆成三大块：</p>
+
+  <div class="arch-grid">
+    <div class="arch">
+      <h4>① 渲染线程模型</h4>
+      <ul>
+        <li>每个终端窗口一个<b>独立渲染线程</b>，和 UI 线程、I/O 线程分开</li>
+        <li>通过 <b>mailbox</b> 收消息（焦点、尺寸、配置、搜索结果……）</li>
+        <li>定时器：120 FPS 刷新、600ms 光标闪烁</li>
+        <li><b>demand lock</b>：渲染线程要锁时"喊一声"，I/O 线程让路，防止高频输出饿死渲染</li>
+        <li>取帧 = <code>RenderState.beginUpdate → 快照 → endUpdate</code>，锁只占一瞬间</li>
+      </ul>
+      <div class="plainnote">白话：后台有个专职画师，和前台互不干扰；前台数据多的时候画师还能插队。</div>
+    </div>
+    <div class="arch">
+      <h4>② 通用渲染器（怎么画）</h4>
+      <ul>
+        <li><b>多通道（multi-pass）</b>：背景、文字、图片、全屏后期各一个专用 shader</li>
+        <li><b>实例化绘制</b>：把所有字形拼成一个数组，<b>一次 draw call</b> 画几千个字</li>
+        <li>每个字形实例 32 字节：图集位置、大小、bearing、格子坐标、颜色、用哪个图集</li>
+        <li>Uniform 携带全局状态：格子尺寸、网格行列数、光标位置/颜色、背景色、对比度等</li>
+        <li>颜色管理：sRGB / 线性混合、WCAG 最低对比度</li>
+      </ul>
+      <div class="plainnote">白话：一次"批量打印"整屏字，而不是一个字一个字打印。</div>
+    </div>
+    <div class="arch">
+      <h4>③ 字形管线（字从哪来）</h4>
+      <ul>
+        <li><b>字形图集</b>：字形光栅化成位图，塞进 GPU 纹理（方形 bin-packing）；<b>灰度 + 彩色</b>两张图集</li>
+        <li>图集变化通过<b>原子计数器</b>通知 GPU 增量同步</li>
+        <li><b>sprite face</b>：边框线、下划线、光标、盲文这些符号自己用 2D 画，不依赖字体</li>
+        <li>三套光栅后端：FreeType / CoreText / 自研 OpenType glyf 轮廓光栅器</li>
+        <li><b>两级缓存</b>（SharedGrid，读写锁）：命中走读锁，未命中才渲染新字形；跨窗口共享</li>
+        <li>Nerd Font 约束：数千个码点带对齐规则，图标不乱</li>
+      </ul>
+      <div class="plainnote">白话：常用字提前烤好放在纹理里反复用；连"画线画框"都有专门的"绘画程序"。</div>
+    </div>
+  </div>
+
+  <!-- ============ 对照总览 ============ -->
+  <h2><span class="en">Head-to-Head</span> 详细对照：官方架构 × Shellow 实现</h2>
+
+  <div class="legend">
+    <span><span class="st yes" style="display:inline">✅</span> 已实现（达到官方水平）</span>
+    <span><span class="st part" style="display:inline">⚠️</span> 部分实现 / 简化版 / 半成品</span>
+    <span><span class="st no" style="display:inline">❌</span> 未实现</span>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:17%">官方架构组件</th>
+        <th>官方怎么做</th>
+        <th>Shellow 怎么做</th>
+        <th style="width:9%">状态</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="comp">渲染线程模型</td>
+        <td>每窗口独立渲染线程 + mailbox 消息 + 定时器 + demand lock</td>
+        <td>无独立线程。Kotlin 侧"内容签名"变化 → LaunchedEffect → JNI 同步渲染+present</td>
+        <td class="st part">⚠️<span class="tag">简化</span></td>
+      </tr>
+      <tr>
+        <td class="comp">两阶段状态快照</td>
+        <td>begin/end update，锁只占一瞬间，IO 与渲染线程安全分工</td>
+        <td>RenderState 只用来取光标可见性/形状 + 脏行；锁由 Kotlin 侧 ReentrantLock 兜底</td>
+        <td class="st part">⚠️<span class="tag">部分</span></td>
+      </tr>
+      <tr>
+        <td class="comp">正文数据通道</td>
+        <td>RowIterator / CellIterator 一次取整块数据</td>
+        <td>逐格 <code>grid_ref().graphemes()</code> 读文本和样式，每帧 O(列×行) 次调用（慢路径）<br><span class="dim">注：betamax 反而用了正确的迭代器</span></td>
+        <td class="st part">⚠️<span class="tag">慢路径</span></td>
+      </tr>
+      <tr>
+        <td class="comp">字形图集</td>
+        <td>灰度 + 彩色<b>双图集</b>，bin-packing 紧凑排布，原子计数增量同步</td>
+        <td>单个 RGBA 图集，36×72 固定格子、16 列；灰度字形存"白色+alpha"再染色；无彩色 emoji 通道</td>
+        <td class="st part">⚠️<span class="tag">简化</span></td>
+      </tr>
+      <tr>
+        <td class="comp">图集更新</td>
+        <td>只上传新增/修改的部分（增量）</td>
+        <td>revision 一变 → 整张纹理 <code>write_texture</code> 全量重传</td>
+        <td class="st part">⚠️<span class="tag">全量</span></td>
+      </tr>
+      <tr>
+        <td class="comp">实例化绘制</td>
+        <td>CellText 实例数组 + 一次 draw call（per-instance）</td>
+        <td>36 字节顶点（位置/纹理/颜色/mode）+ 单顶点缓冲 + 一次 draw call ✅</td>
+        <td class="st yes">✅<span class="tag">达到</span></td>
+      </tr>
+      <tr>
+        <td class="comp">多通道 shader</td>
+        <td>cell_bg / cell_text / image / fullscreen 多个 pass 分工</td>
+        <td>单 shader 单通道：清背景 + 一个 pass 画全部，mode 字段区分"文字/纯色矩形"</td>
+        <td class="st no">❌<span class="tag">未做</span></td>
+      </tr>
+      <tr>
+        <td class="comp">脏行重绘</td>
+        <td>只更新脏区域，未变的不重画</td>
+        <td>脏行算出来、上传成 STORAGE buffer，但绘制通道没绑它 —— <b>每帧仍重建全部顶点全量上传</b></td>
+        <td class="st part">⚠️<span class="tag">半成品</span></td>
+      </tr>
+      <tr>
+        <td class="comp">sprite face（自绘符号）</td>
+        <td>z2d 正规自绘：边框线、下划线、光标、盲文、Nerd 图标约束</td>
+        <td>有 procedural 兜底，但是<b>噪点占位</b>（确定性图案），不是规范画法；box drawing 主要靠字体</td>
+        <td class="st part">⚠️<span class="tag">占位</span></td>
+      </tr>
+      <tr>
+        <td class="comp">字体回退链</td>
+        <td>font collection + 逐字回退 + Nerd Font 约束 + 跨窗口共享缓存</td>
+        <td>内嵌 JetBrainsMono + 硬编码路径里挑<b>一个</b>支持中文的系统字体（Noto/思源等）</td>
+        <td class="st part">⚠️<span class="tag">简化</span></td>
+      </tr>
+      <tr>
+        <td class="comp">文本整形（shaping）</td>
+        <td>平台 shaper（macOS CoreText / Linux HarfBuzz），完整回退与方向处理</td>
+        <td>rustybuzz，按字体 run 整形，LTR + 宽字符/零宽字符都处理；缺 RTL/复杂文字方向</td>
+        <td class="st part">⚠️<span class="tag">够用</span></td>
+      </tr>
+      <tr>
+        <td class="comp">光标 / 选择 / 搜索 / 滚动缓冲</td>
+        <td>完整：光标样式矩阵、选择、搜索高亮、滚动</td>
+        <td>overlay 矩形 + 光标顶点 + viewport 参数渲染历史行；光标样式映射（块/条/下划线）</td>
+        <td class="st yes">✅<span class="tag">达到</span></td>
+      </tr>
+      <tr>
+        <td class="comp">颜色管理</td>
+        <td>sRGB / 线性 alpha 混合、WCAG 最低对比度、P3 色域</td>
+        <td>直接 RGBA，无色彩空间处理</td>
+        <td class="st no">❌<span class="tag">未做</span></td>
+      </tr>
+      <tr>
+        <td class="comp">GPU 后端（安卓）</td>
+        <td>官方无安卓渲染器（Metal / OpenGL 4.3 桌面限定）</td>
+        <td>wgpu 30 + <b>Vulkan</b>（安卓）/ Metal（iOS），安卓实机验证通过（Google Play beta）</td>
+        <td class="st yes">✅<span class="tag">验证</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ============ 数据流对比 ============ -->
+  <h2><span class="en">Data Flow</span> 数据流对比：一帧是怎么画出来的</h2>
+
+  <div class="grid2">
+    <div class="card tech" style="margin:0">
+      <span class="say tech">技术</span>
+      <h3 style="margin-top:2px">官方（Ghostty）</h3>
+      <div class="flow-col">
+        <div class="fnode wide"><b>I/O 线程</b><small>PTY 字节 → 终端状态更新</small></div>
+        <div class="farrow-v">↓</div>
+        <div class="fnode wide"><b>demand lock</b><small>渲染线程声明需求，IO 让路</small></div>
+        <div class="farrow-v">↓</div>
+        <div class="fnode wide"><b>RenderState.begin/end</b><small>锁定瞬间，取整屏快照后立刻解锁</small></div>
+        <div class="farrow-v">↓</div>
+        <div class="fnode wide"><b>渲染线程 drawFrame</b><small>多 pass：背景→文字→图片→后期，实例化一次 draw call</small></div>
+        <div class="farrow-v">↓</div>
+        <div class="fnode wide"><b>字形图集增量同步</b><small>只有新增字形才上传</small></div>
+        <div class="farrow-v">↓</div>
+        <div class="fnode wide"><b>显示</b></div>
+      </div>
+    </div>
+
+    <div class="card tech" style="margin:0">
+      <span class="say tech">技术</span>
+      <h3 style="margin-top:2px">Shellow</h3>
+      <div class="flow-col">
+        <div class="fnode wide"><b>Kotlin 检测到内容签名变化</b><small>grid / viewport / overlay 变了才触发</small></div>
+        <div class="farrow-v">↓</div>
+        <div class="fnode wide"><b>JNI → renderRendererSurfaceFrame</b><small>同步调用，ReentrantLock 兜底</small></div>
+        <div class="farrow-v">↓</div>
+        <div class="fnode wide"><b>快照：逐格 grid_ref 读正文</b><small>RenderState 只取光标 + 脏行</small></div>
+        <div class="farrow-v">↓</div>
+        <div class="fnode wide"><b>字形 ensure + 顶点全量重建</b><small>图集 revision 变了整张重传</small></div>
+        <div class="farrow-v">↓</div>
+        <div class="fnode wide"><b>wgpu 一次 draw call</b><small>单 pass 单 shader，present</small></div>
+        <div class="farrow-v">↓</div>
+        <div class="fnode wide"><b>SurfaceView 显示（Vulkan）</b></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 三个关键差距 ============ -->
+  <h2><span class="en">Three Gaps</span> 三个最值得注意的差距（深度解释）</h2>
+
+  <div class="callout amber">
+    <b>① 正文读取走了"慢路径"。</b>官方设计是让渲染器通过 RenderState 的行/格迭代器一次拿整块数据；
+    Shellow 却逐格调用 <code>grid_ref().graphemes()</code>，每帧 O(列×行) 次 FFI 调用。
+    对 80×30 的小屏压力不大，但对"多会话并行、输出量大"是隐患。我们做的时候直接用 RowIterator / CellIterator（betamax 已示范正确用法）。
+  </div>
+
+  <div class="callout amber">
+    <b>② "脏行"只做了一半。</b>脏行从 RenderState 算出来了，也上传了，但绘制时还是重建全部顶点。
+    真正的优化应该是"只有脏行的顶点重新上传"。这是我们可以直接做对的地方。
+  </div>
+
+  <div class="callout red">
+    <b>③ 没有彩色 emoji 通道，也没有规范的自绘符号。</b>fontdue 只能光栅化灰度字形，emoji 会落到噪点占位。
+    对跑 AI Agent 的场景，输出里常带 emoji 和特殊符号 —— 这两块要用官方架构的答案补：彩色图集 + sprite face。
+  </div>
+
+  <!-- ============ Fable 模块清单 ============ -->
+  <h2><span class="en">Fable Blueprint</span> 由此得出的 Fable 渲染器模块清单</h2>
+
+  <div class="grid2">
+    <div class="mcard">
+      <div class="mnum">模块 1</div>
+      <h4>快照层（核心 → 渲染器的数据）</h4>
+      <div class="src"><b>借</b>：Shellow 的 ghostty_adapter 思路 + 快照结构（脏行/行文本/样式 run/光标/模式/滚动）</div>
+      <div class="imp"><b>改</b>：正文改用 RenderState 迭代器，脏行从 RenderState 的 Dirty::Partial + 每行 dirty 取</div>
+    </div>
+    <div class="mcard">
+      <div class="mnum">模块 2</div>
+      <h4>字形管线（字体 → 纹理）</h4>
+      <div class="src"><b>借</b>：Shellow 的字体路径列表、rustybuzz 整形、fontdue 光栅</div>
+      <div class="imp"><b>补</b>：灰度 + 彩色双图集、增量上传、sprite face 自绘符号（按官方架构）</div>
+    </div>
+    <div class="mcard">
+      <div class="mnum">模块 3</div>
+      <h4>顶点构建（数据 → 顶点）</h4>
+      <div class="src"><b>借</b>：Shellow 的 SurfaceFrameBuilder（文本 quad + 背景矩形 + 下划线 + 光标 + overlay）</div>
+      <div class="imp"><b>改</b>：按脏行增量重建顶点，而不是每帧全量</div>
+    </div>
+    <div class="mcard">
+      <div class="mnum">模块 4</div>
+      <h4>GPU 层（wgpu）</h4>
+      <div class="src"><b>借</b>：Shellow 整段 —— SurfaceView/ANativeWindow 接入、单 draw call、WGSL shader 骨架</div>
+      <div class="imp"><b>补</b>：按需升级多通道（背景/文字/图片/后期分开）</div>
+    </div>
+    <div class="mcard">
+      <div class="mnum">模块 5</div>
+      <h4>渲染驱动 + 壳（Kotlin）</h4>
+      <div class="src"><b>借</b>：Shellow 的 SurfaceView + 内容签名触发渲染模式</div>
+      <div class="imp"><b>改</b>：滚动条、输入法、多会话 Tab 等壳层按 Fable 需求自建</div>
+    </div>
+    <div class="mcard">
+      <div class="mnum">模块 6</div>
+      <h4>构建管线（libghostty-vt 安卓编译）</h4>
+      <div class="src"><b>参考</b>：Shellow 的 libghostty-vt-sys（安卓构建补丁 + 生成绑定）</div>
+      <div class="imp"><b>现状</b>：先用 expo 预编译库（工单 08 已验证），后置迁移</div>
+    </div>
+  </div>
+
+  <div class="tagline" style="margin-top:28px">
+    最终结论：<b>Shellow 给了我们 60% 的完整骨架</b>（GPU 路径、shaping、图集、overlay、安卓接入全部跑通），
+    <b>剩下 40% 是往官方架构补齐</b> —— RenderState 迭代器取正文、双图集 + 增量上传、sprite face、真脏行增量。
+    "以 Shellow 为骨架、向官方架构补全" 的路线，至此有了第一份具体的模块清单。
+  </div>
+
+  <!-- ============ 附注 ============ -->
+  <div class="footnote">
+    <b>来源与版权</b><br>
+    · Ghostty 官方渲染器：<a href="https://github.com/ghostty-org/ghostty">github.com/ghostty-org/ghostty</a>（MIT；2026-05 渲染器统一重构 <code>src/renderer/</code>：generic.zig / Metal.zig / OpenGL.zig / font/）<br>
+    · Shellow：<a href="https://github.com/ZingLix/Shellow">github.com/ZingLix/Shellow</a>（Apache-2.0；<code>crates/shellow-core/src/renderer.rs</code> 4091 行 + <code>ghostty_adapter.rs</code> 1310 行，wgpu 30 / rustybuzz / fontdue / libghostty-vt crate 0.2.0）<br>
+    · 对照参考：uzaaft/libghostty-rs（Rust 安全绑定 + ghostling_rs）、joshka/betamax（纯 Rust 软件渲染，RowIterator 正确用法）、arcboxlabs/expo-libghostty（Kotlin Canvas 渲染器）<br>
+    · 本报告由 Codex 于 2026-08-07 基于上述仓库源码与官方文档一手核实生成；所有 ✅/⚠️/❌ 均来自对源码的直接阅读，非道听途说。
+  </div>
+
+</div>
+</body>
+</html>
