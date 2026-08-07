@@ -435,9 +435,6 @@ fn hash_row(row: &[Cell]) -> u64 {
 // ---------- 字形图集 ----------
 
 const ATLAS_SIZE: u32 = 2048;
-const ATLAS_CELL: u32 = 32;
-const ATLAS_COLUMNS: u32 = ATLAS_SIZE / ATLAS_CELL;
-const ATLAS_CAPACITY: u32 = ATLAS_COLUMNS * ATLAS_COLUMNS;
 // 彩色图集用更大的格子容纳 emoji 位图（NotoColorEmoji PNG 常见 24px 级）。
 const COLOR_ATLAS_CELL: u32 = 64;
 const COLOR_ATLAS_COLUMNS: u32 = ATLAS_SIZE / COLOR_ATLAS_CELL;
@@ -581,6 +578,48 @@ impl GlyphAtlas {
         self.color_revision = self.color_revision.wrapping_add(1);
     }
 
+    /// 灰度图集格子像素尺寸：随字号动态放大（至少 32px，1.05 倍余量覆盖
+    /// 带升部/降部的字形，如 j、|、/、\）。修复工单 15 真机 >32px 缺字：
+    /// 固定 32px 格子会把位图超格的字形整格丢弃（ensure_glyph 返回 None）。
+    pub fn atlas_cell_px(&self) -> u32 {
+        ((self.pixels_per_em * 1.05).ceil() as u32).max(32)
+    }
+
+    pub fn atlas_columns(&self) -> u32 {
+        ATLAS_SIZE / self.atlas_cell_px()
+    }
+
+    pub fn atlas_capacity(&self) -> u32 {
+        let columns = self.atlas_columns();
+        columns * columns
+    }
+
+    /// 灰度字形 UV 矩形 (left, right, top, bottom)：集中"entry.cell + 当前格子
+    /// 尺寸 → UV"的换算，避免调用方三处重复。entry 与图集字号不一致时断言
+    /// （正常流程 set_pixels_per_em 会清空图集，不可能不一致）。
+    pub fn uv_for(
+        &self,
+        entry: &GlyphEntry,
+        atlas_w: f32,
+        atlas_h: f32,
+    ) -> (f32, f32, f32, f32) {
+        debug_assert!(
+            (entry.pixels_per_em - self.pixels_per_em).abs() < f32::EPSILON,
+            "glyph entry font size mismatch: entry={} atlas={}",
+            entry.pixels_per_em,
+            self.pixels_per_em
+        );
+        let columns = self.atlas_columns();
+        let cell_px = self.atlas_cell_px();
+        let glyph_col = entry.cell % columns;
+        let glyph_row = entry.cell / columns;
+        let uv_left = (glyph_col * cell_px + entry.pad_x) as f32 / atlas_w;
+        let uv_right = (glyph_col * cell_px + entry.pad_x + entry.bitmap_w) as f32 / atlas_w;
+        let uv_top = (glyph_row * cell_px + entry.pad_y) as f32 / atlas_h;
+        let uv_bottom = (glyph_row * cell_px + entry.pad_y + entry.bitmap_h) as f32 / atlas_h;
+        (uv_left, uv_right, uv_top, uv_bottom)
+    }
+
     /// 主终端布局用：按当前字号计算单元格像素尺寸。
     /// 宽 = 主字体 'M' advance，高 = 行度量（ascent - descent + line_gap）。
     pub fn cell_size(&self) -> (u32, u32) {
@@ -668,41 +707,71 @@ impl GlyphAtlas {
             return None;
         }
 
-        let bitmap_w = metrics.width as u32;
-        let bitmap_h = metrics.height as u32;
-        if bitmap_w > ATLAS_CELL || bitmap_h > ATLAS_CELL {
-            return None;
+        let cell_px = self.atlas_cell_px();
+        let mut bitmap_w = metrics.width as u32;
+        let mut bitmap_h = metrics.height as u32;
+        let mut bitmap_ref = bitmap.as_slice();
+        let mut entry_metrics = metrics;
+        let mut scaled: Vec<u8> = Vec::new();
+        if bitmap_w > cell_px || bitmap_h > cell_px {
+            // 罕见超高字形（个别 CJK/装饰符号位图超过 1.05 倍字号）：最近邻
+            // 缩放到格内并等比修正度量，避免整格丢弃导致空白。
+            let scale = (cell_px as f32 / bitmap_w.max(bitmap_h) as f32).min(1.0);
+            let new_w = ((bitmap_w as f32 * scale).round() as u32).max(1);
+            let new_h = ((bitmap_h as f32 * scale).round() as u32).max(1);
+            scaled = vec![0u8; (new_w * new_h) as usize];
+            for y in 0..new_h {
+                let sy = (((y as f32 + 0.5) / scale) as usize).min(bitmap_h as usize - 1);
+                for x in 0..new_w {
+                    let sx = (((x as f32 + 0.5) / scale) as usize).min(bitmap_w as usize - 1);
+                    scaled[(y * new_w + x) as usize] =
+                        bitmap[(sy * bitmap_w as usize + sx) as usize];
+                }
+            }
+            bitmap_w = new_w;
+            bitmap_h = new_h;
+            bitmap_ref = &scaled;
+            entry_metrics = fontdue::Metrics {
+                width: bitmap_w as usize,
+                height: bitmap_h as usize,
+                xmin: (metrics.xmin as f32 * scale).round() as i32,
+                ymin: (metrics.ymin as f32 * scale).round() as i32,
+                advance_width: metrics.advance_width * scale,
+                advance_height: metrics.advance_height * scale,
+                // 等比缩放轮廓包围盒（当前无读取方，保持与位图一致以防未来使用）。
+                bounds: fontdue::OutlineBounds {
+                    xmin: metrics.bounds.xmin * scale,
+                    ymin: metrics.bounds.ymin * scale,
+                    width: metrics.bounds.width * scale,
+                    height: metrics.bounds.height * scale,
+                },
+            };
         }
-        if self.next_cell >= ATLAS_CAPACITY {
+        if self.next_cell >= self.atlas_capacity() {
             log_error("glyph atlas full");
             return None;
         }
 
         let cell = self.next_cell;
         self.next_cell += 1;
-        let pad_x = (ATLAS_CELL - bitmap_w) / 2;
-        let pad_y = (ATLAS_CELL - bitmap_h) / 2;
-        let col = cell % ATLAS_COLUMNS;
-        let row = cell / ATLAS_COLUMNS;
-        for gy in 0..bitmap_h {
-            for gx in 0..bitmap_w {
-                let alpha = bitmap[(gy * bitmap_w + gx) as usize];
-                if alpha == 0 {
-                    continue;
-                }
-                let px = col * ATLAS_CELL + pad_x + gx;
-                let py = row * ATLAS_CELL + pad_y + gy;
-                let i = ((py * ATLAS_SIZE + px) * 4) as usize;
-                self.pixels[i] = 255;
-                self.pixels[i + 1] = 255;
-                self.pixels[i + 2] = 255;
-                self.pixels[i + 3] = alpha;
-            }
-        }
+        let pad_x = (cell_px - bitmap_w) / 2;
+        let pad_y = (cell_px - bitmap_h) / 2;
+        let columns = self.atlas_columns();
+        blit_glyph_alpha(
+            &mut self.pixels,
+            cell_px,
+            columns,
+            cell,
+            pad_x,
+            pad_y,
+            bitmap_w,
+            bitmap_h,
+            bitmap_ref,
+        );
 
         let entry = GlyphEntry {
             cell,
-            metrics,
+            metrics: entry_metrics,
             ascent: line_metrics.ascent,
             descent: line_metrics.descent,
             line_gap: line_metrics.line_gap,
@@ -787,8 +856,9 @@ impl GlyphAtlas {
 
     /// 程序化 sprite 字形写进灰度图集（工单 12 ③）。
     fn ensure_sprite_glyph(&mut self, ch: char) -> Option<GlyphEntry> {
-        let bitmap = crate::symbols::sprite_bitmap(ch, ATLAS_CELL)?;
-        if self.next_cell >= ATLAS_CAPACITY {
+        let cell_px = self.atlas_cell_px();
+        let bitmap = crate::symbols::sprite_bitmap(ch, cell_px)?;
+        if self.next_cell >= self.atlas_capacity() {
             log_error("glyph atlas full");
             return None;
         }
@@ -796,25 +866,20 @@ impl GlyphAtlas {
         let bitmap_h = bitmap.height;
         let cell = self.next_cell;
         self.next_cell += 1;
-        let pad_x = (ATLAS_CELL - bitmap_w) / 2;
-        let pad_y = (ATLAS_CELL - bitmap_h) / 2;
-        let col = cell % ATLAS_COLUMNS;
-        let row = cell / ATLAS_COLUMNS;
-        for gy in 0..bitmap_h {
-            for gx in 0..bitmap_w {
-                let alpha = bitmap.alpha[(gy * bitmap_w + gx) as usize];
-                if alpha == 0 {
-                    continue;
-                }
-                let px = col * ATLAS_CELL + pad_x + gx;
-                let py = row * ATLAS_CELL + pad_y + gy;
-                let i = ((py * ATLAS_SIZE + px) * 4) as usize;
-                self.pixels[i] = 255;
-                self.pixels[i + 1] = 255;
-                self.pixels[i + 2] = 255;
-                self.pixels[i + 3] = alpha;
-            }
-        }
+        let pad_x = (cell_px - bitmap_w) / 2;
+        let pad_y = (cell_px - bitmap_h) / 2;
+        let columns = self.atlas_columns();
+        blit_glyph_alpha(
+            &mut self.pixels,
+            cell_px,
+            columns,
+            cell,
+            pad_x,
+            pad_y,
+            bitmap_w,
+            bitmap_h,
+            &bitmap.alpha,
+        );
         let entry = GlyphEntry {
             cell,
             metrics: fontdue::Metrics {
@@ -839,6 +904,38 @@ impl GlyphAtlas {
         self.revision = self.revision.wrapping_add(1);
         self.entries.insert(ch, entry);
         Some(entry)
+    }
+}
+
+/// 把单通道灰度位图按居中 padding 写入灰度图集格（RGB=255 + alpha）。
+/// ensure_glyph 与 ensure_sprite_glyph 共用，避免重复的逐像素写入。
+fn blit_glyph_alpha(
+    pixels: &mut [u8],
+    cell_px: u32,
+    columns: u32,
+    cell: u32,
+    pad_x: u32,
+    pad_y: u32,
+    bitmap_w: u32,
+    bitmap_h: u32,
+    src: &[u8],
+) {
+    let col = cell % columns;
+    let row = cell / columns;
+    for gy in 0..bitmap_h {
+        for gx in 0..bitmap_w {
+            let alpha = src[(gy * bitmap_w + gx) as usize];
+            if alpha == 0 {
+                continue;
+            }
+            let px = col * cell_px + pad_x + gx;
+            let py = row * cell_px + pad_y + gy;
+            let i = ((py * ATLAS_SIZE + px) * 4) as usize;
+            pixels[i] = 255;
+            pixels[i + 1] = 255;
+            pixels[i + 2] = 255;
+            pixels[i + 3] = alpha;
+        }
     }
 }
 
@@ -1206,14 +1303,8 @@ pub fn build_row_vertices(
         let Some(entry) = atlas.ensure_glyph(ch) else {
             continue;
         };
-        let glyph_col = entry.cell % ATLAS_COLUMNS;
-        let glyph_row = entry.cell / ATLAS_COLUMNS;
-        let uv_left = (glyph_col * ATLAS_CELL + entry.pad_x) as f32 / atlas_w as f32;
-        let uv_right =
-            (glyph_col * ATLAS_CELL + entry.pad_x + entry.bitmap_w) as f32 / atlas_w as f32;
-        let uv_top = (glyph_row * ATLAS_CELL + entry.pad_y) as f32 / atlas_h as f32;
-        let uv_bottom =
-            (glyph_row * ATLAS_CELL + entry.pad_y + entry.bitmap_h) as f32 / atlas_h as f32;
+        let (uv_left, uv_right, uv_top, uv_bottom) =
+            atlas.uv_for(&entry, atlas_w as f32, atlas_h as f32);
 
         if entry.is_sprite {
             // sprite face：整格绘制（工单 12 ③）。
@@ -2564,14 +2655,8 @@ impl RendererCore {
         let white = [1.0f32, 1.0, 1.0, 1.0];
         if let Some(entry) = self.atlas.ensure_glyph('A') {
             let (atlas_w, atlas_h) = self.atlas.extent();
-            let glyph_col = entry.cell % ATLAS_COLUMNS;
-            let glyph_row = entry.cell / ATLAS_COLUMNS;
-            let uv_left = (glyph_col * ATLAS_CELL + entry.pad_x) as f32 / atlas_w as f32;
-            let uv_right =
-                (glyph_col * ATLAS_CELL + entry.pad_x + entry.bitmap_w) as f32 / atlas_w as f32;
-            let uv_top = (glyph_row * ATLAS_CELL + entry.pad_y) as f32 / atlas_h as f32;
-            let uv_bottom =
-                (glyph_row * ATLAS_CELL + entry.pad_y + entry.bitmap_h) as f32 / atlas_h as f32;
+            let (uv_left, uv_right, uv_top, uv_bottom) =
+                self.atlas.uv_for(&entry, atlas_w as f32, atlas_h as f32);
             let glyph_verts = [
                 Vertex::new([0.05, -0.7], [uv_left, uv_bottom], white, MODE_GLYPH),
                 Vertex::new([0.95, -0.7], [uv_right, uv_bottom], white, MODE_GLYPH),
