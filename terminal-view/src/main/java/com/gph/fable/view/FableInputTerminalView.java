@@ -3,6 +3,7 @@ package com.gph.fable.view;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.util.AttributeSet;
+import android.view.MotionEvent;
 
 import com.gph.fable.terminal.TerminalSession;
 import com.gph.fable.terminal.adapter.CoreAdapter;
@@ -131,6 +132,80 @@ public final class FableInputTerminalView extends TerminalView {
         // 选择手柄仍由本视图绘制（位于 SurfaceView 之上）。
         renderTextSelection();
         syncAdapterState();
+    }
+
+    // ---------- 坐标换算：与 fable-render 同一套"拉伸网格"对齐 ----------
+    // 渲染器按 surface 宽高 / 行列数均分格子（cell_w = W/cols, row_h = H/rows）；
+    // 旧路径 TerminalView 用 mRenderer 字体度量换算，两套网格逐行漂移，
+    // 导致选择手柄/触摸行与蓝色高亮条越往下差越多（fable-v1/15 真机反馈）。
+    // 新路径统一用拉伸网格；覆盖后不再经过旧路径 getCursorY 的 -40 换算，
+    // 旧路径（adapter 为 null）保持原行为不变。
+
+    private float colWidthPx() {
+        return (mEmulator == null || mEmulator.mColumns <= 0)
+                ? 0f
+                : getWidth() / (float) mEmulator.mColumns;
+    }
+
+    private float rowHeightPx() {
+        return (mEmulator == null || mEmulator.mRows <= 0)
+                ? 0f
+                : getHeight() / (float) mEmulator.mRows;
+    }
+
+    private boolean usingRenderGrid() {
+        return mCoreAdapter != null && mEmulator != null;
+    }
+
+    private int screenColumnAt(float x) {
+        float colW = colWidthPx();
+        return colW <= 0f ? 0 : (int) (x / colW);
+    }
+
+    private int screenRowAt(float y) {
+        float rowH = rowHeightPx();
+        return rowH <= 0f ? 0 : (int) (y / rowH);
+    }
+
+    private int pixelXAt(int column) {
+        return Math.round(column * colWidthPx());
+    }
+
+    private int pixelYAt(int row) {
+        return Math.round((row - mTopRow) * rowHeightPx());
+    }
+
+    @Override
+    public int getCursorX(float x) {
+        return usingRenderGrid() ? screenColumnAt(x) : super.getCursorX(x);
+    }
+
+    @Override
+    public int getCursorY(float y) {
+        return usingRenderGrid() ? screenRowAt(y) + mTopRow : super.getCursorY(y);
+    }
+
+    @Override
+    public int getPointX(int cx) {
+        if (!usingRenderGrid()) return super.getPointX(cx);
+        if (mEmulator.mColumns > 0 && cx > mEmulator.mColumns) cx = mEmulator.mColumns;
+        return pixelXAt(cx);
+    }
+
+    @Override
+    public int getPointY(int cy) {
+        return usingRenderGrid() ? pixelYAt(cy) : super.getPointY(cy);
+    }
+
+    @Override
+    public int[] getColumnAndRow(MotionEvent event, boolean relativeToScroll) {
+        if (!usingRenderGrid()) {
+            return super.getColumnAndRow(event, relativeToScroll);
+        }
+        int column = screenColumnAt(event.getX());
+        int row = screenRowAt(event.getY());
+        if (relativeToScroll) row += mTopRow;
+        return new int[] { column, row };
     }
 
     private void syncAdapterState() {
