@@ -942,11 +942,11 @@ fn blit_glyph_alpha(
 // ---------- 顶点 ----------
 
 #[derive(Debug, Clone, Copy)]
-struct Vertex {
-    position: [f32; 2],
-    tex_coord: [f32; 2],
-    color: [f32; 4],
-    mode: f32,
+pub struct Vertex {
+    pub position: [f32; 2],
+    pub tex_coord: [f32; 2],
+    pub color: [f32; 4],
+    pub mode: f32,
 }
 
 const VERTEX_STRIDE: u64 = 36;
@@ -1323,13 +1323,29 @@ pub fn build_row_vertices(
                 surface_h,
             );
         } else {
-            let glyph_x = x + ((target_cell_w - cell_w) / 2.0).max(0.0);
+            // 宽字符从双格盒左缘绘制（半格偏移会把字形右推并溢出到下一列）；
+            // 半角宽度为 1，该偏移量本身为 0，两分支共用此式。
+            let glyph_x = x + if width_cells >= 2 {
+                0.0
+            } else {
+                ((target_cell_w - cell_w) / 2.0).max(0.0)
+            };
             let metrics = entry.metrics;
             let line_height_px =
                 (entry.ascent - entry.descent + entry.line_gap).max(entry.pixels_per_em);
-            let advance_scale = cell_w / metrics.advance_width.max(1.0);
-            let height_scale = (row_h * 0.92) / line_height_px.max(1.0);
-            let scale = advance_scale.min(height_scale).max(0.01);
+            let scale = if width_cells >= 2 {
+                // 宽字符（CJK/全角标点）按位图尺寸约束适度放大填双格（上限 1.15，
+                // 标点这类小位图不会被撑爆），收窄与 ASCII 并排时的观感间距
+                // （fable-v1/15 真机"中文间距特别宽"）。
+                1.15f32
+                    .min((target_cell_w * 0.85) / entry.bitmap_w.max(1) as f32)
+                    .min((row_h * 0.92) / entry.bitmap_h.max(1) as f32)
+                    .max(0.5)
+            } else {
+                let advance_scale = cell_w / metrics.advance_width.max(1.0);
+                let height_scale = (row_h * 0.92) / line_height_px.max(1.0);
+                advance_scale.min(height_scale).max(0.01)
+            };
             let advance_width = metrics.advance_width * scale;
             let x_padding = ((target_cell_w - advance_width) / 2.0).max(0.0);
             let draw_x = glyph_x + x_padding + metrics.xmin as f32 * scale;
