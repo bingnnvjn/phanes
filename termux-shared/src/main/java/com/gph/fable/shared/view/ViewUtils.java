@@ -15,6 +15,8 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.ActionBar;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.window.layout.WindowMetrics;
+import androidx.window.layout.WindowMetricsCalculator;
 
 import com.gph.fable.shared.logger.Logger;
 
@@ -185,12 +187,16 @@ public class ViewUtils {
     public static Point getDisplaySize( @NonNull Context context, boolean activitySize) {
         // android.view.WindowManager.getDefaultDisplay() and Display.getSize() are deprecated in
         // API 30 and give wrong values in API 30 for activitySize=false in multi-window
-        androidx.window.WindowManager windowManager = new androidx.window.WindowManager(context);
-        androidx.window.WindowMetrics windowMetrics;
+        Activity activity = getActivity(context);
+        if (activity == null) {
+            throw new IllegalArgumentException("Used non-visual Context to obtain an instance of WindowManager. Please use an Activity or a ContextWrapper around one instead.");
+        }
+        WindowMetricsCalculator windowMetricsCalculator = WindowMetricsCalculator.getOrCreate();
+        WindowMetrics windowMetrics;
         if (activitySize)
-            windowMetrics = windowManager.getCurrentWindowMetrics();
+            windowMetrics = windowMetricsCalculator.computeCurrentWindowMetrics(activity);
         else
-            windowMetrics = windowManager.getMaximumWindowMetrics();
+            windowMetrics = windowMetricsCalculator.computeMaximumWindowMetrics(activity);
         return new Point(windowMetrics.getBounds().width(), windowMetrics.getBounds().height());
     }
 

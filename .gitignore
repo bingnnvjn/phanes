@@ -14,6 +14,10 @@ release/
 # Local configuration file (sdk path, etc)
 local.properties
 
+# Build logs
+*.log
+.ndk-build.log
+
 # Gradle generated files
 .gradle/
 

@@ -1,0 +1,63 @@
+package com.gph.fable.app;
+
+import android.view.Surface;
+
+/**
+ * 工单 10 验证切片：Rust wgpu 渲染器 + PTY 的 JNI 桥（libfable_render.so）。
+ * 探针专用，非产品代码；主终端与会话层不动。
+ */
+public final class RenderCore {
+    static {
+        System.loadLibrary("fable-render");
+    }
+
+    private RenderCore() {
+    }
+
+    public static native long rendererCreate(int cols, int rows);
+
+    public static native void rendererDestroy(long handle);
+
+    public static native void rendererWrite(long handle, byte[] data, int len);
+
+    public static native void rendererResize(long handle, int cols, int rows);
+
+    public static native void rendererScroll(long handle, int delta);
+
+    public static native void rendererSetSelection(long handle, int row, int startCol, int endCol);
+
+    /** 工单 14：返回当前所有选择区（overlay）的文本，跨行以 '\n' 拼接。 */
+    public static native String rendererSelectionText(long handle);
+
+    /** 工单 14：设置字号（px/em，4..128），触发字形图集重建。 */
+    public static native void rendererSetFontSize(long handle, float sizePx);
+
+    /** 工单 14：当前字号的单元格像素尺寸，写入 out[0]=宽 out[1]=高。 */
+    public static native void rendererGetCellSize(long handle, int[] out);
+
+    /** 工单 14：push 配色板（ARGB），前景/背景/选择色/光标色。 */
+    public static native void rendererSetPalette(long handle, int fgArgb, int bgArgb, int selectionArgb, int cursorArgb);
+
+    /** 工单 14：恢复核心解析配色。 */
+    public static native void rendererResetPalette(long handle);
+
+    public static native void rendererAttach(long handle, Surface surface, int widthPx, int heightPx);
+
+    public static native void rendererDetach(long handle);
+
+    public static native boolean rendererRender(long handle, int widthPx, int heightPx);
+
+    public static native boolean rendererTestPattern(long handle, int widthPx, int heightPx);
+
+    public static native String rendererInfo(long handle);
+
+    public static native long ptySpawn(String shell, int cols, int rows);
+
+    public static native int ptyRead(long handle, byte[] buf);
+
+    public static native int ptyWrite(long handle, byte[] data, int len);
+
+    public static native void ptyResize(long handle, int cols, int rows);
+
+    public static native void ptyClose(long handle);
+}

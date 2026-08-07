@@ -10,31 +10,35 @@ ext {
     // by replacing $PREFIX since app code is dependant on the variant used to build the APK.
     // Currently supported values are: [ "apt-android-7" "apt-android-5" ]
     packageVariant = System.getenv("TERMUX_PACKAGE_VARIANT") ?: "apt-android-7" // Default: "apt-android-7"
+    apkVersionTag = System.getenv("TERMUX_APK_VERSION_TAG") ?: ""
     bootstrapMinSdk = packageVariant == "apt-android-5" ? 21 : 24
     bootstrapMinRelease = packageVariant == "apt-android-5" ? "5.0" : "7.0"
     bootstrapMaxSdk = packageVariant == "apt-android-5" ? 23 : null
     bootstrapMaxRelease = packageVariant == "apt-android-5" ? "6.0" : null
 
     buildMinSdk = bootstrapMinSdk
-    buildTargetSdk = project.properties.targetSdkVersion.toInteger()
+    buildTargetSdk = 28
 }
 
 android {
-    compileSdkVersion project.properties.compileSdkVersion.toInteger()
-    ndkVersion = System.getenv("JITPACK_NDK_VERSION") ?: project.properties.ndkVersion
+    namespace = "com.gph.fable"
+    compileSdk = 36
+    ndkVersion = System.getenv("JITPACK_NDK_VERSION") ?: "22.1.7171670"
+    buildFeatures {
+        buildConfig = true
+    }
     def appVersionName = System.getenv("TERMUX_APP_VERSION_NAME") ?: ""
-    def apkVersionTag = System.getenv("TERMUX_APK_VERSION_TAG") ?: ""
     def splitAPKsForDebugBuilds = System.getenv("TERMUX_SPLIT_APKS_FOR_DEBUG_BUILDS") ?: "1"
     def splitAPKsForReleaseBuilds = System.getenv("TERMUX_SPLIT_APKS_FOR_RELEASE_BUILDS") ?: "0" // F-Droid does not support split APKs #1904
 
     dependencies {
-        implementation "androidx.annotation:annotation:1.3.0"
-        implementation "androidx.core:core:1.6.0"
-        implementation "androidx.drawerlayout:drawerlayout:1.1.1"
-        implementation "androidx.preference:preference:1.1.1"
-        implementation "androidx.viewpager:viewpager:1.0.0"
-        implementation "com.google.android.material:material:1.4.0"
-        implementation "com.google.guava:guava:24.1-jre"
+        implementation "androidx.annotation:annotation:1.10.0"
+        implementation "androidx.core:core:1.18.0"
+        implementation "androidx.drawerlayout:drawerlayout:1.2.0"
+        implementation "androidx.preference:preference:1.2.1"
+        implementation "androidx.viewpager:viewpager:1.1.0"
+        implementation "com.google.android.material:material:1.14.0"
+        implementation "com.google.guava:guava:33.6.0-jre"
         implementation "io.noties.markwon:core:$markwonVersion"
         implementation "io.noties.markwon:ext-strikethrough:$markwonVersion"
         implementation "io.noties.markwon:linkify:$markwonVersion"
@@ -110,7 +114,7 @@ android {
             signingConfig signingConfigs.release
             minifyEnabled true
             shrinkResources false // Reproducible builds
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
 
         debug {
@@ -122,8 +126,8 @@ android {
         // Flag to enable support for the new language APIs
         coreLibraryDesugaringEnabled true
 
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
     }
 
     externalNativeBuild {
@@ -132,7 +136,7 @@ android {
         }
     }
 
-    lintOptions {
+    lint {
         disable 'ProtectedPermissions'
     }
 
@@ -156,24 +160,24 @@ android {
         }
     }
 
-    packagingOptions {
+    packaging {
         jniLibs {
-            useLegacyPackaging true
+            useLegacyPackaging = true
         }
     }
 
-    applicationVariants.all { variant ->
-        variant.outputs.all { output ->
-            if (variant.buildType.name == "debug") {
-                def abi = output.getFilter(com.android.build.OutputFile.ABI)
-                outputFileName = new File("fable-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-" + "debug") + "_" + (abi ? abi : "universal") + ".apk")
-            } else if (variant.buildType.name == "release") {
-                def abi = output.getFilter(com.android.build.OutputFile.ABI)
-                outputFileName = new File("fable-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-" + "release") + "_" + (abi ? abi : "universal") + ".apk")
-            }
+}
+
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        variant.outputs.forEach { output ->
+            def abi = output.filters.find {
+                it.filterType == com.android.build.api.variant.FilterConfiguration.FilterType.ABI
+            }?.identifier ?: "universal"
+            def buildType = variant.buildType
+            output.outputFileName.set("fable-app_" + (project.ext.apkVersionTag ? project.ext.apkVersionTag : project.ext.packageVariant + "-" + buildType) + "_" + abi + ".apk")
         }
     }
-
 }
 
 dependencies {
@@ -182,7 +186,7 @@ dependencies {
     // "ShadowActivityThread.reset: ActivityThread not set" 崩溃（ExoPlayer 等项目的
     // 升级记录同样如此），降到 4.8.1 可稳定通过；仅影响本地单元测试。
     testImplementation "org.robolectric:robolectric:4.8.1"
-    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:1.1.5"
+    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.5"
 }
 
 task versionName {
@@ -275,7 +279,10 @@ task downloadBootstraps() {
 }
 
 afterEvaluate {
-    android.applicationVariants.all { variant ->
-        variant.javaCompileProvider.get().dependsOn(downloadBootstraps)
+    tasks.matching {
+        it.name.startsWith("compile") && it.name.endsWith("JavaWithJavac") &&
+            !it.name.contains("UnitTest") && !it.name.contains("AndroidTest")
+    }.configureEach {
+        dependsOn downloadBootstraps
     }
 }

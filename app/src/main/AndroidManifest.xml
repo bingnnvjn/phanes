@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
-    package="com.gph.fable"
     android:installLocation="internalOnly"
     android:sharedUserId="${TERMUX_PACKAGE_NAME}"
     android:sharedUserLabel="@string/shared_user_label">
@@ -42,7 +41,6 @@
         android:name=".app.TermuxApplication"
         android:allowBackup="false"
         android:banner="@drawable/banner"
-        android:extractNativeLibs="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/application_name"
         android:requestLegacyExternalStorage="true"
@@ -87,6 +85,46 @@
 
                 <category android:name="android.intent.category.IOT_LAUNCHER" />
                 <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- 工单 08 验证切片：探针 harness（独立图标，不干扰主终端） -->
+        <activity
+            android:name=".app.SpikeActivity"
+            android:exported="true"
+            android:label="Fable Spike"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.TermuxActivity.DayNight.NoActionBar" />
+
+        <activity-alias
+            android:name=".SpikeActivityLauncher"
+            android:exported="true"
+            android:targetActivity=".app.SpikeActivity"
+            android:label="Fable Spike">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- 工单 10 验证切片：wgpu + SurfaceView 上屏 harness（独立图标，不干扰主终端） -->
+        <activity
+            android:name=".app.RenderActivity"
+            android:exported="true"
+            android:label="Fable Render"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.TermuxActivity.DayNight.NoActionBar" />
+
+        <activity-alias
+            android:name=".RenderActivityLauncher"
+            android:exported="true"
+            android:targetActivity=".app.RenderActivity"
+            android:label="Fable Render">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
 
