@@ -2875,7 +2875,15 @@ impl RendererCore {
             self.render_inner(width_px, height_px)
         }));
         match result {
-            Ok(value) => value,
+            Ok(value) => {
+                if !value {
+                    let message = self.last_error.clone();
+                    if !message.is_empty() {
+                        log_error(&format!("render failed: {message}"));
+                    }
+                }
+                value
+            }
             Err(_) => {
                 self.last_error = "panic in render".to_string();
                 log_error("panic in render");
@@ -3042,6 +3050,7 @@ impl RendererCore {
                 snapshot.lines.len(),
                 snapshot.rows
             );
+            log_error(&self.last_error);
             return false;
         }
         if let Some(palette) = self.palette {
@@ -3156,6 +3165,7 @@ impl RendererCore {
             // 内容未变却全帧无顶点（选择/滚动触发的异常帧）：保留上一帧，
             // 不画纯背景；正常清屏（dirty=FULL）仍放行。
             self.last_error = "empty frame (no vertices)".to_string();
+            log_error(&self.last_error);
             return false;
         }
         self.last_vertex_count = draw_ranges.iter().map(|(_, count)| *count as usize).sum();
