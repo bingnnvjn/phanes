@@ -4,11 +4,13 @@ import android.content.Context;
 import android.os.Bundle;
 
 import androidx.annotation.Keep;
+import androidx.annotation.Nullable;
 import androidx.preference.PreferenceDataStore;
 import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.PreferenceManager;
 
 import com.gph.fable.R;
+import com.gph.fable.shared.termux.settings.preferences.TermuxPreferenceConstants;
 import com.gph.fable.shared.termux.settings.preferences.TermuxAppSharedPreferences;
 
 @Keep
@@ -44,6 +46,36 @@ class TermuxPreferencesDataStore extends PreferenceDataStore {
             mInstance = new TermuxPreferencesDataStore(context);
         }
         return mInstance;
+    }
+
+    @Override
+    @Nullable
+    public String getString(String key, @Nullable String defValue) {
+        if (mPreferences == null) return defValue;
+        if (key == null) return defValue;
+
+        switch (key) {
+            case TermuxPreferenceConstants.TERMUX_APP.KEY_FABLE_THEME_MODE:
+                String mode = mPreferences.getThemeMode();
+                return mode != null ? mode
+                    : TermuxPreferenceConstants.TERMUX_APP.DEFAULT_VALUE_FABLE_THEME_MODE;
+            default:
+                return defValue;
+        }
+    }
+
+    @Override
+    public void putString(String key, @Nullable String value) {
+        if (mPreferences == null) return;
+        if (key == null) return;
+
+        switch (key) {
+            case TermuxPreferenceConstants.TERMUX_APP.KEY_FABLE_THEME_MODE:
+                mPreferences.setThemeMode(value);
+                break;
+            default:
+                break;
+        }
     }
 
 }

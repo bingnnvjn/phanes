@@ -76,6 +76,8 @@ public final class FableTerminalView extends FrameLayout {
         // updateSize 把还挂着的旧会话 PTY 临时 resize。
         CoreAdapter adapter = session.getCoreAdapter();
         mInputView.setCoreAdapter(isRenderable(adapter) ? adapter : null);
+        // 新路径：attach 时把 colors.properties/内置明暗配色板 push 给渲染器。
+        FableTerminalPalette.apply(getContext(), isRenderable(adapter) ? adapter : null);
         render.show();
         return changed;
     }

@@ -45,6 +45,10 @@ import com.gph.fable.app.activities.SettingsActivity;
 import com.gph.fable.shared.termux.crash.TermuxCrashUtils;
 import com.gph.fable.shared.termux.settings.preferences.TermuxAppSharedPreferences;
 import com.gph.fable.app.terminal.TermuxSessionsListViewController;
+import com.gph.fable.app.terminal.RecentSessionsListViewController;
+import com.gph.fable.app.session.RecentSessionStore;
+import com.gph.fable.app.session.RecentSessionStore.RecentSession;
+import com.gph.fable.shared.termux.shell.command.runner.terminal.TermuxSession;
 import com.gph.fable.app.terminal.io.TerminalToolbarViewPager;
 import com.gph.fable.app.terminal.TermuxTerminalViewClient;
 import com.gph.fable.shared.termux.extrakeys.ExtraKeysView;
@@ -145,6 +149,11 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
      * The termux sessions list controller.
      */
     TermuxSessionsListViewController mTermuxSessionListViewController;
+
+    /**
+     * 最近会话列表控制器（工单 04：进程被杀后一键重开）。
+     */
+    public RecentSessionsListViewController mRecentSessionsListViewController;
 
     /**
      * The {@link TermuxActivity} broadcast receiver for various things like terminal style configuration changes.
@@ -303,6 +312,10 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         if (mTermuxTerminalViewClient != null)
             mTermuxTerminalViewClient.onStart();
 
+        // 设置页可能改了界面主题/字号，回前台时重新应用（主题变化会触发 Activity 重建，
+        // 会话由前台服务持有不丢）。
+        setActivityTheme();
+
         if (mPreferences.isTerminalMarginAdjustmentEnabled())
             addTermuxActivityRootViewGlobalLayoutListener();
 
@@ -460,13 +473,20 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
 
     private void setActivityTheme() {
+        String themeMode = resolveThemeMode();
+
         // Update NightMode.APP_NIGHT_MODE
-        TermuxThemeUtils.setAppNightMode(mProperties.getNightMode());
+        TermuxThemeUtils.setAppNightMode(themeMode);
 
         // Set activity night mode. If NightMode.SYSTEM is set, then android will automatically
         // trigger recreation of activity when uiMode/dark mode configuration is changed so that
         // day or night theme takes affect.
-        AppCompatActivityUtils.setNightMode(this, NightMode.getAppNightMode().getName(), true);
+        AppCompatActivityUtils.setNightMode(this, themeMode, true);
+    }
+
+    /** 界面主题：设置项优先（三选一），未设置过回退 termux.properties night-mode。 */
+    private String resolveThemeMode() {
+        return TermuxThemeUtils.getThemeMode(this, mProperties != null ? mProperties.getNightMode() : null);
     }
 
     private void setMargins() {
@@ -513,6 +533,13 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         termuxSessionsListView.setAdapter(mTermuxSessionListViewController);
         termuxSessionsListView.setOnItemClickListener(mTermuxSessionListViewController);
         termuxSessionsListView.setOnItemLongClickListener(mTermuxSessionListViewController);
+
+        ListView recentSessionsListView = findViewById(R.id.recent_sessions_list);
+        mRecentSessionsListViewController = new RecentSessionsListViewController(this, recentSessionsListView,
+            findViewById(R.id.recent_sessions_header));
+        recentSessionsListView.setAdapter(mRecentSessionsListViewController);
+        recentSessionsListView.setOnItemClickListener(mRecentSessionsListViewController);
+        recentSessionsListView.setOnItemLongClickListener(mRecentSessionsListViewController);
     }
 
 
@@ -866,7 +893,31 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
 
     public void termuxSessionListNotifyUpdated() {
-        mTermuxSessionListViewController.notifyDataSetChanged();
+        if (mTermuxSessionListViewController != null)
+            mTermuxSessionListViewController.notifyDataSetChanged();
+        if (mRecentSessionsListViewController != null)
+            mRecentSessionsListViewController.reload();
+    }
+
+    /** 一键重开最近会话（新 shell 进入记录目录，失效回退 $HOME）。 */
+    public void reopenRecentSession(RecentSession recentSession) {
+        if (recentSession == null || mTermuxTerminalSessionActivityClient == null) return;
+        String workDir = RecentSessionStore.resolveWorkingDirectory(
+            recentSession.workingDirectory, TermuxConstants.TERMUX_HOME_DIR_PATH);
+        TermuxService service = getTermuxService();
+        if (service == null) return;
+        TermuxSession newSession = service.createTermuxSession(null, null, null, workDir, false, null);
+        if (newSession == null) return;
+        recordRecentSession(workDir);
+        mTermuxTerminalSessionActivityClient.setCurrentSession(newSession.getTerminalSession());
+        getDrawer().closeDrawers();
+    }
+
+    /** 记录最近会话并刷新抽屉列表（由客户端在会话切换/创建时调用）。 */
+    public void recordRecentSession(String workingDirectory) {
+        RecentSessionStore.record(this, workingDirectory);
+        if (mRecentSessionsListViewController != null)
+            mRecentSessionsListViewController.reload();
     }
 
     public boolean isVisible() {
@@ -988,8 +1039,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                 mExtraKeysView.reload(mTermuxTerminalExtraKeys.getExtraKeysInfo(), mTerminalToolbarDefaultHeight);
             }
 
-            // Update NightMode.APP_NIGHT_MODE
-            TermuxThemeUtils.setAppNightMode(mProperties.getNightMode());
+            // Update NightMode.APP_NIGHT_MODE（设置项优先）
+            TermuxThemeUtils.setAppNightMode(resolveThemeMode());
         }
 
         setMargins();

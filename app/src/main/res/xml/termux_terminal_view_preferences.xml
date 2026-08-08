@@ -1,8 +1,18 @@
-<PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto">
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <PreferenceCategory
         app:key="view"
         app:title="@string/termux_terminal_view_view_header">
+
+        <SeekBarPreference
+            app:defaultValue="12"
+            app:key="fontsize"
+            android:max="24"
+            app:min="8"
+            app:showSeekBarValue="true"
+            app:summary="@string/termux_terminal_view_font_size_summary"
+            app:title="@string/termux_terminal_view_font_size_title" />
 
         <SwitchPreferenceCompat
             app:key="terminal_margin_adjustment"

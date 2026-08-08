@@ -9,6 +9,7 @@ import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.PreferenceManager;
 
 import com.gph.fable.R;
+import com.gph.fable.shared.termux.settings.preferences.TermuxPreferenceConstants;
 import com.gph.fable.shared.termux.settings.preferences.TermuxAppSharedPreferences;
 
 @Keep
@@ -56,6 +57,33 @@ class TerminalViewPreferencesDataStore extends PreferenceDataStore {
         switch (key) {
             case "terminal_margin_adjustment":
                     mPreferences.setTerminalMarginAdjustment(value);
+                break;
+            default:
+                break;
+        }
+    }
+
+    @Override
+    public int getInt(String key, int defValue) {
+        if (mPreferences == null || mContext == null) return defValue;
+        if (key == null) return defValue;
+
+        switch (key) {
+            case TermuxPreferenceConstants.TERMUX_APP.KEY_FONTSIZE:
+                return mPreferences.getFontSizeDp(mContext);
+            default:
+                return defValue;
+        }
+    }
+
+    @Override
+    public void putInt(String key, int value) {
+        if (mPreferences == null || mContext == null) return;
+        if (key == null) return;
+
+        switch (key) {
+            case TermuxPreferenceConstants.TERMUX_APP.KEY_FONTSIZE:
+                mPreferences.setFontSizeDp(mContext, value);
                 break;
             default:
                 break;

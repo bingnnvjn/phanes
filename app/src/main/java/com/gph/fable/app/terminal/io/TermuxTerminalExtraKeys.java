@@ -8,6 +8,7 @@ import androidx.annotation.NonNull;
 import androidx.drawerlayout.widget.DrawerLayout;
 
 import com.gph.fable.app.TermuxActivity;
+import com.gph.fable.R;
 import com.gph.fable.app.terminal.TermuxTerminalSessionActivityClient;
 import com.gph.fable.app.terminal.TermuxTerminalViewClient;
 import com.gph.fable.shared.logger.Logger;
@@ -64,13 +65,14 @@ public class TermuxTerminalExtraKeys extends TerminalExtraKeys {
 
             mExtraKeysInfo = new ExtraKeysInfo(extrakeys, extraKeysStyle, ExtraKeysConstants.CONTROL_CHARS_ALIASES);
         } catch (JSONException e) {
-            Logger.showToast(mActivity, "Could not load and set the \"" + TermuxPropertyConstants.KEY_EXTRA_KEYS + "\" property from the properties file: " + e.toString(), true);
+            Logger.showToast(mActivity, mActivity.getString(R.string.error_load_extra_keys_property,
+                TermuxPropertyConstants.KEY_EXTRA_KEYS, e.toString()), true);
             Logger.logStackTraceWithMessage(LOG_TAG, "Could not load and set the \"" + TermuxPropertyConstants.KEY_EXTRA_KEYS + "\" property from the properties file: ", e);
 
             try {
                 mExtraKeysInfo = new ExtraKeysInfo(TermuxPropertyConstants.DEFAULT_IVALUE_EXTRA_KEYS, TermuxPropertyConstants.DEFAULT_IVALUE_EXTRA_KEYS_STYLE, ExtraKeysConstants.CONTROL_CHARS_ALIASES);
             } catch (JSONException e2) {
-                Logger.showToast(mActivity, "Can't create default extra keys",true);
+                Logger.showToast(mActivity, mActivity.getString(R.string.error_create_default_extra_keys), true);
                 Logger.logStackTraceWithMessage(LOG_TAG, "Could create default extra keys: ", e);
                 mExtraKeysInfo = null;
             }

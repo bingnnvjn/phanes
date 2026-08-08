@@ -31,6 +31,7 @@ import com.gph.fable.terminal.TerminalColors;
 import com.gph.fable.terminal.TerminalSession;
 import com.gph.fable.terminal.TerminalSessionClient;
 import com.gph.fable.terminal.TextStyle;
+import com.gph.fable.terminal.adapter.CoreAdapter;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -162,7 +163,8 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
             // Show toast for non-current sessions that exit.
             // Verify that session was not removed before we got told about it finishing:
             if (index >= 0)
-                mActivity.showToast(toToastTitle(finishedSession) + " - exited", true);
+                mActivity.showToast(toToastTitle(finishedSession) + " - " +
+                    mActivity.getString(R.string.msg_session_exited), true);
         }
 
         if (mActivity.getPackageManager().hasSystemFeature(PackageManager.FEATURE_LEANBACK)) {
@@ -293,6 +295,11 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     public void setCurrentSession(TerminalSession session) {
         if (session == null) return;
 
+        String cwd = session.getCwd();
+        if (cwd != null) {
+            mActivity.recordRecentSession(cwd);
+        }
+
         if (mActivity.getFableTerminalView() != null && mActivity.getFableTerminalView().attachSession(session)) {
             // notify about switched session if not already displaying the session
             notifyOfSessionChange();
@@ -382,6 +389,7 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
             if (newTermuxSession == null) return;
 
             TerminalSession newTerminalSession = newTermuxSession.getTerminalSession();
+            mActivity.recordRecentSession(workingDirectory);
             setCurrentSession(newTerminalSession);
 
             mActivity.getDrawer().closeDrawers();
@@ -512,6 +520,16 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
             }
             updateBackgroundColor();
 
+            // 新路径：配色板经 CoreAdapter 缝 push 给所有会话的 fable-render。
+            TermuxService service = mActivity.getTermuxService();
+            if (service != null) {
+                for (TermuxSession termuxSession : service.getTermuxSessions()) {
+                    TerminalSession terminalSession = termuxSession.getTerminalSession();
+                    if (terminalSession != null)
+                        FableTerminalPalette.apply(mActivity, terminalSession.getCoreAdapter());
+                }
+            }
+
             final Typeface newTypeface = (fontFile.exists() && fontFile.length() > 0) ? Typeface.createFromFile(fontFile) : Typeface.MONOSPACE;
             mActivity.getTerminalView().setTypeface(newTypeface);
         } catch (Exception e) {
@@ -522,7 +540,16 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     public void updateBackgroundColor() {
         if (!mActivity.isVisible()) return;
         TerminalSession session = mActivity.getCurrentSession();
-        if (session != null && session.getEmulator() != null) {
+        if (session == null) return;
+
+        CoreAdapter adapter = session.getCoreAdapter();
+        if (adapter != null && adapter.supportsPalette()) {
+            // 新路径：窗口底色与渲染器配色板一致（内置明/暗或 colors.properties）。
+            mActivity.getWindow().getDecorView().setBackgroundColor(FableTerminalPalette.resolve(mActivity).background);
+            return;
+        }
+
+        if (session.getEmulator() != null) {
             mActivity.getWindow().getDecorView().setBackgroundColor(session.getEmulator().mColors.mCurrentColors[TextStyle.COLOR_INDEX_BACKGROUND]);
         }
     }

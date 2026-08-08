@@ -5,6 +5,7 @@ import android.content.Context;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.gph.fable.shared.termux.settings.preferences.TermuxAppSharedPreferences;
 import com.gph.fable.shared.termux.settings.properties.TermuxPropertyConstants;
 import com.gph.fable.shared.termux.settings.properties.TermuxSharedProperties;
 import com.gph.fable.shared.theme.NightMode;
@@ -20,6 +21,19 @@ public class TermuxThemeUtils {
     /** Set name as app wide night mode value. */
     public static void setAppNightMode(@Nullable String name) {
         NightMode.setAppNightMode(name);
+    }
+
+    /**
+     * 解析界面主题模式（工单 04）：设置项（system/light/dark）优先；
+     * 未设置过时回退 termux.properties night-mode，再无则跟随系统。
+     */
+    @NonNull
+    public static String getThemeMode(@NonNull Context context, @Nullable String propertiesNightMode) {
+        TermuxAppSharedPreferences preferences = TermuxAppSharedPreferences.build(context, false);
+        if (preferences != null && preferences.getThemeMode() != null) {
+            return preferences.getThemeMode();
+        }
+        return propertiesNightMode != null ? propertiesNightMode : NightMode.SYSTEM.getName();
     }
 
 }

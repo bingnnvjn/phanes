@@ -197,12 +197,21 @@
                     no hardware keyboard is connected.</string>
 
 
-        <!-- Terminal View Preferences -->
-        <string name="termux_terminal_view_preferences_title">Terminal View</string>
-        <string name="termux_terminal_view_preferences_summary">Preferences for terminal view</string>
+    <!-- Terminal View Preferences -->
+    <string name="termux_terminal_view_preferences_title">Terminal View</string>
+    <string name="termux_terminal_view_preferences_summary">Preferences for terminal view</string>
+
+        <!-- Appearance -->
+        <string name="termux_appearance_header">Appearance</string>
+        <string name="termux_theme_mode_title">Theme</string>
+        <string name="termux_theme_mode_summary">Theme of the app shell (settings, drawer and toolbar)</string>
 
             <!-- View Category -->
             <string name="termux_terminal_view_view_header">View</string>
+
+                <!-- Font Size -->
+                <string name="termux_terminal_view_font_size_title">Font size</string>
+                <string name="termux_terminal_view_font_size_summary">Terminal font size (8–24)</string>
 
                 <!-- Terminal View Margin Adjustment -->
                 <string name="termux_terminal_view_terminal_margin_adjustment_title">Terminal Margin Adjustment</string>
@@ -239,8 +248,33 @@
 
     <!-- About Preference -->
     <string name="about_preference_title">About</string>
+    <string name="about_fable_header">## Fable（寓言）</string>
+    <string name="about_fable_description">A private Android terminal with its own rendering core.</string>
 
     <!-- Donate Preference -->
     <string name="donate_preference_title">Donate</string>
+
+    <!-- Recent Sessions -->
+    <string name="recent_sessions_title">Recent sessions</string>
+    <string name="msg_recent_session_removed">Removed recent session record</string>
+    <string name="msg_session_exited">exited</string>
+    <string name="msg_session_null">null session</string>
+
+    <!-- Extra Keys Errors -->
+    <string name="error_load_extra_keys_property">Could not load and set the "%1$s" property from the properties file: %2$s</string>
+    <string name="error_create_default_extra_keys">Could not create default extra keys</string>
+
+    <!-- File Receiver Errors -->
+    <string name="error_send_action_without_content">Send action without content - nothing to save.</string>
+    <string name="error_data_uri_not_passed">Data uri not passed.</string>
+    <string name="error_file_path_invalid">File path from data uri is null, empty or invalid.</string>
+    <string name="error_cannot_open_file">Cannot open file: %1$s.</string>
+    <string name="error_unable_to_receive_file_or_url">Unable to receive any file or URL.</string>
+    <string name="error_unable_to_handle_shared_content">Unable to handle shared content:\n\n%1$s</string>
+    <string name="error_file_editor_missing">The following file does not exist:\n$HOME/bin/termux-file-editor\n\nCreate this file as a script or a symlink - it will be called with the received file as only argument.</string>
+    <string name="error_file_name_null">File name cannot be null or empty</string>
+    <string name="error_cannot_create_directory">Cannot create directory: %1$s</string>
+    <string name="error_saving_file">Error saving file:\n\n%1$s</string>
+    <string name="error_url_opener_missing">The following file does not exist:\n$HOME/bin/termux-url-opener\n\nCreate this file as a script or a symlink - it will be called with the shared URL as the first argument.</string>
 
 </resources>

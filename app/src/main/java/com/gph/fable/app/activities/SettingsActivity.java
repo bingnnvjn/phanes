@@ -2,7 +2,6 @@ package com.gph.fable.app.activities;
 
 import android.content.Context;
 import android.os.Bundle;
-import android.os.Environment;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
@@ -14,17 +13,13 @@ import com.gph.fable.shared.activities.ReportActivity;
 import com.gph.fable.shared.file.FileUtils;
 import com.gph.fable.shared.models.ReportInfo;
 import com.gph.fable.app.models.UserAction;
-import com.gph.fable.shared.interact.ShareUtils;
-import com.gph.fable.shared.android.PackageUtils;
-import com.gph.fable.shared.termux.settings.preferences.TermuxAPIAppSharedPreferences;
-import com.gph.fable.shared.termux.settings.preferences.TermuxFloatAppSharedPreferences;
-import com.gph.fable.shared.termux.settings.preferences.TermuxTaskerAppSharedPreferences;
-import com.gph.fable.shared.termux.settings.preferences.TermuxWidgetAppSharedPreferences;
 import com.gph.fable.shared.android.AndroidUtils;
 import com.gph.fable.shared.termux.TermuxConstants;
 import com.gph.fable.shared.termux.TermuxUtils;
 import com.gph.fable.shared.activity.media.AppCompatActivityUtils;
-import com.gph.fable.shared.theme.NightMode;
+import com.gph.fable.shared.termux.theme.TermuxThemeUtils;
+
+import android.os.Environment;
 
 public class SettingsActivity extends AppCompatActivity {
 
@@ -32,7 +27,9 @@ public class SettingsActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        AppCompatActivityUtils.setNightMode(this, NightMode.getAppNightMode().getName(), true);
+        String themeMode = TermuxThemeUtils.getThemeMode(this, null);
+        TermuxThemeUtils.setAppNightMode(themeMode);
+        AppCompatActivityUtils.setNightMode(this, themeMode, true);
 
         setContentView(R.layout.activity_settings);
         if (savedInstanceState == null) {
@@ -63,50 +60,9 @@ public class SettingsActivity extends AppCompatActivity {
             new Thread() {
                 @Override
                 public void run() {
-                    configureTermuxAPIPreference(context);
-                    configureTermuxFloatPreference(context);
-                    configureTermuxTaskerPreference(context);
-                    configureTermuxWidgetPreference(context);
                     configureAboutPreference(context);
-                    configureDonatePreference(context);
                 }
             }.start();
-        }
-
-        private void configureTermuxAPIPreference(@NonNull Context context) {
-            Preference termuxAPIPreference = findPreference("termux_api");
-            if (termuxAPIPreference != null) {
-                TermuxAPIAppSharedPreferences preferences = TermuxAPIAppSharedPreferences.build(context, false);
-                // If failed to get app preferences, then likely app is not installed, so do not show its preference
-                termuxAPIPreference.setVisible(preferences != null);
-            }
-        }
-
-        private void configureTermuxFloatPreference(@NonNull Context context) {
-            Preference termuxFloatPreference = findPreference("termux_float");
-            if (termuxFloatPreference != null) {
-                TermuxFloatAppSharedPreferences preferences = TermuxFloatAppSharedPreferences.build(context, false);
-                // If failed to get app preferences, then likely app is not installed, so do not show its preference
-                termuxFloatPreference.setVisible(preferences != null);
-            }
-        }
-
-        private void configureTermuxTaskerPreference(@NonNull Context context) {
-            Preference termuxTaskerPreference = findPreference("termux_tasker");
-            if (termuxTaskerPreference != null) {
-                TermuxTaskerAppSharedPreferences preferences = TermuxTaskerAppSharedPreferences.build(context, false);
-                // If failed to get app preferences, then likely app is not installed, so do not show its preference
-                termuxTaskerPreference.setVisible(preferences != null);
-            }
-        }
-
-        private void configureTermuxWidgetPreference(@NonNull Context context) {
-            Preference termuxWidgetPreference = findPreference("termux_widget");
-            if (termuxWidgetPreference != null) {
-                TermuxWidgetAppSharedPreferences preferences = TermuxWidgetAppSharedPreferences.build(context, false);
-                // If failed to get app preferences, then likely app is not installed, so do not show its preference
-                termuxWidgetPreference.setVisible(preferences != null);
-            }
         }
 
         private void configureAboutPreference(@NonNull Context context) {
@@ -116,12 +72,13 @@ public class SettingsActivity extends AppCompatActivity {
                     new Thread() {
                         @Override
                         public void run() {
-                            String title = "About";
+                            String title = context.getString(R.string.about_preference_title);
 
                             StringBuilder aboutString = new StringBuilder();
-                            aboutString.append(TermuxUtils.getAppInfoMarkdownString(context, TermuxUtils.AppInfoMode.TERMUX_AND_PLUGIN_PACKAGES));
+                            aboutString.append(context.getString(R.string.about_fable_header)).append("\n\n");
+                            aboutString.append(context.getString(R.string.about_fable_description)).append("\n\n");
+                            aboutString.append(TermuxUtils.getAppInfoMarkdownString(context, TermuxUtils.AppInfoMode.TERMUX_PACKAGE));
                             aboutString.append("\n\n").append(AndroidUtils.getDeviceInfoMarkdownString(context, true));
-                            aboutString.append("\n\n").append(TermuxUtils.getImportantLinksMarkdownString(context));
 
                             String userActionName = UserAction.ABOUT.getName();
 
@@ -136,30 +93,6 @@ public class SettingsActivity extends AppCompatActivity {
                         }
                     }.start();
 
-                    return true;
-                });
-            }
-        }
-
-        private void configureDonatePreference(@NonNull Context context) {
-            Preference donatePreference = findPreference("donate");
-            if (donatePreference != null) {
-                String signingCertificateSHA256Digest = PackageUtils.getSigningCertificateSHA256DigestForPackage(context);
-                if (signingCertificateSHA256Digest != null) {
-                    // If APK is a Google Playstore release, then do not show the donation link
-                    // since Termux isn't exempted from the playstore policy donation links restriction
-                    // Check Fund solicitations: https://pay.google.com/intl/en_in/about/policy/
-                    String apkRelease = TermuxUtils.getAPKRelease(signingCertificateSHA256Digest);
-                    if (apkRelease == null || apkRelease.equals(TermuxConstants.APK_RELEASE_GOOGLE_PLAYSTORE_SIGNING_CERTIFICATE_SHA256_DIGEST)) {
-                        donatePreference.setVisible(false);
-                        return;
-                    } else {
-                        donatePreference.setVisible(true);
-                    }
-                }
-
-                donatePreference.setOnPreferenceClickListener(preference -> {
-                    ShareUtils.openUrl(context, TermuxConstants.TERMUX_DONATE_URL);
                     return true;
                 });
             }

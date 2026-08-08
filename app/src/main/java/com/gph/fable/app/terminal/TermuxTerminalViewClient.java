@@ -104,6 +104,9 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
         // Piggyback on the terminal view key logging toggle for now, should add a separate toggle in future
         mActivity.getTermuxActivityRootView().setIsRootViewLoggingEnabled(isTerminalViewKeyLoggingEnabled);
         ViewUtils.setIsViewUtilsLoggingEnabled(isTerminalViewKeyLoggingEnabled);
+
+        // 设置页可能改了字号：回前台时重新应用（新路径走 CoreAdapter.setFontSize）。
+        mActivity.getTerminalView().setTextSize(mActivity.getPreferences().getFontSize());
     }
 
     /**

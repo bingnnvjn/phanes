@@ -72,6 +72,7 @@ package com.gph.fable.shared.termux.settings.preferences;
  */
 
 import com.gph.fable.shared.shell.command.ExecutionCommand;
+import com.gph.fable.shared.theme.NightMode;
 
 /**
  * A class that defines shared constants of the SharedPreferences used by Termux app and its plugins.
@@ -135,6 +136,12 @@ public final class TermuxPreferenceConstants {
          * Defines the key for current termux terminal session.
          */
         public static final String KEY_CURRENT_SESSION = "current_session";
+
+        /**
+         * Defines the key for Fable 界面主题（跟随系统/浅色/深色，工单 04）。
+         */
+        public static final String KEY_FABLE_THEME_MODE = "fable_theme_mode";
+        public static final String DEFAULT_VALUE_FABLE_THEME_MODE = NightMode.SYSTEM.getName();
 
 
         /**

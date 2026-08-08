@@ -179,6 +179,29 @@ public class TermuxAppSharedPreferences extends AppSharedPreferences {
         SharedPreferenceUtils.setString(mSharedPreferences, TERMUX_APP.KEY_CURRENT_SESSION, value, false);
     }
 
+    /** 界面主题模式：system/light/dark；未设置过返回 null（回退 termux.properties night-mode）。 */
+    @Nullable
+    public String getThemeMode() {
+        return SharedPreferenceUtils.getString(mSharedPreferences, TERMUX_APP.KEY_FABLE_THEME_MODE, null, true);
+    }
+
+    /** 设置界面主题模式：system/light/dark。 */
+    public void setThemeMode(String value) {
+        SharedPreferenceUtils.setString(mSharedPreferences, TERMUX_APP.KEY_FABLE_THEME_MODE, value, false);
+    }
+
+    /** 字号（dp 视角，供设置页滑块显示；存量值按 px/density 换算保持兼容）。 */
+    public int getFontSizeDp(Context context) {
+        float density = context.getResources().getDisplayMetrics().density;
+        return Math.round(getFontSize() / density);
+    }
+
+    /** 设置字号（dp → px 存储，与既有 KEY_FONTSIZE px 语义一致）。 */
+    public void setFontSizeDp(Context context, int sizeDp) {
+        float density = context.getResources().getDisplayMetrics().density;
+        setFontSize(Math.round(sizeDp * density));
+    }
+
 
 
     public int getLogLevel() {

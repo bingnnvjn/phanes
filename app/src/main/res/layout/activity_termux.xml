@@ -70,9 +70,32 @@
                     android:layout_width="match_parent"
                     android:layout_height="0dp"
                     android:layout_gravity="top"
-                    android:layout_weight="1"
+                    android:layout_weight="0.65"
                     android:choiceMode="singleChoice"
                     android:longClickable="true" />
+
+                <TextView
+                    android:id="@+id/recent_sessions_header"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="2dp"
+                    android:text="@string/recent_sessions_title"
+                    android:textColor="?android:attr/textColorSecondary"
+                    android:textSize="12sp"
+                    android:visibility="gone"
+                    tools:ignore="RtlHardcoded" />
+
+                <ListView
+                    android:id="@+id/recent_sessions_list"
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="0.35"
+                    android:choiceMode="singleChoice"
+                    android:longClickable="true"
+                    android:visibility="gone" />
 
                 <LinearLayout
                     style="?android:attr/buttonBarStyle"
