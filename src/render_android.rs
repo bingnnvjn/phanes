@@ -1714,6 +1714,12 @@ impl RowVertexStore {
         width_px: u32,
         height_px: u32,
     ) -> (u64, usize) {
+        if row >= snapshot.lines.len() {
+            // 快照行缺失（瞬态 reflow/缩放），本行不重建，避免越界 panic。
+            self.row_counts[row] = 0;
+            let (offset, _) = self.row_byte_range(row);
+            return (offset, 0);
+        }
         let vertices = build_row_vertices(row, &snapshot.lines[row], snapshot, atlas, width_px, height_px);
         self.row_counts[row] = vertices.len();
         let (offset, len) = self.row_byte_range(row);
@@ -2958,6 +2964,15 @@ impl RendererCore {
         }
 
         let mut snapshot = self.current_snapshot();
+        // 快照行数不足 rows（瞬态 reflow/缩放/滚动）：保留上一帧，避免整屏空白或越界。
+        if snapshot.lines.len() < snapshot.rows as usize {
+            self.last_error = format!(
+                "incomplete snapshot: {} lines < {} rows",
+                snapshot.lines.len(),
+                snapshot.rows
+            );
+            return false;
+        }
         if let Some(palette) = self.palette {
             apply_palette(&mut snapshot, palette);
         }
@@ -3063,6 +3078,15 @@ impl RendererCore {
             return false;
         }
         let draw_ranges = store.draw_ranges();
+        if draw_ranges.iter().all(|(_, count)| *count == 0)
+            && self.last_vertex_count > 0
+            && dirty == DIRTY_FALSE
+        {
+            // 内容未变却全帧无顶点（选择/滚动触发的异常帧）：保留上一帧，
+            // 不画纯背景；正常清屏（dirty=FULL）仍放行。
+            self.last_error = "empty frame (no vertices)".to_string();
+            return false;
+        }
         self.last_vertex_count = draw_ranges.iter().map(|(_, count)| *count as usize).sum();
         match gpu.render_terminal(
             &draw_ranges,
