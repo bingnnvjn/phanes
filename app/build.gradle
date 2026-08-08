@@ -17,7 +17,8 @@ ext {
     bootstrapMaxRelease = packageVariant == "apt-android-5" ? "6.0" : null
 
     buildMinSdk = bootstrapMinSdk
-    buildTargetSdk = 28
+    // 工单 05：28 -> 35（Android 15 行为生效面）。compileSdk 36 / minSdk 24 不变。
+    buildTargetSdk = 35
 }
 
 android {

@@ -6,6 +6,7 @@ import android.app.Activity;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.net.Uri;
@@ -21,11 +22,13 @@ import androidx.core.content.ContextCompat;
 
 import com.google.common.base.Joiner;
 import com.gph.fable.shared.R;
+import com.gph.fable.shared.settings.preferences.SharedPreferenceUtils;
 import com.gph.fable.shared.file.FileUtils;
 import com.gph.fable.shared.logger.Logger;
 import com.gph.fable.shared.errors.Error;
 import com.gph.fable.shared.errors.FunctionErrno;
 import com.gph.fable.shared.activity.ActivityUtils;
+import com.gph.fable.shared.termux.TermuxConstants;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -39,7 +42,72 @@ public class PermissionUtils {
     public static final int REQUEST_DISABLE_BATTERY_OPTIMIZATIONS = 2000;
     public static final int REQUEST_GRANT_DISPLAY_OVER_OTHER_APPS_PERMISSION = 2001;
 
+    /** 工单 05：通知运行时权限（API 33+，Android 13 引入 POST_NOTIFICATIONS）。 */
+    public static final int REQUEST_NOTIFICATION_PERMISSION = 1001;
+
     private static final String LOG_TAG = "PermissionUtils";
+
+    /** 是否已向用户弹过一次通知权限请求（尊重用户选择，不反复打扰）。 */
+    private static final String PREF_NOTIFICATION_PERMISSION_ASKED = "notification_permission_asked_before";
+
+
+    /**
+     * 通知权限请求策略（纯逻辑，供单测）。
+     *
+     * 规则：已授权 → 不再请求；未授权但已问过 → 不再自动弹窗（用户可去系统设置开启；
+     * Android 15 上权限被撤销/用户划掉通知时同样走此分支，只降级不打断会话）；
+     * 未授权且未问过 → 请求一次。
+     *
+     * @param permissionGranted 当前 POST_NOTIFICATIONS 授权状态。
+     * @param askedBefore 本 App 是否已向用户弹过通知权限请求。
+     * @return 是否应该请求通知权限。
+     */
+    public static boolean shouldRequestNotificationPermission(boolean permissionGranted, boolean askedBefore) {
+        return !permissionGranted && !askedBefore;
+    }
+
+    /**
+     * 检查通知权限是否已授予。API 33 以下不存在该运行时权限，视为已授予。
+     */
+    public static boolean isNotificationPermissionGranted(@NonNull Context context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true;
+        return checkPermission(context, Manifest.permission.POST_NOTIFICATIONS);
+    }
+
+    /**
+     * 请求通知权限（仅 API 33+ 且满足 {@link #shouldRequestNotificationPermission} 时弹窗）。
+     * 未授权时不抛异常：前台服务仍可运行，只是通知被系统隐藏（降级，不打断会话）。
+     *
+     * @param context 必须为 {@link Activity} 或 {@link AppCompatActivity}。
+     */
+    @RequiresApi(api = Build.VERSION_CODES.TIRAMISU)
+    public static void requestNotificationPermission(@NonNull Context context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return;
+        boolean permissionGranted = isNotificationPermissionGranted(context);
+        if (permissionGranted) return;
+        if (!shouldRequestNotificationPermission(permissionGranted, isNotificationPermissionAskedBefore(context))) return;
+
+        if (requestPermission(context, Manifest.permission.POST_NOTIFICATIONS, REQUEST_NOTIFICATION_PERMISSION)) {
+            markNotificationPermissionAsked(context);
+        }
+    }
+
+    /** 是否已向用户弹过一次通知权限请求（记录在共享偏好中，跨启动保持）。 */
+    public static boolean isNotificationPermissionAskedBefore(@NonNull Context context) {
+        SharedPreferences preferences = getNotificationPermissionPreferences(context);
+        return preferences.getBoolean(PREF_NOTIFICATION_PERMISSION_ASKED, false);
+    }
+
+    /** 记录"已弹过通知权限请求"。 */
+    public static void markNotificationPermissionAsked(@NonNull Context context) {
+        SharedPreferences preferences = getNotificationPermissionPreferences(context);
+        preferences.edit().putBoolean(PREF_NOTIFICATION_PERMISSION_ASKED, true).apply();
+    }
+
+    private static SharedPreferences getNotificationPermissionPreferences(@NonNull Context context) {
+        return SharedPreferenceUtils.getPrivateSharedPreferences(context,
+            TermuxConstants.TERMUX_DEFAULT_PREFERENCES_FILE_BASENAME_WITHOUT_EXTENSION);
+    }
 
 
     /**

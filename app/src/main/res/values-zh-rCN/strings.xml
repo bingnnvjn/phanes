@@ -74,6 +74,7 @@
     <string name="notification_action_exit">退出</string>
     <string name="notification_action_wake_lock">获取唤醒锁</string>
     <string name="notification_action_wake_unlock">释放唤醒锁</string>
+    <string name="msg_notification_permission_denied">通知权限未授予：会话仍会在后台继续运行，但状态栏通知被系统隐藏。可在系统设置中重新开启通知。</string>
 
     <!-- TermuxService -->
     <string name="error_display_over_other_apps_permission_not_granted_to_start_terminal">Fable 需要“显示在其他应用上层”权限才能在 Android 10 及以上从后台启动终端会话。请在 设置 → 应用 → Fable → 高级 中授予。</string>

@@ -27,6 +27,10 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- 工单 05：Android 13+ 通知运行时权限（前台服务通知依赖它，未授权仅隐藏通知不中断会话） -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 工单 05：Android 14+ 前台服务类型 specialUse 所需权限（normal 级，安装即授予） -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.READ_LOGS" />
@@ -235,12 +239,24 @@
 
         <service
             android:name=".app.TermuxService"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="specialUse"
+            tools:targetApi="q">
+            <!-- 工单 05：specialUse 类型必须声明子类型说明（Android 14+ 要求） -->
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="@string/fgs_special_use_subtype" />
+        </service>
 
         <service
             android:name=".app.RunCommandService"
             android:exported="true"
-            android:permission="${TERMUX_PACKAGE_NAME}.permission.RUN_COMMAND">
+            android:foregroundServiceType="specialUse"
+            android:permission="${TERMUX_PACKAGE_NAME}.permission.RUN_COMMAND"
+            tools:targetApi="q">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="@string/fgs_special_use_subtype" />
             <intent-filter>
                 <action android:name="${TERMUX_PACKAGE_NAME}.RUN_COMMAND" />
             </intent-filter>

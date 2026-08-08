@@ -109,6 +109,11 @@
     <string name="notification_action_wake_lock">Acquire wakelock</string>
     <string name="notification_action_wake_unlock">Release wakelock</string>
 
+    <!-- 工单 05：specialUse 前台服务子类型说明（Android 14+ 要求 PROPERTY_SPECIAL_USE_FGS_SUBTYPE） -->
+    <!-- Manifest 引用，资源不能按语言变化，故标记不可翻译（lint MissingTranslation 豁免）。 -->
+    <string name="fgs_special_use_subtype" translatable="false">Terminal emulator: a long-running foreground service holding PTY sessions and background tasks so they survive backgrounding and screen lock. Not covered by other foreground service types (dataSync has a 6-hour/24-hour limit on Android 15).</string>
+    <string name="msg_notification_permission_denied">Notifications are off; sessions keep running in the background but the status-bar notification is hidden. You can re-enable notifications in system settings.</string>
+
 
 
     <!-- TermuxService -->

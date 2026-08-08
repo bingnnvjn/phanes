@@ -10,6 +10,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.view.ContextMenu;
@@ -71,6 +72,7 @@ import com.gph.fable.view.TerminalViewClient;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.viewpager.widget.ViewPager;
 
@@ -178,6 +180,9 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
      * If onResume() was called after onCreate().
      */
     private boolean mIsOnResumeAfterOnCreate = false;
+
+    /** 工单 05：通知权限拒绝提示只弹一次（进程内），避免每次回前台打扰。 */
+    private static boolean sNotificationPermissionDeniedToastShown = false;
 
     /**
      * If activity was restarted like due to call to {@link #recreate()} after receiving
@@ -314,6 +319,19 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
         if (mTermuxTerminalViewClient != null)
             mTermuxTerminalViewClient.onStart();
+
+        // 工单 05：Android 13+ 通知运行时权限。拒绝/被撤销只隐藏前台服务通知，
+        // 不中断会话（权限请求策略见 PermissionUtils#shouldRequestNotificationPermission）。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // 权限被撤销/此前拒绝：不打断会话，仅降级提示一次（进程内），用户可去系统设置开启。
+            if (!PermissionUtils.isNotificationPermissionGranted(this) &&
+                PermissionUtils.isNotificationPermissionAskedBefore(this) &&
+                !sNotificationPermissionDeniedToastShown) {
+                sNotificationPermissionDeniedToastShown = true;
+                Logger.logInfoAndShowToast(this, LOG_TAG, getString(R.string.msg_notification_permission_denied));
+            }
+            PermissionUtils.requestNotificationPermission(this);
+        }
 
         // 设置页可能改了界面主题/字号，回前台时重新应用（主题变化会触发 Activity 重建，
         // 会话由前台服务持有不丢）。
@@ -861,6 +879,13 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         Logger.logVerbose(LOG_TAG, "onRequestPermissionsResult: requestCode: " + requestCode + ", permissions: "  + Arrays.toString(permissions) + ", grantResults: "  + Arrays.toString(grantResults));
+        if (requestCode == PermissionUtils.REQUEST_NOTIFICATION_PERMISSION) {
+            if (!PermissionUtils.isNotificationPermissionGranted(this) && !sNotificationPermissionDeniedToastShown) {
+                sNotificationPermissionDeniedToastShown = true;
+                Logger.logInfoAndShowToast(this, LOG_TAG, getString(R.string.msg_notification_permission_denied));
+            }
+            return;
+        }
         if (requestCode == PermissionUtils.REQUEST_GRANT_STORAGE_PERMISSION) {
             requestStoragePermission(true);
         }
@@ -998,6 +1023,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     public static void updateTermuxActivityStyling(Context context, boolean recreateActivity) {
         // Make sure that terminal styling is always applied.
         Intent stylingIntent = new Intent(TERMUX_ACTIVITY.ACTION_RELOAD_STYLE);
+        // 工单 05：targetSdk 34+ 对动态注册的非导出接收器，发送方须用显式广播（仅本 App 内部使用）。
+        stylingIntent.setPackage(context.getPackageName());
         stylingIntent.putExtra(TERMUX_ACTIVITY.EXTRA_RECREATE_ACTIVITY, recreateActivity);
         context.sendBroadcast(stylingIntent);
     }
@@ -1008,7 +1035,9 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         intentFilter.addAction(TERMUX_ACTIVITY.ACTION_RELOAD_STYLE);
         intentFilter.addAction(TERMUX_ACTIVITY.ACTION_REQUEST_PERMISSIONS);
 
-        registerReceiver(mTermuxActivityBroadcastReceiver, intentFilter);
+        // 工单 05：targetSdk 34+ 动态注册非系统广播必须指定导出标志；本接收器只收 App 内部广播。
+        ContextCompat.registerReceiver(this, mTermuxActivityBroadcastReceiver, intentFilter,
+            ContextCompat.RECEIVER_NOT_EXPORTED);
     }
 
     private void unregisterTermuxActivityBroadcastReceiver() {
