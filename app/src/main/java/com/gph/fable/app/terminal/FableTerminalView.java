@@ -4,6 +4,7 @@ import android.content.Context;
 import android.util.AttributeSet;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
+import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
 import com.gph.fable.app.terminal.adapter.FableRenderCoreAdapter;
@@ -125,6 +126,8 @@ public final class FableTerminalView extends FrameLayout {
         boolean visible;
         boolean surfaceReady;
         boolean hideRequested;
+        boolean autoRecreating;
+        int recreateAttempts;
         int widthPx;
         int heightPx;
         int cols = 80;
@@ -148,6 +151,8 @@ public final class FableTerminalView extends FrameLayout {
                     // surface 重建（ActionMode/输入法/窗口变化）后立即重挂，避免
                     // 一直停在分离状态导致整屏空白（fable-v1/04 选择空白遗留）。
                     surfaceReady = true;
+                    autoRecreating = false;
+                    recreateAttempts = 0;
                     FableDiagnostics.append("surfaceCreated");
                     if (host.mCurrentRender == SessionRender.this && visible) {
                         attachAndSize();
@@ -169,9 +174,10 @@ public final class FableTerminalView extends FrameLayout {
                 @Override
                 public void surfaceDestroyed(SurfaceHolder holder) {
                     surfaceReady = false;
-                    FableDiagnostics.append("surfaceDestroyed");
+                    FableDiagnostics.append("surfaceDestroyed attached=" + host.isAttachedToWindow()
+                        + " shown=" + host.isShown() + " vis=" + surfaceView.getVisibility());
                     adapter.detach();
-                    if (!hideRequested && host.isAttachedToWindow()
+                    if (!hideRequested && !autoRecreating && host.isAttachedToWindow()
                         && host.mCurrentRender == SessionRender.this) {
                         // surface 意外销毁（选择/输入法/窗口变化）：自动重建，不等用户唤醒。
                         host.postDelayed(SessionRender.this::autoRecreateSurface, 120);
@@ -256,9 +262,25 @@ public final class FableTerminalView extends FrameLayout {
                 || host.mCurrentRender != SessionRender.this) {
                 return;
             }
-            FableDiagnostics.append("autoRecreateSurface");
-            surfaceView.setVisibility(GONE);
-            surfaceView.setVisibility(VISIBLE);
+            autoRecreating = true;
+            recreateAttempts++;
+            FableDiagnostics.append("autoRecreateSurface attempt=" + recreateAttempts);
+            // GONE→VISIBLE 同帧对撞不会触发重建；removeView+addView 强制 surface 重造。
+            ViewGroup.LayoutParams layoutParams = surfaceView.getLayoutParams();
+            host.removeView(surfaceView);
+            host.addView(surfaceView, 0, layoutParams);
+            if (recreateAttempts < 3) {
+                host.postDelayed(() -> {
+                    if (!surfaceReady && !hideRequested && visible && host.isAttachedToWindow()
+                        && host.mCurrentRender == SessionRender.this) {
+                        autoRecreateSurface();
+                    } else {
+                        autoRecreating = false;
+                    }
+                }, 300);
+            } else {
+                autoRecreating = false;
+            }
         }
     }
 }
