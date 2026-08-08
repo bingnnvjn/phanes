@@ -4,6 +4,7 @@
  */
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -101,6 +102,15 @@ int fable_pty_read(int64_t handle, uint8_t *buf, size_t len) {
   ssize_t n = read(pty->master, buf, len);
   if (n < 0) return -1;
   return (int)n;
+}
+
+/* 离屏/端到端检查用：当前是否有可读数据（非阻塞，0 超时）。 */
+int fable_pty_read_ready(int64_t handle) {
+  FablePty *pty = (FablePty *)(uintptr_t)handle;
+  if (!pty) return 0;
+  struct pollfd pfd = {.fd = pty->master, .events = POLLIN};
+  int r = poll(&pfd, 1, 0);
+  return r > 0 ? 1 : 0;
 }
 
 int fable_pty_write(int64_t handle, const uint8_t *data, size_t len) {
