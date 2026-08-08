@@ -5,15 +5,15 @@ import android.os.Bundle;
 
 import androidx.annotation.Keep;
 import androidx.preference.PreferenceDataStore;
-import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.PreferenceManager;
 
 import com.gph.fable.R;
+import com.gph.fable.app.fragments.settings.FablePreferenceFragment;
 import com.gph.fable.shared.termux.settings.preferences.TermuxPreferenceConstants;
 import com.gph.fable.shared.termux.settings.preferences.TermuxAppSharedPreferences;
 
 @Keep
-public class TerminalViewPreferencesFragment extends PreferenceFragmentCompat {
+public class TerminalViewPreferencesFragment extends FablePreferenceFragment {
 
     @Override
     public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {

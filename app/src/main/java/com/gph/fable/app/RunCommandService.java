@@ -261,7 +261,7 @@ public class RunCommandService extends Service {
         // Build the notification
         Notification.Builder builder =  NotificationUtils.geNotificationBuilder(this,
             TermuxConstants.TERMUX_RUN_COMMAND_NOTIFICATION_CHANNEL_ID, Notification.PRIORITY_LOW,
-            TermuxConstants.TERMUX_RUN_COMMAND_NOTIFICATION_CHANNEL_NAME, null, null,
+            getString(R.string.termux_run_command_notification_channel_name), null, null,
             null, null, NotificationUtils.NOTIFICATION_MODE_SILENT);
         if (builder == null)  return null;
 
@@ -281,7 +281,7 @@ public class RunCommandService extends Service {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
 
         NotificationUtils.setupNotificationChannel(this, TermuxConstants.TERMUX_RUN_COMMAND_NOTIFICATION_CHANNEL_ID,
-            TermuxConstants.TERMUX_RUN_COMMAND_NOTIFICATION_CHANNEL_NAME, NotificationManager.IMPORTANCE_LOW);
+            getString(R.string.termux_run_command_notification_channel_name), NotificationManager.IMPORTANCE_LOW);
     }
 
 }

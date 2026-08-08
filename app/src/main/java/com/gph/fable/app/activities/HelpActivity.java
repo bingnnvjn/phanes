@@ -8,12 +8,14 @@ import android.view.ViewGroup;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.FrameLayout;
 import android.widget.ProgressBar;
 import android.widget.RelativeLayout;
 
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.gph.fable.shared.termux.TermuxConstants;
+import com.gph.fable.shared.view.SystemBarInsets;
 
 /** Basic embedded browser for viewing help pages. */
 public final class HelpActivity extends AppCompatActivity {
@@ -35,7 +37,16 @@ public final class HelpActivity extends AppCompatActivity {
         mWebView = new WebView(this);
         WebSettings settings = mWebView.getSettings();
         settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
+
+        // 工单 05：WebView 自身不按 padding 布局网页内容，insets 必须加在外层容器上。
+        final FrameLayout webViewContainer = new FrameLayout(this);
+        webViewContainer.addView(mWebView, new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        SystemBarInsets.applyAllSystemBarInsets(webViewContainer);
+
         setContentView(progressLayout);
+        // 工单 05：edge-to-edge——加载页与帮助页都避让状态栏/手势条。
+        SystemBarInsets.applyAllSystemBarInsets(progressLayout);
         mWebView.clearCache(true);
 
         mWebView.setWebViewClient(new WebViewClient() {
@@ -59,7 +70,7 @@ public final class HelpActivity extends AppCompatActivity {
 
             @Override
             public void onPageFinished(WebView view, String url) {
-                setContentView(mWebView);
+                setContentView(webViewContainer);
             }
         });
         mWebView.loadUrl(TermuxConstants.TERMUX_WIKI_URL);

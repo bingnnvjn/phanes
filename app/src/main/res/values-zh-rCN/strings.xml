@@ -76,6 +76,21 @@
     <string name="notification_action_wake_unlock">释放唤醒锁</string>
     <string name="msg_notification_permission_denied">通知权限未授予：会话仍会在后台继续运行，但状态栏通知被系统隐藏。可在系统设置中重新开启通知。</string>
 
+    <!-- 工单 05：前台服务通知正文（汉化） -->
+    <plurals name="notification_sessions_count">
+        <item quantity="one">%d 个会话</item>
+        <item quantity="other">%d 个会话</item>
+    </plurals>
+    <plurals name="notification_tasks_count">
+        <item quantity="one">%d 个任务</item>
+        <item quantity="other">%d 个任务</item>
+    </plurals>
+    <string name="notification_wake_lock_held">（已持有唤醒锁）</string>
+
+    <!-- 工单 05：通知渠道名（用户可见，随 locale 翻译） -->
+    <string name="termux_app_notification_channel_name">Fable 前台服务</string>
+    <string name="termux_run_command_notification_channel_name">Fable 命令执行</string>
+
     <!-- TermuxService -->
     <string name="error_display_over_other_apps_permission_not_granted_to_start_terminal">Fable 需要“显示在其他应用上层”权限才能在 Android 10 及以上从后台启动终端会话。请在 设置 → 应用 → Fable → 高级 中授予。</string>
     <string name="error_termux_service_invalid_execution_command_runner">传给 TermuxService 的执行命令运行器无效：`%1$s`</string>

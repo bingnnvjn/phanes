@@ -18,6 +18,7 @@ import com.gph.fable.shared.data.DataUtils;
 import com.gph.fable.shared.errors.Error;
 import com.gph.fable.shared.file.FileUtils;
 import com.gph.fable.shared.logger.Logger;
+import com.gph.fable.shared.R;
 import com.gph.fable.shared.markdown.MarkdownUtils;
 import com.gph.fable.shared.models.ReportInfo;
 import com.gph.fable.shared.notification.NotificationUtils;
@@ -134,7 +135,7 @@ public class TermuxCrashUtils implements CrashHandler.CrashHandlerClient {
      * If the crash log file exists and is not empty and
      * {@link TermuxPreferenceConstants.TERMUX_APP#KEY_CRASH_REPORT_NOTIFICATIONS_ENABLED} is
      * enabled, then a notification will be shown for the crash on the
-     * {@link TermuxConstants#TERMUX_CRASH_REPORTS_NOTIFICATION_CHANNEL_NAME} channel, otherwise nothing will be done.
+     * {@link TermuxConstants#TERMUX_CRASH_REPORTS_NOTIFICATION_CHANNEL_ID} channel, otherwise nothing will be done.
      *
      * After reading from the crash log file, it will be moved to {@link TermuxConstants#TERMUX_CRASH_LOG_BACKUP_FILE_PATH}.
      *
@@ -203,7 +204,7 @@ public class TermuxCrashUtils implements CrashHandler.CrashHandlerClient {
 
     /**
      * Send a crash report notification for {@link TermuxConstants#TERMUX_CRASH_REPORTS_NOTIFICATION_CHANNEL_ID}
-     * and {@link TermuxConstants#TERMUX_CRASH_REPORTS_NOTIFICATION_CHANNEL_NAME}.
+     * and {@link TermuxConstants#TERMUX_CRASH_REPORTS_NOTIFICATION_CHANNEL_ID}.
      *
      * @param currentPackageContext The {@link Context} of current package.
      * @param logTag The log tag to use for logging.
@@ -221,7 +222,7 @@ public class TermuxCrashUtils implements CrashHandler.CrashHandlerClient {
 
     /**
      * Send a crash report notification for {@link TermuxConstants#TERMUX_CRASH_REPORTS_NOTIFICATION_CHANNEL_ID}
-     * and {@link TermuxConstants#TERMUX_CRASH_REPORTS_NOTIFICATION_CHANNEL_NAME}.
+     * and {@link TermuxConstants#TERMUX_CRASH_REPORTS_NOTIFICATION_CHANNEL_ID}.
      *
      * @param currentPackageContext The {@link Context} of current package.
      * @param logTag The log tag to use for logging.
@@ -239,7 +240,7 @@ public class TermuxCrashUtils implements CrashHandler.CrashHandlerClient {
 
     /**
      * Send a crash report notification for {@link TermuxConstants#TERMUX_CRASH_REPORTS_NOTIFICATION_CHANNEL_ID}
-     * and {@link TermuxConstants#TERMUX_CRASH_REPORTS_NOTIFICATION_CHANNEL_NAME}.
+     * and {@link TermuxConstants#TERMUX_CRASH_REPORTS_NOTIFICATION_CHANNEL_ID}.
      *
      * @param currentPackageContext The {@link Context} of current package.
      * @param logTag The log tag to use for logging.
@@ -265,7 +266,7 @@ public class TermuxCrashUtils implements CrashHandler.CrashHandlerClient {
 
     /**
      * Send a crash report notification for {@link TermuxConstants#TERMUX_CRASH_REPORTS_NOTIFICATION_CHANNEL_ID}
-     * and {@link TermuxConstants#TERMUX_CRASH_REPORTS_NOTIFICATION_CHANNEL_NAME}.
+     * and {@link TermuxConstants#TERMUX_CRASH_REPORTS_NOTIFICATION_CHANNEL_ID}.
      *
      * @param currentPackageContext The {@link Context} of current package.
      * @param logTag The log tag to use for logging.
@@ -372,7 +373,7 @@ public class TermuxCrashUtils implements CrashHandler.CrashHandlerClient {
 
     /**
      * Get {@link Notification.Builder} for {@link TermuxConstants#TERMUX_CRASH_REPORTS_NOTIFICATION_CHANNEL_ID}
-     * and {@link TermuxConstants#TERMUX_CRASH_REPORTS_NOTIFICATION_CHANNEL_NAME}.
+     * and {@link TermuxConstants#TERMUX_CRASH_REPORTS_NOTIFICATION_CHANNEL_ID}.
      *
      * @param currentPackageContext The {@link Context} of current package.
      * @param termuxPackageContext The {@link Context} of termux package.
@@ -401,14 +402,14 @@ public class TermuxCrashUtils implements CrashHandler.CrashHandlerClient {
 
     /**
      * Setup the notification channel for {@link TermuxConstants#TERMUX_CRASH_REPORTS_NOTIFICATION_CHANNEL_ID} and
-     * {@link TermuxConstants#TERMUX_CRASH_REPORTS_NOTIFICATION_CHANNEL_NAME}.
+     * {@link TermuxConstants#TERMUX_CRASH_REPORTS_NOTIFICATION_CHANNEL_ID}.
      *
      * @param context The {@link Context} for operations.
      */
     public static void setupCrashReportsNotificationChannel(final Context context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationUtils.setupNotificationChannel(context, TermuxConstants.TERMUX_CRASH_REPORTS_NOTIFICATION_CHANNEL_ID,
-            TermuxConstants.TERMUX_CRASH_REPORTS_NOTIFICATION_CHANNEL_NAME, NotificationManager.IMPORTANCE_HIGH);
+            context.getString(R.string.termux_crash_reports_notification_channel_name), NotificationManager.IMPORTANCE_HIGH);
     }
 
 }

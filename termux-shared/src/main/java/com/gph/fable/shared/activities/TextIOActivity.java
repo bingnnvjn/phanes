@@ -29,6 +29,7 @@ import com.gph.fable.shared.logger.Logger;
 import com.gph.fable.shared.R;
 import com.gph.fable.shared.models.TextIOInfo;
 import com.gph.fable.shared.view.KeyboardUtils;
+import com.gph.fable.shared.view.SystemBarInsets;
 
 import org.jetbrains.annotations.NotNull;
 
@@ -64,6 +65,8 @@ public class TextIOActivity extends AppCompatActivity {
         Logger.logVerbose(LOG_TAG, "onCreate");
 
         setContentView(R.layout.activity_text_io);
+        // 工单 05：edge-to-edge——文字编辑页避让状态栏/手势条。
+        SystemBarInsets.applyAllSystemBarInsets(findViewById(android.R.id.content));
 
         mTextIOLabel = findViewById(R.id.text_io_label);
         mTextIOLabelSeparator = findViewById(R.id.text_io_label_separator);

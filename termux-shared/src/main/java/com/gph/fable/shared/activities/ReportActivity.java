@@ -28,6 +28,7 @@ import com.gph.fable.shared.markdown.MarkdownUtils;
 import com.gph.fable.shared.interact.ShareUtils;
 import com.gph.fable.shared.models.ReportInfo;
 import com.gph.fable.shared.theme.NightMode;
+import com.gph.fable.shared.view.SystemBarInsets;
 
 import org.commonmark.node.FencedCodeBlock;
 import org.jetbrains.annotations.NotNull;
@@ -77,6 +78,9 @@ public class ReportActivity extends AppCompatActivity {
         AppCompatActivityUtils.setNightMode(this, NightMode.getAppNightMode().getName(), true);
 
         setContentView(R.layout.activity_report);
+        // 工单 05：edge-to-edge——顶部避让状态栏；报告列表底部避让手势条并可滑入其下。
+        SystemBarInsets.applyTopSystemBarInsets(findViewById(android.R.id.content));
+        SystemBarInsets.applyBottomNavigationBarInset(findViewById(R.id.recycler_view), false);
 
         Toolbar toolbar = findViewById(R.id.toolbar);
         if (toolbar != null) {

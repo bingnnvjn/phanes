@@ -114,6 +114,21 @@
     <string name="fgs_special_use_subtype" translatable="false">Terminal emulator: a long-running foreground service holding PTY sessions and background tasks so they survive backgrounding and screen lock. Not covered by other foreground service types (dataSync has a 6-hour/24-hour limit on Android 15).</string>
     <string name="msg_notification_permission_denied">Notifications are off; sessions keep running in the background but the status-bar notification is hidden. You can re-enable notifications in system settings.</string>
 
+    <!-- 工单 05：前台服务通知正文（汉化） -->
+    <plurals name="notification_sessions_count">
+        <item quantity="one">%d session</item>
+        <item quantity="other">%d sessions</item>
+    </plurals>
+    <plurals name="notification_tasks_count">
+        <item quantity="one">%d task</item>
+        <item quantity="other">%d tasks</item>
+    </plurals>
+    <string name="notification_wake_lock_held"> (wake lock held)</string>
+
+    <!-- 工单 05：通知渠道名（用户可见，随 locale 翻译） -->
+    <string name="termux_app_notification_channel_name">Fable foreground service</string>
+    <string name="termux_run_command_notification_channel_name">Fable command execution</string>
+
 
 
     <!-- TermuxService -->

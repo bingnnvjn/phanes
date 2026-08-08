@@ -5,14 +5,13 @@ import android.os.Bundle;
 
 import androidx.annotation.Keep;
 import androidx.preference.PreferenceDataStore;
-import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.PreferenceManager;
 
 import com.gph.fable.R;
 import com.gph.fable.shared.termux.settings.preferences.TermuxFloatAppSharedPreferences;
 
 @Keep
-public class TermuxFloatPreferencesFragment extends PreferenceFragmentCompat {
+public class TermuxFloatPreferencesFragment extends FablePreferenceFragment {
 
     @Override
     public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {

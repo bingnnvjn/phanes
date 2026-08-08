@@ -12,6 +12,7 @@ import com.google.common.primitives.Primitives;
 import com.gph.fable.shared.file.FileUtils;
 import com.gph.fable.shared.file.filesystem.FileType;
 import com.gph.fable.shared.logger.Logger;
+import com.gph.fable.shared.R;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -245,7 +246,9 @@ public class SharedProperties {
             }
         } catch (Exception e) {
             if (context != null)
-                Toast.makeText(context, "Could not open properties file \"" + propertiesFile.getAbsolutePath() + "\": " + e.getMessage(), Toast.LENGTH_LONG).show();
+                Toast.makeText(context,
+                    context.getString(R.string.error_could_not_open_properties_file, propertiesFile.getAbsolutePath(), e.getMessage()),
+                    Toast.LENGTH_LONG).show();
             Logger.logStackTraceWithMessage(LOG_TAG, "Error loading properties file \"" + propertiesFile.getAbsolutePath() + "\"", e);
             return null;
         }

@@ -28,6 +28,8 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.Locale;
 
+import com.gph.fable.shared.view.SystemBarInsets;
+
 /**
  * 工单 10 验证切片：SurfaceView + wgpu(Vulkan) 真机上屏 harness。
  *
@@ -164,6 +166,8 @@ public class RenderActivity extends Activity {
         root.addView(row3);
 
         setContentView(root);
+        // 工单 05：edge-to-edge——渲染 harness 也避让状态栏/手势条。
+        SystemBarInsets.applyAllSystemBarInsets(root);
     }
 
     private void addButton(LinearLayout row, String label, View.OnClickListener listener) {

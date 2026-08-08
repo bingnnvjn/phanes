@@ -34,6 +34,10 @@
     <string name="title_open_url_with">打开 URL 方式</string>
     <string name="msg_storage_permission_not_granted">未授予存储权限。</string>
     <string name="msg_file_saved_successfully">%1$s 文件已成功保存到 \"%2$s\"</string>
+    <!-- 工单 05：Toast 审计——属性文件加载错误改为资源文案（Fable 风格） -->
+    <string name="error_could_not_open_properties_file">无法打开属性文件 \"%1$s\"：%2$s</string>
+    <string name="termux_crash_reports_notification_channel_name">Fable 崩溃报告</string>
+    <string name="termux_plugin_command_errors_notification_channel_name">Fable 插件命令错误</string>
 
     <!-- Shell -->
     <string name="error_sending_sigkill_to_process">应请求向进程发送 SIGKILL，或因为 Android 正在结束执行服务</string>

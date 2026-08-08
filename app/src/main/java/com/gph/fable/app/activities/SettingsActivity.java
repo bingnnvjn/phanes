@@ -4,11 +4,15 @@ import android.content.Context;
 import android.os.Bundle;
 
 import androidx.annotation.NonNull;
+import androidx.fragment.app.Fragment;
+import androidx.fragment.app.FragmentManager;
+import androidx.fragment.app.FragmentTransaction;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceFragmentCompat;
 
 import com.gph.fable.R;
+import com.gph.fable.app.fragments.settings.FablePreferenceFragment;
 import com.gph.fable.shared.activities.ReportActivity;
 import com.gph.fable.shared.file.FileUtils;
 import com.gph.fable.shared.models.ReportInfo;
@@ -18,10 +22,11 @@ import com.gph.fable.shared.termux.TermuxConstants;
 import com.gph.fable.shared.termux.TermuxUtils;
 import com.gph.fable.shared.activity.media.AppCompatActivityUtils;
 import com.gph.fable.shared.termux.theme.TermuxThemeUtils;
+import com.gph.fable.shared.view.SystemBarInsets;
 
 import android.os.Environment;
 
-public class SettingsActivity extends AppCompatActivity {
+public class SettingsActivity extends AppCompatActivity implements PreferenceFragmentCompat.OnPreferenceStartFragmentCallback {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -32,6 +37,8 @@ public class SettingsActivity extends AppCompatActivity {
         AppCompatActivityUtils.setNightMode(this, themeMode, true);
 
         setContentView(R.layout.activity_settings);
+        // 工单 05：edge-to-edge 顶部避让状态栏（底部由设置列表自行适配，见 fragment onViewCreated）。
+        SystemBarInsets.applyTopSystemBarInsets(findViewById(android.R.id.content));
         if (savedInstanceState == null) {
             getSupportFragmentManager()
                 .beginTransaction()
@@ -43,13 +50,34 @@ public class SettingsActivity extends AppCompatActivity {
         AppCompatActivityUtils.setShowBackButtonInActionBar(this, true);
     }
 
+    /**
+     * 工单 05：设置子页面过渡动画。走系统提供的动画机制：
+     * {@link FragmentTransaction#TRANSIT_FRAGMENT_OPEN}（系统默认过渡）
+     * + {@code setReorderingAllowed(true)}（系统预测性返回动画）。
+     * 不写自定义动画。
+     */
+    @Override
+    public boolean onPreferenceStartFragment(PreferenceFragmentCompat caller, Preference pref) {
+        FragmentManager fragmentManager = getSupportFragmentManager();
+        Fragment fragment = fragmentManager.getFragmentFactory().instantiate(getClassLoader(), pref.getFragment());
+        fragment.setArguments(pref.getExtras());
+
+        FragmentTransaction transaction = fragmentManager.beginTransaction();
+        transaction.setReorderingAllowed(true);
+        transaction.setTransition(FragmentTransaction.TRANSIT_FRAGMENT_OPEN);
+        transaction.replace(R.id.settings, fragment);
+        transaction.addToBackStack(null);
+        transaction.commit();
+        return true;
+    }
+
     @Override
     public boolean onSupportNavigateUp() {
         onBackPressed();
         return true;
     }
 
-    public static class RootPreferencesFragment extends PreferenceFragmentCompat {
+    public static class RootPreferencesFragment extends FablePreferenceFragment {
         @Override
         public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
             Context context = getContext();

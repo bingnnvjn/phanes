@@ -80,4 +80,42 @@ public class Android15ManifestTest {
         Assert.assertTrue("activity_termux.xml root must keep android:fitsSystemWindows=\"true\"",
             text.contains("android:fitsSystemWindows=\"true\""));
     }
+
+    /**
+     * 工单 05：设置界面根背景用 colorBackground，edge-to-edge 下手势条区域与界面同色
+     * （不出现"底部一整排遮罩"）。
+     */
+    @Test
+    public void settings_root_uses_content_background() throws IOException {
+        File layout = new File("src/main/res/layout/activity_settings.xml");
+        Assert.assertTrue("Layout not found at " + layout.getAbsolutePath(), layout.isFile());
+        String text = new String(Files.readAllBytes(layout.toPath()), StandardCharsets.UTF_8);
+
+        Assert.assertTrue("activity_settings.xml root must use ?android:attr/colorBackground",
+            text.contains("android:background=\"?android:attr/colorBackground\""));
+    }
+
+    /**
+     * 工单 05：通知正文汉化——会话/任务复数资源在中英文资源文件中都存在。
+     */
+    @Test
+    public void notification_plurals_exist_in_default_and_zh_resources() throws IOException {
+        String values = readResourceFile("src/main/res/values/strings.xml");
+        String zh = readResourceFile("src/main/res/values-zh-rCN/strings.xml");
+
+        Assert.assertTrue("values/strings.xml missing notification_sessions_count",
+            values.contains("name=\"notification_sessions_count\""));
+        Assert.assertTrue("values/strings.xml missing notification_tasks_count",
+            values.contains("name=\"notification_tasks_count\""));
+        Assert.assertTrue("values-zh-rCN/strings.xml missing notification_sessions_count",
+            zh.contains("name=\"notification_sessions_count\""));
+        Assert.assertTrue("values-zh-rCN/strings.xml missing notification_tasks_count",
+            zh.contains("name=\"notification_tasks_count\""));
+    }
+
+    private String readResourceFile(String path) throws IOException {
+        File file = new File(path);
+        Assert.assertTrue("Resource file not found at " + file.getAbsolutePath(), file.isFile());
+        return new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+    }
 }

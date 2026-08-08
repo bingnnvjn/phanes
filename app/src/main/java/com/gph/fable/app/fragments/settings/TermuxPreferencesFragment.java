@@ -8,7 +8,6 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.preference.ListPreference;
 import androidx.preference.PreferenceDataStore;
-import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.PreferenceManager;
 
 import com.gph.fable.R;
@@ -18,7 +17,7 @@ import com.gph.fable.shared.termux.settings.preferences.TermuxAppSharedPreferenc
 import com.gph.fable.shared.termux.theme.TermuxThemeUtils;
 
 @Keep
-public class TermuxPreferencesFragment extends PreferenceFragmentCompat {
+public class TermuxPreferencesFragment extends FablePreferenceFragment {
 
     @Override
     public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {

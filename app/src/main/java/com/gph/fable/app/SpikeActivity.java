@@ -23,6 +23,8 @@ import java.nio.charset.StandardCharsets;
 import java.io.File;
 import java.util.ArrayList;
 
+import com.gph.fable.shared.view.SystemBarInsets;
+
 /**
  * 工单 08 验证切片：真机 harness（探针专用，非产品代码）。
  *
@@ -131,6 +133,8 @@ public class SpikeActivity extends Activity {
         root.addView(row);
 
         setContentView(root);
+        // 工单 05：edge-to-edge——探针 harness 也避让状态栏/手势条。
+        SystemBarInsets.applyAllSystemBarInsets(root);
     }
 
     private void addButton(LinearLayout row, String label, View.OnClickListener l) {

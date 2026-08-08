@@ -9,14 +9,14 @@ import androidx.annotation.Nullable;
 import androidx.preference.ListPreference;
 import androidx.preference.PreferenceCategory;
 import androidx.preference.PreferenceDataStore;
-import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.PreferenceManager;
 
 import com.gph.fable.R;
+import com.gph.fable.app.fragments.settings.FablePreferenceFragment;
 import com.gph.fable.shared.termux.settings.preferences.TermuxAPIAppSharedPreferences;
 
 @Keep
-public class DebuggingPreferencesFragment extends PreferenceFragmentCompat {
+public class DebuggingPreferencesFragment extends FablePreferenceFragment {
 
     @Override
     public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {

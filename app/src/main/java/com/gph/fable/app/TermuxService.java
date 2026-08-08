@@ -791,13 +791,14 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
         // Set notification text
         int sessionCount = getTermuxSessionsSize();
         int taskCount = mShellManager.mTermuxTasks.size();
-        String notificationText = sessionCount + " session" + (sessionCount == 1 ? "" : "s");
+        // 工单 05：通知正文汉化（会话/任务数量用复数资源，唤醒锁用字符串资源）。
+        String notificationText = res.getQuantityString(R.plurals.notification_sessions_count, sessionCount, sessionCount);
         if (taskCount > 0) {
-            notificationText += ", " + taskCount + " task" + (taskCount == 1 ? "" : "s");
+            notificationText += ", " + res.getQuantityString(R.plurals.notification_tasks_count, taskCount, taskCount);
         }
 
         final boolean wakeLockHeld = mWakeLock != null;
-        if (wakeLockHeld) notificationText += " (wake lock held)";
+        if (wakeLockHeld) notificationText += res.getString(R.string.notification_wake_lock_held);
 
 
         // Set notification priority
@@ -848,7 +849,7 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
 
         NotificationUtils.setupNotificationChannel(this, TermuxConstants.TERMUX_APP_NOTIFICATION_CHANNEL_ID,
-            TermuxConstants.TERMUX_APP_NOTIFICATION_CHANNEL_NAME, NotificationManager.IMPORTANCE_LOW);
+            getString(R.string.termux_app_notification_channel_name), NotificationManager.IMPORTANCE_LOW);
     }
 
     /** Update the shown foreground service notification after making any changes that affect it. */

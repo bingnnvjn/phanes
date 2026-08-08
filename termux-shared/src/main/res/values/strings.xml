@@ -65,6 +65,10 @@
     <string name="title_open_url_with">Open URL With</string>
     <string name="msg_storage_permission_not_granted">The storage permission not granted.</string>
     <string name="msg_file_saved_successfully">The %1$s file saved successfully at \"%2$s\"</string>
+    <!-- 工单 05：Toast 审计——属性文件加载错误改为资源文案（Fable 风格） -->
+    <string name="error_could_not_open_properties_file">Could not open properties file \"%1$s\": %2$s</string>
+    <string name="termux_crash_reports_notification_channel_name">Fable crash reports</string>
+    <string name="termux_plugin_command_errors_notification_channel_name">Fable plugin command errors</string>
 
 
 
