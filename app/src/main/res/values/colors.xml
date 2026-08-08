@@ -1,3 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+
+    <!-- 终端工具栏/扩展键行背景：浅色主题白、深色主题黑（values-night 覆盖）。 -->
+    <color name="terminal_toolbar_background">#FFFFFFFF</color>
+
 </resources>

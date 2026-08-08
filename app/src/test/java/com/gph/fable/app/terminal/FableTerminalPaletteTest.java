@@ -47,6 +47,8 @@ public class FableTerminalPaletteTest {
         assertEquals(0xFFFFFFFF, light.background);
         assertEquals(0xFFBBDEFB, light.selection);
         assertEquals(0xFF000000, light.cursor);
+        assertEquals(0xFFC50F1F, light.ansi[1]);
+        assertEquals(0xFF0037DA, light.ansi[4]);
     }
 
     @Test
@@ -63,8 +65,10 @@ public class FableTerminalPaletteTest {
         assertEquals(0xFF123456, palette.foreground);
         assertEquals(0xFFFF0000, palette.background);
         assertEquals(0xFFABCDEF, palette.cursor);
-        // 16 色不被缝 setPalette 使用（API 只支持 fg/bg/selection/cursor），保持核心默认。
+        // color5 进 ANSI 数组，其余按内置深色回退。
         assertEquals(0xFF335588, palette.selection);
+        assertEquals(0xFFFF00FF, palette.ansi[5]);
+        assertEquals(0xFFCD0000, palette.ansi[1]);
     }
 
     @Test
@@ -127,19 +131,24 @@ public class FableTerminalPaletteTest {
         RecordingAdapter supporting = new RecordingAdapter(true);
         FableTerminalPalette.apply(mTmpDir.getRoot().getAbsoluteFile(), supporting, true);
         assertEquals(1, supporting.mPalettePushes);
+        assertEquals(1, supporting.mAnsiPushes);
         assertEquals(0xFFFFFFFF, supporting.mFg);
         assertEquals(0xFF000000, supporting.mBg);
+        assertEquals(0xFFCD0000, supporting.mAnsi[1]);
 
         RecordingAdapter unsupported = new RecordingAdapter(false);
         FableTerminalPalette.apply(mTmpDir.getRoot().getAbsoluteFile(), unsupported, true);
         assertEquals(0, unsupported.mPalettePushes);
+        assertEquals(0, unsupported.mAnsiPushes);
     }
 
     private static final class RecordingAdapter implements CoreAdapter {
         final boolean mSupportsPalette;
         int mPalettePushes;
+        int mAnsiPushes;
         int mFg;
         int mBg;
+        int[] mAnsi;
 
         RecordingAdapter(boolean supportsPalette) {
             mSupportsPalette = supportsPalette;
@@ -150,6 +159,12 @@ public class FableTerminalPaletteTest {
             mPalettePushes++;
             mFg = fgArgb;
             mBg = bgArgb;
+        }
+
+        @Override
+        public void setAnsiPalette(int[] ansiArgb) {
+            mAnsiPushes++;
+            mAnsi = ansiArgb;
         }
 
         @Override

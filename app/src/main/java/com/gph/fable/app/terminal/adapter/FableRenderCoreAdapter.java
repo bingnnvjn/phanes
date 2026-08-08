@@ -30,6 +30,7 @@ public final class FableRenderCoreAdapter implements CoreAdapter {
     private int mBgArgb;
     private int mSelectionArgb;
     private int mCursorArgb;
+    private int[] mAnsiArgb;
 
     public FableRenderCoreAdapter(int cols, int rows) {
         mCols = Math.max(1, cols);
@@ -130,8 +131,37 @@ public final class FableRenderCoreAdapter implements CoreAdapter {
             mCursorArgb = cursorArgb;
         }
         if (handle != 0) {
-            RenderCore.rendererSetPalette(handle, fgArgb, bgArgb, selectionArgb, cursorArgb);
+            pushPalette(handle);
         }
+    }
+
+    @Override
+    public void setAnsiPalette(int[] ansiArgb) {
+        long handle;
+        synchronized (mLock) {
+            handle = mHandle;
+            mAnsiArgb = ansiArgb == null ? null : ansiArgb.clone();
+        }
+        // 只有已 push 过主配色板时才算完整配色（避免把 ANSI 单独发给未初始化状态）。
+        if (handle != 0 && mPaletteActive) {
+            pushPalette(handle);
+        }
+    }
+
+    private void pushPalette(long handle) {
+        int fgArgb;
+        int bgArgb;
+        int selectionArgb;
+        int cursorArgb;
+        int[] ansiArgb;
+        synchronized (mLock) {
+            fgArgb = mFgArgb;
+            bgArgb = mBgArgb;
+            selectionArgb = mSelectionArgb;
+            cursorArgb = mCursorArgb;
+            ansiArgb = mAnsiArgb;
+        }
+        RenderCore.rendererSetPalette16(handle, fgArgb, bgArgb, selectionArgb, cursorArgb, ansiArgb);
     }
 
     @Override
@@ -189,6 +219,7 @@ public final class FableRenderCoreAdapter implements CoreAdapter {
         int bgArgb;
         int selectionArgb;
         int cursorArgb;
+        int[] ansiArgb;
         Surface surface;
         int widthPx;
         int heightPx;
@@ -203,6 +234,7 @@ public final class FableRenderCoreAdapter implements CoreAdapter {
             bgArgb = mBgArgb;
             selectionArgb = mSelectionArgb;
             cursorArgb = mCursorArgb;
+            ansiArgb = mAnsiArgb;
             surface = mSurface;
             widthPx = mWidthPx;
             heightPx = mHeightPx;
@@ -216,7 +248,7 @@ public final class FableRenderCoreAdapter implements CoreAdapter {
         if (newHandle == 0) return;
         if (fontSizePx > 0f) RenderCore.rendererSetFontSize(newHandle, fontSizePx);
         if (paletteActive) {
-            RenderCore.rendererSetPalette(newHandle, fgArgb, bgArgb, selectionArgb, cursorArgb);
+            RenderCore.rendererSetPalette16(newHandle, fgArgb, bgArgb, selectionArgb, cursorArgb, ansiArgb);
         }
         synchronized (mLock) {
             mHandle = newHandle;

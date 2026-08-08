@@ -41,6 +41,9 @@ public interface CoreAdapter {
     /** push 配色板（ARGB），前景/背景/选择色/光标色。 */
     void setPalette(int fgArgb, int bgArgb, int selectionArgb, int cursorArgb);
 
+    /** push ANSI 16 色（ARGB，index 0-15；colors.properties color0-15 / 内置明暗）。 */
+    void setAnsiPalette(int[] ansiArgb);
+
     /** 恢复核心解析配色。 */
     void resetPalette();
 

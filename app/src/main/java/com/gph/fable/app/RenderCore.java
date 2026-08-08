@@ -38,6 +38,9 @@ public final class RenderCore {
     /** 工单 14：push 配色板（ARGB），前景/背景/选择色/光标色。 */
     public static native void rendererSetPalette(long handle, int fgArgb, int bgArgb, int selectionArgb, int cursorArgb);
 
+    /** 工单 04：push 配色板含 ANSI 16 色（ansiArgb 长度 <16 时按内置默认补全）。 */
+    public static native void rendererSetPalette16(long handle, int fgArgb, int bgArgb, int selectionArgb, int cursorArgb, int[] ansiArgb);
+
     /** 工单 14：恢复核心解析配色。 */
     public static native void rendererResetPalette(long handle);
 

@@ -545,12 +545,16 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         CoreAdapter adapter = session.getCoreAdapter();
         if (adapter != null && adapter.supportsPalette()) {
             // 新路径：窗口底色与渲染器配色板一致（内置明/暗或 colors.properties）。
-            mActivity.getWindow().getDecorView().setBackgroundColor(FableTerminalPalette.resolve(mActivity).background);
+            int backgroundColor = FableTerminalPalette.resolve(mActivity).background;
+            mActivity.getWindow().getDecorView().setBackgroundColor(backgroundColor);
+            mActivity.applyStatusBarStyle(backgroundColor);
             return;
         }
 
         if (session.getEmulator() != null) {
-            mActivity.getWindow().getDecorView().setBackgroundColor(session.getEmulator().mColors.mCurrentColors[TextStyle.COLOR_INDEX_BACKGROUND]);
+            int backgroundColor = session.getEmulator().mColors.mCurrentColors[TextStyle.COLOR_INDEX_BACKGROUND];
+            mActivity.getWindow().getDecorView().setBackgroundColor(backgroundColor);
+            mActivity.applyStatusBarStyle(backgroundColor);
         }
     }
 

@@ -108,6 +108,11 @@ public final class TerminalEmulatorCoreAdapter implements CoreAdapter {
     }
 
     @Override
+    public void setAnsiPalette(int[] ansiArgb) {
+        // 旧路径同 setPalette：配色由 checkForFontAndColors 经 TerminalColors.COLOR_SCHEME 处理。
+    }
+
+    @Override
     public void resetPalette() {
         // 见 setPalette。
     }

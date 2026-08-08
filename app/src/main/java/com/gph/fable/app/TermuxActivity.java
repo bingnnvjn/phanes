@@ -19,6 +19,7 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
 import android.view.WindowManager;
 import android.widget.EditText;
 import android.widget.ImageButton;
@@ -29,6 +30,7 @@ import android.widget.Toast;
 import com.gph.fable.R;
 import com.gph.fable.app.api.file.FileReceiverActivity;
 import com.gph.fable.app.terminal.TermuxActivityRootView;
+import com.gph.fable.app.terminal.FableTerminalPalette;
 import com.gph.fable.app.terminal.FableTerminalView;
 import com.gph.fable.app.terminal.TermuxTerminalSessionActivityClient;
 import com.gph.fable.app.terminal.io.TermuxTerminalExtraKeys;
@@ -58,6 +60,7 @@ import com.gph.fable.shared.termux.TermuxUtils;
 import com.gph.fable.shared.termux.settings.properties.TermuxAppSharedProperties;
 import com.gph.fable.shared.termux.theme.TermuxThemeUtils;
 import com.gph.fable.shared.theme.NightMode;
+import com.gph.fable.shared.theme.ThemeUtils;
 import com.gph.fable.shared.view.ViewUtils;
 import com.gph.fable.terminal.TerminalSession;
 import com.gph.fable.terminal.TerminalSessionClient;
@@ -482,6 +485,25 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         // trigger recreation of activity when uiMode/dark mode configuration is changed so that
         // day or night theme takes affect.
         AppCompatActivityUtils.setNightMode(this, themeMode, true);
+
+        // 状态栏与外壳主题一致：浅色白底深图标，深色黑底浅图标。
+        boolean dark = ThemeUtils.shouldEnableDarkTheme(this, themeMode);
+        applyStatusBarStyle(dark ? 0xFF000000 : 0xFFFFFFFF);
+    }
+
+    /** 状态栏颜色与图标取色按背景亮度适配（避免浅色模式白底白字不可见）。 */
+    public void applyStatusBarStyle(int backgroundColor) {
+        Window window = getWindow();
+        if (window == null) return;
+        window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+        window.setStatusBarColor(backgroundColor);
+        int flags = window.getDecorView().getSystemUiVisibility();
+        if (FableTerminalPalette.isDarkBackground(backgroundColor)) {
+            flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+        } else {
+            flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+        }
+        window.getDecorView().setSystemUiVisibility(flags);
     }
 
     /** 界面主题：设置项优先（三选一），未设置过回退 termux.properties night-mode。 */
