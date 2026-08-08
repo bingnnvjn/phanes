@@ -3,6 +3,7 @@ package com.gph.fable.app.terminal.adapter;
 import android.view.Surface;
 
 import com.gph.fable.app.RenderCore;
+import com.gph.fable.shared.logger.Logger;
 import com.gph.fable.terminal.adapter.CoreAdapter;
 
 /**
@@ -14,6 +15,8 @@ import com.gph.fable.terminal.adapter.CoreAdapter;
  * {@code TerminalSession#setCoreAdapter(null)}，避免主线程排队消息打到已释放句柄。
  */
 public final class FableRenderCoreAdapter implements CoreAdapter {
+
+    private static final String LOG_TAG = "FableRenderCoreAdapter";
 
     private final Object mLock = new Object();
 
@@ -205,7 +208,13 @@ public final class FableRenderCoreAdapter implements CoreAdapter {
             mWidthPx = widthPx;
             mHeightPx = heightPx;
         }
-        if (handle != 0) RenderCore.rendererRender(handle, widthPx, heightPx);
+        if (handle != 0) {
+            boolean rendered = RenderCore.rendererRender(handle, widthPx, heightPx);
+            if (!rendered) {
+                // 渲染线程拒绝本帧（空快照/异常帧/未附着），logcat 用于定位选择空白。
+                Logger.logDebug(LOG_TAG, "render skipped/failed (last_error see renderer stats)");
+            }
+        }
     }
 
     @Override

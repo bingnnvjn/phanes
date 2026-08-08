@@ -30,8 +30,15 @@ public class TermuxThemeUtils {
     @NonNull
     public static String getThemeMode(@NonNull Context context, @Nullable String propertiesNightMode) {
         TermuxAppSharedPreferences preferences = TermuxAppSharedPreferences.build(context, false);
-        if (preferences != null && preferences.getThemeMode() != null) {
-            return preferences.getThemeMode();
+        String storedMode = preferences != null ? preferences.getThemeMode() : null;
+        if (storedMode != null) {
+            // 兼容旧值：light/dark → NightMode 枚举名 false/true。
+            if ("light".equals(storedMode)) {
+                return NightMode.FALSE.getName();
+            } else if ("dark".equals(storedMode)) {
+                return NightMode.TRUE.getName();
+            }
+            return storedMode;
         }
         return propertiesNightMode != null ? propertiesNightMode : NightMode.SYSTEM.getName();
     }

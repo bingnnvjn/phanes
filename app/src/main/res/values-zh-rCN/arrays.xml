@@ -9,8 +9,8 @@
 
     <string-array name="theme_mode_values">
         <item>system</item>
-        <item>light</item>
-        <item>dark</item>
+        <item>false</item>
+        <item>true</item>
     </string-array>
 
 </resources>

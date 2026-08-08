@@ -142,6 +142,12 @@ public final class FableTerminalView extends FrameLayout {
             callback = new SurfaceHolder.Callback() {
                 @Override
                 public void surfaceCreated(SurfaceHolder holder) {
+                    // surface 重建（ActionMode/输入法/窗口变化）后立即重挂，避免
+                    // 一直停在分离状态导致整屏空白（fable-v1/04 选择空白遗留）。
+                    surfaceReady = true;
+                    if (host.mCurrentRender == SessionRender.this && visible) {
+                        attachAndSize();
+                    }
                 }
 
                 @Override
