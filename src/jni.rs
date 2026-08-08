@@ -358,6 +358,19 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererInfo(
 }
 
 #[no_mangle]
+pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererLastError(
+    mut env: EnvUnowned,
+    _class: JClass,
+    handle: jlong,
+) -> jstring {
+    let message = with_renderer(handle, |renderer| renderer.last_error());
+    with_jni_env(env, |env| {
+        let string = env.new_string(message)?;
+        Ok(string.into_raw())
+    })
+}
+
+#[no_mangle]
 pub extern "system" fn Java_com_gph_fable_app_RenderCore_ptySpawn(
     mut env: EnvUnowned,
     _class: JClass,

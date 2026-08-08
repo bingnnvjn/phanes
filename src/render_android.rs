@@ -3168,13 +3168,16 @@ impl RendererCore {
             log_error(&self.last_error);
             return false;
         }
-        // 诊断：有选择 overlay 但正文零字形（成功渲染的空白帧，选择空白候选路径）。
+        // 选择空白候选路径：有选择 overlay 但正文零字形。这类帧直接拦下保留上一帧
+        //（既防空白，也让 Java 侧能读到 last_error），正常清屏无 overlay 不受影响。
         if store.row_counts.iter().all(|count| *count == 0) && !self.overlays.is_empty() {
-            log_error(&format!(
+            self.last_error = format!(
                 "zero-glyph frame with overlays: dirty={dirty} rows={} overlays={}",
                 snapshot.rows,
                 self.overlays.len()
-            ));
+            );
+            log_error(&self.last_error);
+            return false;
         }
         self.last_vertex_count = draw_ranges.iter().map(|(_, count)| *count as usize).sum();
         match gpu.render_terminal(
@@ -3356,6 +3359,15 @@ impl Renderer {
 
     pub fn render(&self, width_px: u32, height_px: u32) -> bool {
         self.send(RenderCommand::Render(width_px, height_px))
+    }
+
+    /// 最近一次渲染失败/跳帧原因（Java 侧经 JNI 读到后写诊断文件）。
+    pub fn last_error(&self) -> String {
+        let stats = match self.stats.lock() {
+            Ok(stats) => stats,
+            Err(_) => return "stats lock failed".to_string(),
+        };
+        stats.last_error.clone()
     }
 
     pub fn info(&self) -> String {
