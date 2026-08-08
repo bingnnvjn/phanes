@@ -1431,9 +1431,9 @@ public class TerminalView extends View {
     }
 
     public void startTextSelectionMode(MotionEvent event) {
-        if (!requestFocus()) {
-            return;
-        }
+        // 探针（工单 04 选择空白根因）：不再抢焦点。
+        // 嫌疑：requestFocus 触发输入法/焦点窗口周期 → <厂商 ROM> 销毁 SurfaceView surface。
+        // 若移除后 surface 不再销毁，则确认为根因；否则恢复并在别处找触发点。
 
         showTextSelectionCursors(event);
         mClient.copyModeChanged(isSelectingText());
