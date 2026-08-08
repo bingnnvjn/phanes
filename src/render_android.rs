@@ -499,6 +499,52 @@ mod tests {
         // 未 push 配色板时回退。
         assert_eq!(apply_ansi_override(1, 0, fallback, None), fallback);
     }
+
+    #[test]
+    fn light_theme_darkens_bright_foreground() {
+        let light = Snapshot {
+            cols: 1,
+            rows: 1,
+            lines: Vec::new(),
+            cursor: None,
+            cursor_style: 0,
+            default_fg: Rgb { r: 0, g: 0, b: 0 },
+            default_bg: Rgb { r: 255, g: 255, b: 255 },
+            cursor_color: Rgb { r: 0, g: 0, b: 0 },
+            dirty: 0,
+            dirty_rows: Vec::new(),
+            selection_color: DEFAULT_SELECTION_COLOR,
+            palette: Some(Palette {
+                fg: Rgb { r: 0, g: 0, b: 0 },
+                bg: Rgb { r: 255, g: 255, b: 255 },
+                selection: DEFAULT_SELECTION_COLOR,
+                cursor: Rgb { r: 0, g: 0, b: 0 },
+                ansi: DEFAULT_ANSI_16,
+            }),
+            ansi_override: None,
+        };
+        // 亮黄（256 色 PS1 常见）压暗后可读。
+        let yellow = Rgb { r: 0xff, g: 0xd7, b: 0x5f };
+        let adapted = adapt_light_fg(yellow, &light);
+        assert!(color_luminance(adapted) < 140.0);
+        assert!(adapted.r > adapted.b, "色相保留（黄）");
+        // 深色不变。
+        let dark_red = Rgb { r: 0xcd, g: 0, b: 0 };
+        assert_eq!(adapt_light_fg(dark_red, &light), dark_red);
+
+        // 深色主题（黑底）任何色原样。
+        let dark = Snapshot {
+            palette: Some(Palette {
+                fg: Rgb { r: 255, g: 255, b: 255 },
+                bg: Rgb { r: 0, g: 0, b: 0 },
+                selection: DEFAULT_SELECTION_COLOR,
+                cursor: Rgb { r: 255, g: 255, b: 255 },
+                ansi: DEFAULT_ANSI_16,
+            }),
+            ..light
+        };
+        assert_eq!(adapt_light_fg(yellow, &dark), yellow);
+    }
 }
 
 fn hash_row(row: &[Cell]) -> u64 {
@@ -1280,7 +1326,32 @@ fn fg_for_cell(cell: &Cell, snapshot: &Snapshot) -> Rgb {
             b: 229,
         };
     }
-    fg_color
+    adapt_light_fg(fg_color, snapshot)
+}
+
+fn color_luminance(color: Rgb) -> f32 {
+    0.241 * color.r as f32 + 0.691 * color.g as f32 + 0.068 * color.b as f32
+}
+
+/// 工单 04（用户拍板）：浅色主题（白底）下，任何亮色前景（含 256 色/真彩 PS1 提示符
+/// 如 `$`）压暗到白底可读范围；深色主题原样。色相保留、只降亮度。
+fn adapt_light_fg(color: Rgb, snapshot: &Snapshot) -> Rgb {
+    let light_bg = snapshot
+        .palette
+        .is_some_and(|palette| color_luminance(palette.bg) >= 128.0);
+    if !light_bg {
+        return color;
+    }
+    let lum = color_luminance(color);
+    if lum <= 160.0 {
+        return color;
+    }
+    let scale = (140.0 / lum).clamp(0.42, 0.75);
+    Rgb {
+        r: ((color.r as f32) * scale).round().min(255.0) as u8,
+        g: ((color.g as f32) * scale).round().min(255.0) as u8,
+        b: ((color.b as f32) * scale).round().min(255.0) as u8,
+    }
 }
 
 /// 重建单行顶点（工单 12 ①：脏行增量重建）。
