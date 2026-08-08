@@ -234,6 +234,7 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
     @Override
     public void copyModeChanged(boolean copyMode) {
         // Disable drawer while copying.
+        com.gph.fable.app.terminal.FableDiagnostics.append("selection:copyModeChanged=" + copyMode);
         mActivity.getDrawer().setDrawerLockMode(copyMode ? DrawerLayout.LOCK_MODE_LOCKED_CLOSED : DrawerLayout.LOCK_MODE_UNLOCKED);
     }
 

@@ -44,11 +44,13 @@ public class TextSelectionCursorController implements CursorController {
 
     @Override
     public void show(MotionEvent event) {
+        terminalView.logDiagnostic("selection:controller.show");
         setInitialTextSelectionPosition(event);
         mStartHandle.positionAtCursor(mSelX1, mSelY1, true);
         mEndHandle.positionAtCursor(mSelX2 + 1, mSelY2, true);
 
         setActionModeCallBacks();
+        terminalView.logDiagnostic("selection:actionModeStarted");
         mShowStartTime = System.currentTimeMillis();
         mIsSelectingText = true;
     }

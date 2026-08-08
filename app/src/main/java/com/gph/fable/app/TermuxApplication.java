@@ -17,6 +17,7 @@ import com.gph.fable.shared.termux.shell.command.environment.TermuxShellEnvironm
 import com.gph.fable.shared.termux.shell.am.TermuxAmSocketServer;
 import com.gph.fable.shared.termux.shell.TermuxShellManager;
 import com.gph.fable.shared.termux.theme.TermuxThemeUtils;
+import com.gph.fable.view.TerminalView;
 
 public class TermuxApplication extends Application {
 
@@ -29,6 +30,8 @@ public class TermuxApplication extends Application {
 
         // 渲染器诊断文件日志（Termux 无法 logcat 跨 uid 读取）。
         FableDiagnostics.init(context);
+        // 选择流程诊断回调（选择空白根因定位）。
+        TerminalView.setDiagnosticListener(FableDiagnostics::append);
 
         // Set crash handler for the app
         TermuxCrashUtils.setDefaultCrashHandler(this);

@@ -37,6 +37,8 @@ import android.widget.Scroller;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 
+import java.util.function.Consumer;
+
 import com.gph.fable.terminal.KeyHandler;
 import com.gph.fable.terminal.TerminalEmulator;
 import com.gph.fable.terminal.TerminalSession;
@@ -44,6 +46,18 @@ import com.gph.fable.view.textselection.TextSelectionCursorController;
 
 /** View displaying and interacting with a {@link TerminalSession}. */
 public class TerminalView extends View {
+
+    /** 诊断回调（app 模块挂 FableDiagnostics 写文件；选择空白根因定位用）。 */
+    private static volatile Consumer<String> sDiagnosticListener;
+
+    public static void setDiagnosticListener(Consumer<String> listener) {
+        sDiagnosticListener = listener;
+    }
+
+    public static void logDiagnostic(String message) {
+        Consumer<String> listener = sDiagnosticListener;
+        if (listener != null) listener.accept(message);
+    }
 
     /** Log terminal view key and IME events. */
     private static boolean TERMINAL_VIEW_KEY_LOGGING_ENABLED = false;
@@ -1357,6 +1371,7 @@ public class TerminalView extends View {
     }
 
     private void showTextSelectionCursors(MotionEvent event) {
+        logDiagnostic("selection:showTextSelectionCursors");
         getTextSelectionCursorController().show(event);
     }
 
@@ -1431,9 +1446,11 @@ public class TerminalView extends View {
     }
 
     public void startTextSelectionMode(MotionEvent event) {
-        // 探针（工单 04 选择空白根因）：不再抢焦点。
-        // 嫌疑：requestFocus 触发输入法/焦点窗口周期 → <厂商 ROM> 销毁 SurfaceView surface。
-        // 若移除后 surface 不再销毁，则确认为根因；否则恢复并在别处找触发点。
+        logDiagnostic("selection:startTextSelectionMode");
+        if (!requestFocus()) {
+            logDiagnostic("selection:requestFocus failed");
+            return;
+        }
 
         showTextSelectionCursors(event);
         mClient.copyModeChanged(isSelectingText());
@@ -1442,6 +1459,7 @@ public class TerminalView extends View {
     }
 
     public void stopTextSelectionMode() {
+        logDiagnostic("selection:stopTextSelectionMode");
         if (hideTextSelectionCursors()) {
             mClient.copyModeChanged(isSelectingText());
             invalidate();
@@ -1516,6 +1534,7 @@ public class TerminalView extends View {
                     break;
                 case MotionEvent.ACTION_UP:  // fall through
                 case MotionEvent.ACTION_CANCEL:
+                    logDiagnostic("selection:toolbarShow");
                     showFloatingToolbar();
             }
         }

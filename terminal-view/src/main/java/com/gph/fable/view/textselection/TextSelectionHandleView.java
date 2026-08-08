@@ -113,7 +113,9 @@ public class TextSelectionHandleView extends View {
     }
 
     public void show() {
+        terminalView.logDiagnostic("selection:handle.show orientation=" + (mOrientation == LEFT ? "left" : "right"));
         if (!isPositionVisible()) {
+            terminalView.logDiagnostic("selection:handle.hidden-not-visible");
             hide();
             return;
         }
@@ -135,6 +137,7 @@ public class TextSelectionHandleView extends View {
     }
 
     public void hide() {
+        terminalView.logDiagnostic("selection:handle.hide");
         mIsDragging = false;
 
         if (mHandle != null) {
