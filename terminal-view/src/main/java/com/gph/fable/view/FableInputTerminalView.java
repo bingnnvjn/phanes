@@ -2,6 +2,7 @@ package com.gph.fable.view;
 
 import android.content.Context;
 import android.graphics.Canvas;
+import android.util.Log;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
 
@@ -246,6 +247,12 @@ public final class FableInputTerminalView extends TerminalView {
         int y2 = active ? selectors[1] - mTopRow : -1;
         int x1 = active ? selectors[2] : 0;
         int x2 = active ? selectors[3] : 0;
+        if (active) {
+            // 诊断日志：选择区坐标/视口行数（Debug 级别；选择空白复现时配合 logcat 定位）。
+            Log.d("FableInputTerminalView",
+                "selection y1=" + y1 + " y2=" + y2 + " x1=" + x1 + " x2=" + x2
+                    + " rows=" + viewportRows + " topRow=" + mTopRow);
+        }
         for (int row = 0; row < viewportRows; row++) {
             if (active && row >= y1 && row <= y2 && x2 > x1) {
                 int startCol = (row == y1) ? Math.max(0, x1) : 0;
