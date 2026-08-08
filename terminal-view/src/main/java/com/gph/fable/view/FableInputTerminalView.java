@@ -111,6 +111,8 @@ public final class FableInputTerminalView extends TerminalView {
             mSelectionSyncSignature = Long.MIN_VALUE;
             clearSelectionOverlays();
         }
+        // 选择结束强制重绘一帧，避免偶发空帧残留（fable-v1/04 遗留）。
+        invalidate();
     }
 
     @Override

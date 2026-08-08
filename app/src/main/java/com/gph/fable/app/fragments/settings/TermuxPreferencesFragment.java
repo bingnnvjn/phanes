@@ -5,13 +5,17 @@ import android.os.Bundle;
 
 import androidx.annotation.Keep;
 import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.preference.ListPreference;
 import androidx.preference.PreferenceDataStore;
 import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.PreferenceManager;
 
 import com.gph.fable.R;
+import com.gph.fable.shared.activity.media.AppCompatActivityUtils;
 import com.gph.fable.shared.termux.settings.preferences.TermuxPreferenceConstants;
 import com.gph.fable.shared.termux.settings.preferences.TermuxAppSharedPreferences;
+import com.gph.fable.shared.termux.theme.TermuxThemeUtils;
 
 @Keep
 public class TermuxPreferencesFragment extends PreferenceFragmentCompat {
@@ -25,6 +29,19 @@ public class TermuxPreferencesFragment extends PreferenceFragmentCompat {
         preferenceManager.setPreferenceDataStore(TermuxPreferencesDataStore.getInstance(context));
 
         setPreferencesFromResource(R.xml.termux_preferences, rootKey);
+
+        // 主题三选一：选择后立即应用并重建设置页，返回终端时同样生效。
+        ListPreference themeModePreference = findPreference(
+            TermuxPreferenceConstants.TERMUX_APP.KEY_FABLE_THEME_MODE);
+        if (themeModePreference != null && getActivity() instanceof AppCompatActivity) {
+            themeModePreference.setOnPreferenceChangeListener((preference, newValue) -> {
+                String mode = String.valueOf(newValue);
+                TermuxThemeUtils.setAppNightMode(mode);
+                AppCompatActivityUtils.setNightMode((AppCompatActivity) getActivity(), mode, true);
+                getActivity().recreate();
+                return true;
+            });
+        }
     }
 
 }

@@ -5,6 +5,7 @@ import android.content.Context;
 import androidx.annotation.NonNull;
 
 import com.gph.fable.shared.termux.TermuxConstants;
+import com.gph.fable.shared.theme.NightMode;
 import com.gph.fable.shared.theme.ThemeUtils;
 import com.gph.fable.terminal.TerminalColors;
 import com.gph.fable.terminal.adapter.CoreAdapter;
@@ -47,10 +48,10 @@ public final class FableTerminalPalette {
 
     /** 内置浅色 ANSI 16 色（白底可读：普通色加深、亮色用中等亮度）。 */
     private static final int[] LIGHT_ANSI = {
-        0xFF000000, 0xFFC50F1F, 0xFF13A10E, 0xFFC19C00,
-        0xFF0037DA, 0xFF881798, 0xFF3A96DD, 0xFFCCCCCC,
-        0xFF767676, 0xFFE74856, 0xFF16C60C, 0xFFF9F1A5,
-        0xFF3B78FF, 0xFFB4009E, 0xFF61D6D6, 0xFFF2F2F2
+        0xFF000000, 0xFFC50F1F, 0xFF0F7A1F, 0xFFB58900,
+        0xFF0037DA, 0xFF881798, 0xFF007C8A, 0xFF808080,
+        0xFF595959, 0xFFE74856, 0xFF16A012, 0xFFC19C00,
+        0xFF3B78FF, 0xFFB4009E, 0xFF0098A6, 0xFFE0E0E0
     };
 
     private FableTerminalPalette() {
@@ -75,11 +76,12 @@ public final class FableTerminalPalette {
         }
     }
 
-    /** 按系统明暗与 colors.properties 解析配色板。 */
+    /** 按外壳主题（设置三选一：跟随系统/浅色/深色）与 colors.properties 解析配色板。 */
     @NonNull
     public static Palette resolve(@NonNull Context context) {
-        // ADR-0002：无 colors.properties 时内置明/暗随系统明暗走（不随外壳三选一强制主题）。
-        boolean dark = ThemeUtils.isNightModeEnabled(context);
+        // 用户拍板：外壳选浅色 = 终端用浅色主题，选深色 = 深色主题；跟随系统则随系统。
+        boolean dark = ThemeUtils.shouldEnableDarkTheme(
+            context, NightMode.getAppNightMode().getName());
         return resolve(TermuxConstants.TERMUX_COLOR_PROPERTIES_FILE, dark);
     }
 
@@ -129,7 +131,7 @@ public final class FableTerminalPalette {
     /** 把当前配色板 push 到 CoreAdapter 缝（不支持配色板的实现直接忽略）。 */
     public static void apply(@NonNull Context context, CoreAdapter adapter) {
         apply(TermuxConstants.TERMUX_COLOR_PROPERTIES_FILE, adapter,
-            ThemeUtils.isNightModeEnabled(context));
+            ThemeUtils.shouldEnableDarkTheme(context, NightMode.getAppNightMode().getName()));
     }
 
     /** push 入口（测试用）。 */
