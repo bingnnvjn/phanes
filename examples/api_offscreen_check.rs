@@ -78,7 +78,7 @@ unsafe fn collect(state: GhosttyRenderState) -> Snapshot {
         palette: [GhosttyColorRgb { r: 0, g: 0, b: 0 }; 256],
     };
     let _ = ghostty_render_state_colors_get(state, &mut colors);
-    fable_render::render_android::collect_snapshot(state, &colors)
+    fable_render::render_android::collect_snapshot(state, &colors, None)
 }
 
 fn print_case(ok: bool, label: &str, all_ok: &mut bool) {
@@ -139,6 +139,7 @@ fn mailbox_checks() -> bool {
         bg: Rgb { r: 20, g: 80, b: 20 },
         selection: Rgb { r: 220, g: 40, b: 220 },
         cursor: Rgb { r: 0, g: 255, b: 255 },
+        ansi: fable_render::render_android::DEFAULT_ANSI_16,
     });
     renderer.set_selection(9, 0, 0);
     renderer.set_selection(0, 0, 4);
@@ -603,6 +604,7 @@ unsafe fn gpu_checks() -> bool {
         bg: Rgb { r: 20, g: 80, b: 20 },
         selection: Rgb { r: 220, g: 40, b: 220 },
         cursor: Rgb { r: 0, g: 0, b: 0 },
+        ansi: fable_render::render_android::DEFAULT_ANSI_16,
     };
     apply_palette(&mut snap_pal, palette);
     let overlays = [OverlayRange {

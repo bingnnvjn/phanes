@@ -70,7 +70,7 @@ unsafe fn collect(state: GhosttyRenderState) -> Snapshot {
         palette: [GhosttyColorRgb { r: 0, g: 0, b: 0 }; 256],
     };
     let _ = ghostty_render_state_colors_get(state, &mut colors);
-    fable_render::render_android::collect_snapshot(state, &colors)
+    fable_render::render_android::collect_snapshot(state, &colors, None)
 }
 
 fn main() {

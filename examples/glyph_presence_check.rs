@@ -74,6 +74,7 @@ fn check_wide_char_scale(atlas: &mut GlyphAtlas) -> bool {
         dirty_rows: Vec::new(),
         selection_color: Rgb { r: 0, g: 0, b: 255 },
         palette: None,
+        ansi_override: None,
     };
     let verts = build_row_vertices(0, &snapshot.lines[0], &snapshot, atlas, W, H);
     let cjk = glyph_rect_px(&verts, 0, W as f32).unwrap_or((0.0, 0.0, 0.0));

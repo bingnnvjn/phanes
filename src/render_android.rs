@@ -89,7 +89,7 @@ pub fn log_error(msg: &str) {
 
 // ---------- 快照 ----------
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Rgb {
     pub r: u8,
     pub g: u8,
@@ -103,6 +103,8 @@ pub struct Palette {
     pub bg: Rgb,
     pub selection: Rgb,
     pub cursor: Rgb,
+    /// ANSI 16 色覆盖（colors.properties color0-15 / 内置明暗）；indexed 单元格用它。
+    pub ansi: [Rgb; 16],
 }
 
 pub const DEFAULT_FONT_SIZE_PX: f32 = 24.0;
@@ -113,6 +115,26 @@ const DEFAULT_SELECTION_COLOR: Rgb = Rgb {
     g: 115,
     b: 242,
 };
+
+/// 内置 ANSI 16 色（与 TerminalColorScheme 默认一致；未 push 时用核心配色）。
+pub const DEFAULT_ANSI_16: [Rgb; 16] = [
+    Rgb { r: 0, g: 0, b: 0 },
+    Rgb { r: 0xcd, g: 0, b: 0 },
+    Rgb { r: 0, g: 0xcd, b: 0 },
+    Rgb { r: 0xcd, g: 0xcd, b: 0 },
+    Rgb { r: 0x64, g: 0x95, b: 0xed },
+    Rgb { r: 0xcd, g: 0, b: 0xcd },
+    Rgb { r: 0, g: 0xcd, b: 0xcd },
+    Rgb { r: 0xe5, g: 0xe5, b: 0xe5 },
+    Rgb { r: 0x7f, g: 0x7f, b: 0x7f },
+    Rgb { r: 0xff, g: 0, b: 0 },
+    Rgb { r: 0, g: 0xff, b: 0 },
+    Rgb { r: 0xff, g: 0xff, b: 0 },
+    Rgb { r: 0x5c, g: 0x5c, b: 0xff },
+    Rgb { r: 0xff, g: 0, b: 0xff },
+    Rgb { r: 0, g: 0xff, b: 0xff },
+    Rgb { r: 0xff, g: 0xff, b: 0xff },
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cell {
@@ -139,6 +161,8 @@ pub struct Snapshot {
     pub dirty_rows: Vec<usize>,
     pub selection_color: Rgb,
     pub palette: Option<Palette>,
+    /// 已 push 的 ANSI 16 色；collect 时覆盖 core palette[0..16] 解析的单元格色。
+    pub ansi_override: Option<[Rgb; 16]>,
 }
 
 /// 把 push 的配色板应用到快照（渲染循环与离屏自检共用，避免两处手写漂移）。
@@ -147,6 +171,7 @@ pub fn apply_palette(snapshot: &mut Snapshot, palette: Palette) {
     snapshot.default_bg = palette.bg;
     snapshot.cursor_color = palette.cursor;
     snapshot.selection_color = palette.selection;
+    snapshot.ansi_override = Some(palette.ansi);
     snapshot.palette = Some(palette);
 }
 
@@ -235,6 +260,7 @@ unsafe fn cell_color(cells: GhosttyRenderStateRowCells, data: i32) -> Option<Rgb
 pub unsafe fn collect_snapshot(
     state: GhosttyRenderState,
     colors: &GhosttyRenderStateColors,
+    ansi_override: Option<[Rgb; 16]>,
 ) -> Snapshot {
     let cols = get_u16(state, DATA_COLS);
     let rows = get_u16(state, DATA_ROWS);
@@ -280,6 +306,7 @@ pub unsafe fn collect_snapshot(
             dirty_rows: Vec::new(),
             selection_color: DEFAULT_SELECTION_COLOR,
             palette: None,
+            ansi_override,
         };
     }
     check(
@@ -318,6 +345,7 @@ pub unsafe fn collect_snapshot(
             dirty_rows: Vec::new(),
             selection_color: DEFAULT_SELECTION_COLOR,
             palette: None,
+            ansi_override,
         };
     }
 
@@ -337,8 +365,8 @@ pub unsafe fn collect_snapshot(
         let mut row_cells = Vec::new();
         while ghostty_render_state_row_cells_next(cells) {
             let text = cell_text(cells);
-            let fg = cell_color(cells, CELL_DATA_FG_COLOR);
-            let bg = cell_color(cells, CELL_DATA_BG_COLOR);
+            let mut fg = cell_color(cells, CELL_DATA_FG_COLOR);
+            let mut bg = cell_color(cells, CELL_DATA_BG_COLOR);
             let mut selected: bool = false;
             let _ = ghostty_render_state_row_cells_get(
                 cells,
@@ -349,15 +377,15 @@ pub unsafe fn collect_snapshot(
                 size: std::mem::size_of::<GhosttyStyle>(),
                 fg_color: GhosttyStyleColor {
                     tag: 0,
-                    value: GhosttyStyleColorValue { _padding: [0] },
+                    value: GhosttyStyleColorValue { palette: 0 },
                 },
                 bg_color: GhosttyStyleColor {
                     tag: 0,
-                    value: GhosttyStyleColorValue { _padding: [0] },
+                    value: GhosttyStyleColorValue { palette: 0 },
                 },
                 underline_color: GhosttyStyleColor {
                     tag: 0,
-                    value: GhosttyStyleColorValue { _padding: [0] },
+                    value: GhosttyStyleColorValue { palette: 0 },
                 },
                 bold: false,
                 italic: false,
@@ -373,6 +401,18 @@ pub unsafe fn collect_snapshot(
                 cells,
                 CELL_DATA_STYLE,
                 &mut style as *mut GhosttyStyle as *mut c_void,
+            );
+            fg = apply_ansi_override(
+                style.fg_color.tag,
+                style.fg_color.value.palette,
+                fg,
+                ansi_override,
+            );
+            bg = apply_ansi_override(
+                style.bg_color.tag,
+                style.bg_color.value.palette,
+                bg,
+                ansi_override,
             );
             row_cells.push(Cell {
                 text,
@@ -415,6 +455,49 @@ pub unsafe fn collect_snapshot(
         dirty_rows,
         selection_color: DEFAULT_SELECTION_COLOR,
         palette: None,
+        ansi_override,
+    }
+}
+
+/// 工单 04：push 的 ANSI 16 色覆盖 core palette[0..16] 解析出的单元格色；
+/// 直接 RGB（tag=2）与默认色（tag=0）、越界索引、未 push 时原样回退。
+fn apply_ansi_override(
+    tag: i32,
+    index: u8,
+    fallback: Option<Rgb>,
+    ansi: Option<[Rgb; 16]>,
+) -> Option<Rgb> {
+    if tag == 1 {
+        if let Some(ansi) = ansi {
+            let idx = index as usize;
+            if idx < 16 {
+                return Some(ansi[idx]);
+            }
+        }
+    }
+    fallback
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ansi_override_maps_palette_indexed_cells() {
+        let mut ansi = DEFAULT_ANSI_16;
+        ansi[1] = Rgb { r: 1, g: 2, b: 3 };
+        let fallback = Some(Rgb { r: 9, g: 9, b: 9 });
+
+        // palette index 1 → push 的 ANSI[1]。
+        assert_eq!(apply_ansi_override(1, 1, fallback, Some(ansi)), Some(Rgb { r: 1, g: 2, b: 3 }));
+        // 直接 RGB（tag=2）不动。
+        assert_eq!(apply_ansi_override(2, 1, fallback, Some(ansi)), fallback);
+        // 默认色（tag=0）不动。
+        assert_eq!(apply_ansi_override(0, 1, fallback, Some(ansi)), fallback);
+        // 越界索引回退。
+        assert_eq!(apply_ansi_override(1, 17, fallback, Some(ansi)), fallback);
+        // 未 push 配色板时回退。
+        assert_eq!(apply_ansi_override(1, 0, fallback, None), fallback);
     }
 }
 
@@ -3018,7 +3101,7 @@ impl RendererCore {
         };
         unsafe {
             let _ = ghostty_render_state_colors_get(self.state, &mut colors);
-            collect_snapshot(self.state, &colors)
+            collect_snapshot(self.state, &colors, self.palette.map(|p| p.ansi))
         }
     }
 

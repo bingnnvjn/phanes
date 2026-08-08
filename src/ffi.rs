@@ -86,8 +86,13 @@ pub struct GhosttyBuffer {
 // GhosttyStyle（style.h：行格样式，含 underline/strikethrough/overline）
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct GhosttyStyleColorValue {
-    pub _padding: [u64; 1],
+pub union GhosttyStyleColorValue {
+    /// GHOSTTY_STYLE_COLOR_PALETTE：0-255 索引（GhosttyColorPaletteIndex）。
+    pub palette: u8,
+    /// GHOSTTY_STYLE_COLOR_RGB：直接 RGB。
+    pub rgb: GhosttyColorRgb,
+    /// 对齐填充（C union 大小 = 最大成员 u64）。
+    pub _padding: u64,
 }
 
 #[repr(C)]

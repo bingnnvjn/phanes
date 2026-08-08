@@ -862,15 +862,15 @@ fn main() {
                     size: std::mem::size_of::<GhosttyStyle>(),
                     fg_color: GhosttyStyleColor {
                         tag: 0,
-                        value: GhosttyStyleColorValue { _padding: [0] },
+                        value: GhosttyStyleColorValue { palette: 0 },
                     },
                     bg_color: GhosttyStyleColor {
                         tag: 0,
-                        value: GhosttyStyleColorValue { _padding: [0] },
+                        value: GhosttyStyleColorValue { palette: 0 },
                     },
                     underline_color: GhosttyStyleColor {
                         tag: 0,
-                        value: GhosttyStyleColorValue { _padding: [0] },
+                        value: GhosttyStyleColorValue { palette: 0 },
                     },
                     bold: false,
                     italic: false,
@@ -1050,15 +1050,15 @@ fn main() {
                     size: std::mem::size_of::<GhosttyStyle>(),
                     fg_color: GhosttyStyleColor {
                         tag: 0,
-                        value: GhosttyStyleColorValue { _padding: [0] },
+                    value: GhosttyStyleColorValue { palette: 0 },
                     },
                     bg_color: GhosttyStyleColor {
                         tag: 0,
-                        value: GhosttyStyleColorValue { _padding: [0] },
+                    value: GhosttyStyleColorValue { palette: 0 },
                     },
                     underline_color: GhosttyStyleColor {
                         tag: 0,
-                        value: GhosttyStyleColorValue { _padding: [0] },
+                    value: GhosttyStyleColorValue { palette: 0 },
                     },
                     bold: false,
                     italic: false,

@@ -1,6 +1,6 @@
 //! 工单 10：Rust 渲染器 + PTY 的 JNI 桥（com.gph.fable.app.RenderCore）。
 
-use crate::render_android::{Palette, Renderer, Rgb, log_error};
+use crate::render_android::{DEFAULT_ANSI_16, Palette, Renderer, Rgb, log_error};
 use jni::Env;
 use jni::EnvUnowned;
 use jni::errors::LogErrorAndDefault;
@@ -213,6 +213,40 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererSetPalette(
             bg: argb_to_rgb(bg_argb),
             selection: argb_to_rgb(selection_argb),
             cursor: argb_to_rgb(cursor_argb),
+            ansi: DEFAULT_ANSI_16,
+        })
+    });
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererSetPalette16(
+    env: EnvUnowned,
+    _class: JClass,
+    handle: jlong,
+    fg_argb: jint,
+    bg_argb: jint,
+    selection_argb: jint,
+    cursor_argb: jint,
+    ansi: JIntArray,
+) {
+    let ansi_colors = with_jni_env(env, |env| -> jni::errors::Result<[Rgb; 16]> {
+        if ansi.is_null() {
+            return Ok(DEFAULT_ANSI_16);
+        }
+        let len = ansi.len(env).unwrap_or(0).min(16) as usize;
+        let mut raw = [0i32; 16];
+        if len > 0 {
+            let _ = ansi.get_region(env, 0, &mut raw[..len]);
+        }
+        Ok(std::array::from_fn(|i| argb_to_rgb(raw[i])))
+    });
+    with_renderer(handle, |renderer| {
+        renderer.set_palette(Palette {
+            fg: argb_to_rgb(fg_argb),
+            bg: argb_to_rgb(bg_argb),
+            selection: argb_to_rgb(selection_argb),
+            cursor: argb_to_rgb(cursor_argb),
+            ansi: ansi_colors,
         })
     });
 }
