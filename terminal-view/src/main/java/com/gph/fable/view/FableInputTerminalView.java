@@ -22,6 +22,10 @@ public final class FableInputTerminalView extends TerminalView {
     private CoreAdapter mCoreAdapter;
     private int mLastSyncedTopRow;
     private long mSelectionSyncSignature = Long.MIN_VALUE;
+    private Runnable mPendingZoomResize;
+
+    /** 连续缩放手势合并窗口：只对 PTY/核心发最后一次 resize，减少 SIGWINCH 突发。 */
+    private static final long ZOOM_DEBOUNCE_MS = 50L;
 
     public FableInputTerminalView(Context context, AttributeSet attrs) {
         super(context, attrs);
@@ -32,6 +36,7 @@ public final class FableInputTerminalView extends TerminalView {
      * 并按核心单元格尺寸重排（旧路径下为 null，保持 TerminalView 原行为）。
      */
     public void setCoreAdapter(CoreAdapter coreAdapter) {
+        cancelPendingZoomResize();
         mCoreAdapter = coreAdapter;
         mLastSyncedTopRow = mTopRow;
         mSelectionSyncSignature = Long.MIN_VALUE;
@@ -51,6 +56,7 @@ public final class FableInputTerminalView extends TerminalView {
 
     @Override
     public boolean attachSession(TerminalSession session) {
+        cancelPendingZoomResize();
         mLastSyncedTopRow = 0;
         mSelectionSyncSignature = Long.MIN_VALUE;
         return super.attachSession(session);
@@ -60,8 +66,23 @@ public final class FableInputTerminalView extends TerminalView {
     public void setTextSize(int textSize) {
         super.setTextSize(textSize);
         if (mCoreAdapter != null && mCoreAdapter.supportsFontSize() && mRenderer != null) {
-            mCoreAdapter.setFontSize(mRenderer.mTextSize);
-            updateSize();
+            // 新路径：合并连续缩放手势的 resize（旧路径立即生效）。
+            // 快速连续放大时只发一次 SIGWINCH，降低 readline/输入法在中文
+            // 输入行重绘时错乱/复制的概率（fable-v1/15 真机反馈）。
+            cancelPendingZoomResize();
+            mPendingZoomResize = () -> {
+                mPendingZoomResize = null;
+                mCoreAdapter.setFontSize(mRenderer.mTextSize);
+                updateSize();
+            };
+            postDelayed(mPendingZoomResize, ZOOM_DEBOUNCE_MS);
+        }
+    }
+
+    private void cancelPendingZoomResize() {
+        if (mPendingZoomResize != null) {
+            removeCallbacks(mPendingZoomResize);
+            mPendingZoomResize = null;
         }
     }
 
