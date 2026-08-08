@@ -212,7 +212,7 @@ public final class FableRenderCoreAdapter implements CoreAdapter {
             boolean rendered = RenderCore.rendererRender(handle, widthPx, heightPx);
             if (!rendered) {
                 // 渲染线程拒绝本帧（空快照/异常帧/未附着），logcat 用于定位选择空白。
-                Logger.logDebug(LOG_TAG, "render skipped/failed (last_error see renderer stats)");
+                Logger.logError(LOG_TAG, "render skipped/failed (reason in FableRender tag)");
             }
         }
     }
