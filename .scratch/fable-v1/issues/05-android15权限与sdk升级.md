@@ -75,3 +75,35 @@ Status: 待验收
 - ADR-0001 Compose 重开条件部分满足：compileSdk 36 + targetSdk 35 + AGP 9.3 + Gradle 9.7 已就位；仍等"界面现代化"阶段再评。
 - 对后续影响：edge-to-edge / 通知 / FGS 三项真机验收项等待用户真机确认（<厂商 ROM> 通知权限交互与原生 Android 15 不同，以 Android 15 为准、<厂商 ROM> 差异记坑）；FableDiagnostics lint 债建议随工单 04 收尾或新 backlog 清理。
 - 权限策略定案：通知权限"弹一次、尊重选择、撤销只降级"；前台服务类型定案 specialUse（防 dataSync 6h 杀会话）。
+
+### 2026-08-08 第二轮实施（用户验收反馈修复，代码完成待真机复验）
+
+#### 本轮改动（用户拍板的方案）
+
+1. **全界面 edge-to-edge 适配**（新增 `SystemBarInsets` 共享工具，全部走系统 insets）：
+   - 顶部：根布局 padding = 状态栏 inset，不再与状态栏重叠；
+   - 底部：手势条 inset + `clipToPadding=false`，背景延伸到手势条后面、不铺色块遮罩，内容可滑入手势条区域，遮挡的只有手势条本身；
+   - 覆盖界面：SettingsActivity（含所有设置 fragment，统一 `FablePreferenceFragment` 基类）、ReportActivity、TextIOActivity、HelpActivity（WebView 外包容器，WebView 自身不按 padding 布局）、SpikeActivity / RenderActivity；TermuxActivity 主界面维持原 fitsSystemWindows（用户确认无问题）；FileReceiverActivity 无界面（仅对话框），豁免；
+   - 设置/报告/文字编辑页根背景统一 `?android:attr/colorBackground`，手势条区域与界面同色。
+2. **设置子页面过渡动画**：SettingsActivity 实现官方 `OnPreferenceStartFragmentCallback`，fragment 事务用系统 `TRANSIT_FRAGMENT_OPEN` + `setReorderingAllowed(true)`（预测性返回），不写自定义动画；Activity 间保持系统默认过渡。
+3. **Toast 审计**：确认全部走系统 Toast（<厂商 ROM> 样式，应用名是 <厂商 ROM> 自带不可控）；唯一硬编码英文（SharedProperties 属性文件加载错误）改为资源文案；其余 50 处调用点审计结论 = 已走资源字符串（zh 已在工单 04 翻译）或技术性错误串/会话标题（不可翻译），无 Termux 直译残留。
+4. **通知汉化补全**：正文 "N 个会话 / N 个任务 / 已持有唤醒锁"（plurals 资源）；四个通知渠道名全部资源化 + 中文（前台服务 / 命令执行 / 崩溃报告 / 插件命令错误）。
+
+#### 验证数据（第二轮）
+
+- `:app:assembleDebug` BUILD SUCCESSFUL；arm64 APK targetSdk 35、5 个 .so（含 libfable-render.so）、Fable 签名校验 OK、渠道名资源入包。
+- 单测：app 31 个（新增 3 条锁测试：设置页 colorBackground、通知 plurals 中英资源），仅既有 FileReceiverActivityTest 失败；terminal-emulator 全绿。
+- lint：本轮新增错误 0；仅既有 FableDiagnostics NewApi ×4（工单 04 遗留）。新增 1 条良性 overdraw 警告（根背景与 windowBackground 双绘，接受）。
+
+#### 坑
+
+1. `android.R.anim.fragment_open_enter` 等是隐藏资源无法编译引用 → 退回到纯机制方案（`TRANSIT_FRAGMENT_OPEN` + 预测性返回），符合"不写自定义动画"原则。
+2. WebView 不按自身 padding 布局网页内容 → insets 必须加在外层容器。
+3. 通知渠道名在系统创建后不可改：老安装升级后渠道仍显示旧名，需卸载重装或清数据才能看到新渠道名（记录，非 bug）。
+4. androidx.preference 1.2.1 fallback 打开子页面时事务不带任何过渡（logcat 有提示）→ 必须实现 `OnPreferenceStartFragmentCallback`。
+
+#### 结论写回
+
+- 用户验收反馈的三项（设置页状态栏重叠、底部遮罩、子页无动画）代码层已修，待真机复验；通知汉化待真机确认。
+- 设置 fragment 手势条适配统一收口到 `FablePreferenceFragment` 基类，后续新增设置页自动继承。
+- <厂商 ROM> 小窗问题与 edge-to-edge 适配有交集，但本体走独立 triage（`.scratch/fable-v1/triage.md`），不在本单。
