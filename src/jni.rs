@@ -320,6 +320,19 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererRender(
 }
 
 #[no_mangle]
+pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererForceRender(
+    _env: EnvUnowned,
+    _class: JClass,
+    handle: jlong,
+    width_px: jint,
+    height_px: jint,
+) -> jboolean {
+    with_renderer(handle, |renderer| {
+        renderer.force_render(width_px.max(0) as u32, height_px.max(0) as u32)
+    }) as jboolean
+}
+
+#[no_mangle]
 pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererTestPattern(
     _env: EnvUnowned,
     _class: JClass,

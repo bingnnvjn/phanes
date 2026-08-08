@@ -2515,6 +2515,7 @@ enum RenderCommand {
     Attach(*mut c_void, u32, u32),
     Detach,
     Render(u32, u32),
+    ForceRender(u32, u32),
     TestPattern(u32, u32),
     Quit,
 }
@@ -2922,6 +2923,14 @@ impl RendererCore {
                 }
                 RenderCommand::Detach => self.detach(),
                 RenderCommand::Render(width, height) => {
+                    self.render(width, height);
+                }
+                RenderCommand::ForceRender(width, height) => {
+                    // surface 重建后首帧可能 present 到未上屏缓冲且签名被去重：
+                    // 清签名强制重画一帧（工单 04 选择空白恢复）。
+                    self.last_signature = None;
+                    self.last_meta = None;
+                    self.force_full = true;
                     self.render(width, height);
                 }
                 RenderCommand::TestPattern(width, height) => {
@@ -3359,6 +3368,11 @@ impl Renderer {
 
     pub fn render(&self, width_px: u32, height_px: u32) -> bool {
         self.send(RenderCommand::Render(width_px, height_px))
+    }
+
+    /// 强制重绘一帧（清除内容签名去重；surface 重建后首帧可能未上屏）。
+    pub fn force_render(&self, width_px: u32, height_px: u32) -> bool {
+        self.send(RenderCommand::ForceRender(width_px, height_px))
     }
 
     /// 最近一次渲染失败/跳帧原因（Java 侧经 JNI 读到后写诊断文件）。
