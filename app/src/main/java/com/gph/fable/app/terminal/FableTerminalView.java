@@ -145,6 +145,7 @@ public final class FableTerminalView extends FrameLayout {
                     // surface 重建（ActionMode/输入法/窗口变化）后立即重挂，避免
                     // 一直停在分离状态导致整屏空白（fable-v1/04 选择空白遗留）。
                     surfaceReady = true;
+                    FableDiagnostics.append("surfaceCreated");
                     if (host.mCurrentRender == SessionRender.this && visible) {
                         attachAndSize();
                     }
@@ -156,6 +157,7 @@ public final class FableTerminalView extends FrameLayout {
                     widthPx = width;
                     heightPx = height;
                     surfaceReady = true;
+                    FableDiagnostics.append("surfaceChanged w=" + width + " h=" + height);
                     if (host.mCurrentRender == SessionRender.this) {
                         attachAndSize();
                     }
@@ -164,6 +166,7 @@ public final class FableTerminalView extends FrameLayout {
                 @Override
                 public void surfaceDestroyed(SurfaceHolder holder) {
                     surfaceReady = false;
+                    FableDiagnostics.append("surfaceDestroyed");
                     adapter.detach();
                 }
             };
@@ -204,6 +207,7 @@ public final class FableTerminalView extends FrameLayout {
             int cellHeight = Math.max(1, cell[1]);
             cols = Math.max(4, widthPx / cellWidth);
             rows = Math.max(4, heightPx / cellHeight);
+            FableDiagnostics.append("attachAndSize cols=" + cols + " rows=" + rows + " cell=" + cellWidth + "x" + cellHeight);
             session.updateSize(cols, rows, cellWidth, cellHeight);
             adapter.attach(surfaceView.getHolder().getSurface(), widthPx, heightPx);
             adapter.render(widthPx, heightPx);

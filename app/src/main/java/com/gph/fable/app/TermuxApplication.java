@@ -4,6 +4,7 @@ import android.app.Application;
 import android.content.Context;
 
 import com.gph.fable.BuildConfig;
+import com.gph.fable.app.terminal.FableDiagnostics;
 import com.gph.fable.shared.errors.Error;
 import com.gph.fable.shared.logger.Logger;
 import com.gph.fable.shared.termux.TermuxBootstrap;
@@ -25,6 +26,9 @@ public class TermuxApplication extends Application {
         super.onCreate();
 
         Context context = getApplicationContext();
+
+        // 渲染器诊断文件日志（Termux 无法 logcat 跨 uid 读取）。
+        FableDiagnostics.init(context);
 
         // Set crash handler for the app
         TermuxCrashUtils.setDefaultCrashHandler(this);

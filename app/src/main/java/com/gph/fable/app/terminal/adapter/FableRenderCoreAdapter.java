@@ -3,7 +3,7 @@ package com.gph.fable.app.terminal.adapter;
 import android.view.Surface;
 
 import com.gph.fable.app.RenderCore;
-import com.gph.fable.shared.logger.Logger;
+import com.gph.fable.app.terminal.FableDiagnostics;
 import com.gph.fable.terminal.adapter.CoreAdapter;
 
 /**
@@ -187,7 +187,10 @@ public final class FableRenderCoreAdapter implements CoreAdapter {
             mHeightPx = heightPx;
             mAttached = true;
         }
-        if (handle != 0) RenderCore.rendererAttach(handle, surface, widthPx, heightPx);
+        if (handle != 0) {
+            RenderCore.rendererAttach(handle, surface, widthPx, heightPx);
+            FableDiagnostics.append("adapter.attach w=" + widthPx + " h=" + heightPx);
+        }
     }
 
     @Override
@@ -197,7 +200,10 @@ public final class FableRenderCoreAdapter implements CoreAdapter {
             handle = mHandle;
             mAttached = false;
         }
-        if (handle != 0) RenderCore.rendererDetach(handle);
+        if (handle != 0) {
+            RenderCore.rendererDetach(handle);
+            FableDiagnostics.append("adapter.detach");
+        }
     }
 
     @Override
@@ -211,8 +217,8 @@ public final class FableRenderCoreAdapter implements CoreAdapter {
         if (handle != 0) {
             boolean rendered = RenderCore.rendererRender(handle, widthPx, heightPx);
             if (!rendered) {
-                // 渲染线程拒绝本帧（空快照/异常帧/未附着），logcat 用于定位选择空白。
-                Logger.logError(LOG_TAG, "render skipped/failed (reason in FableRender tag)");
+                // 渲染线程拒绝本帧（空快照/异常帧/未附着）：写诊断文件供回传。
+                FableDiagnostics.append("render=false reason=" + RenderCore.rendererLastError(handle));
             }
         }
     }
