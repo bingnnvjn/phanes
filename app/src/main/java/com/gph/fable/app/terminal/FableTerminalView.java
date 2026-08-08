@@ -52,6 +52,7 @@ public final class FableTerminalView extends FrameLayout {
         if (session == null || mDetached || session == mCurrentSession) return false;
         if (mInputView == null) return false;
 
+        FableDiagnostics.append("attachSession switch");
         if (mCurrentRender != null) mCurrentRender.hide();
 
         SessionRender render = mSessionRenders.get(session);
@@ -102,6 +103,7 @@ public final class FableTerminalView extends FrameLayout {
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
         mDetached = true;
+        FableDiagnostics.append("FableTerminalView.onDetachedFromWindow");
         // 配置变化/后台销毁：只释放视图与 Surface，渲染器留在会话上继续收字节。
         for (SessionRender render : mSessionRenders.values()) {
             render.release();
@@ -122,6 +124,7 @@ public final class FableTerminalView extends FrameLayout {
 
         boolean visible;
         boolean surfaceReady;
+        boolean hideRequested;
         int widthPx;
         int heightPx;
         int cols = 80;
@@ -168,6 +171,11 @@ public final class FableTerminalView extends FrameLayout {
                     surfaceReady = false;
                     FableDiagnostics.append("surfaceDestroyed");
                     adapter.detach();
+                    if (!hideRequested && host.isAttachedToWindow()
+                        && host.mCurrentRender == SessionRender.this) {
+                        // surface 意外销毁（选择/输入法/窗口变化）：自动重建，不等用户唤醒。
+                        host.postDelayed(SessionRender.this::autoRecreateSurface, 120);
+                    }
                 }
             };
             surfaceView.getHolder().addCallback(callback);
@@ -177,6 +185,8 @@ public final class FableTerminalView extends FrameLayout {
 
         void show() {
             if (!isRenderable(adapter)) return;
+            hideRequested = false;
+            FableDiagnostics.append("render.show");
             if (visible) {
                 attachIfSurfaceReady();
                 return;
@@ -194,6 +204,8 @@ public final class FableTerminalView extends FrameLayout {
         void hide() {
             if (!visible) return;
             visible = false;
+            hideRequested = true;
+            FableDiagnostics.append("render.hide");
             surfaceView.setVisibility(GONE);
             adapter.detach();
             surfaceReady = false;
@@ -236,6 +248,17 @@ public final class FableTerminalView extends FrameLayout {
             if (session.getCoreAdapter() == adapter) session.setCoreAdapter(null);
             release();
             if (adapter != null) adapter.destroy();
+        }
+
+        /** surface 丢失后强制重建：GONE→VISIBLE 触发系统重建 surface 并回调 surfaceCreated。 */
+        private void autoRecreateSurface() {
+            if (surfaceReady || !visible || !host.isAttachedToWindow()
+                || host.mCurrentRender != SessionRender.this) {
+                return;
+            }
+            FableDiagnostics.append("autoRecreateSurface");
+            surfaceView.setVisibility(GONE);
+            surfaceView.setVisibility(VISIBLE);
         }
     }
 }

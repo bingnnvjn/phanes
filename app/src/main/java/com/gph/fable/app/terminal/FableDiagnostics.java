@@ -25,9 +25,11 @@ import java.nio.charset.StandardCharsets;
  */
 public final class FableDiagnostics {
 
-    private static final String LOG_NAME = "fable-render-debug.log";
+    // MediaStore 会给无扩展名 DISPLAY_NAME 自动补 .txt，直接带扩展名避免每次换名。
+    private static final String LOG_NAME = "fable-render-debug.log.txt";
 
     private static volatile Context sContext;
+    private static volatile Uri sMediaUri;
 
     private FableDiagnostics() {
     }
@@ -35,6 +37,10 @@ public final class FableDiagnostics {
     /** 在 Application.onCreate 调用一次。 */
     public static void init(@NonNull Context context) {
         sContext = context.getApplicationContext();
+        if (Build.VERSION.SDK_INT >= 29) {
+            cleanupMediaStoreJunk(sContext);
+        }
+        sMediaUri = null;
         append("== Fable diagnostics start ==");
     }
 
@@ -69,7 +75,10 @@ public final class FableDiagnostics {
     private static boolean appendViaMediaStore(@NonNull Context context, @NonNull byte[] bytes) {
         try {
             ContentResolver resolver = context.getContentResolver();
-            Uri uri = findDownloadUri(resolver, LOG_NAME);
+            Uri uri = sMediaUri;
+            if (uri == null) {
+                uri = findDownloadUri(resolver, LOG_NAME);
+            }
             boolean created = uri == null;
             if (created) {
                 ContentValues values = new ContentValues();
@@ -79,6 +88,7 @@ public final class FableDiagnostics {
                 values.put(MediaStore.Downloads.IS_PENDING, 1);
                 uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
                 if (uri == null) return false;
+                sMediaUri = uri;
             }
             try (OutputStream out = resolver.openOutputStream(uri, "wa")) {
                 if (out == null) return false;
@@ -99,9 +109,9 @@ public final class FableDiagnostics {
         try (Cursor cursor = resolver.query(
             MediaStore.Downloads.EXTERNAL_CONTENT_URI,
             new String[] { MediaStore.Downloads._ID },
-            MediaStore.Downloads.DISPLAY_NAME + "=?",
-            new String[] { name },
-            null)) {
+            MediaStore.Downloads.DISPLAY_NAME + " LIKE ?",
+            new String[] { name + "%" },
+            MediaStore.Downloads._ID + " ASC")) {
             if (cursor != null && cursor.moveToFirst()) {
                 return ContentUris.withAppendedId(
                     MediaStore.Downloads.EXTERNAL_CONTENT_URI, cursor.getLong(0));
@@ -118,6 +128,19 @@ public final class FableDiagnostics {
             out.write(bytes);
         } catch (IOException e) {
             // 诊断日志失败不阻塞主流程。
+        }
+    }
+
+    /** 清理上次 MediaStore 追加失败产生的 "(n).txt" 垃圾文件，保留干净主文件。 */
+    private static void cleanupMediaStoreJunk(@NonNull Context context) {
+        try {
+            ContentResolver resolver = context.getContentResolver();
+            resolver.delete(
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                MediaStore.Downloads.DISPLAY_NAME + " LIKE ?",
+                new String[] { "fable-render-debug.log (%)%" });
+        } catch (Exception e) {
+            // 清理失败不影响主流程。
         }
     }
 }
