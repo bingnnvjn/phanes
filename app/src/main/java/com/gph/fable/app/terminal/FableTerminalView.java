@@ -284,22 +284,42 @@ public final class FableTerminalView extends FrameLayout {
             autoRecreating = true;
             recreateAttempts++;
             FableDiagnostics.append("autoRecreateSurface attempt=" + recreateAttempts);
-            // GONE→VISIBLE 同帧对撞不会触发重建；removeView+addView 强制 surface 重造。
-            ViewGroup.LayoutParams layoutParams = surfaceView.getLayoutParams();
-            host.removeView(surfaceView);
-            host.addView(surfaceView, 0, layoutParams);
-            if (recreateAttempts < 3) {
-                MAIN_HANDLER.postDelayed(() -> {
-                    if (!surfaceReady && !hideRequested && visible && host.isAttachedToWindow()
-                        && host.mCurrentRender == SessionRender.this) {
-                        autoRecreateSurface();
-                    } else {
-                        autoRecreating = false;
-                    }
-                }, 300);
-            } else {
-                autoRecreating = false;
-            }
+            // 真机验证：removeView/addView 不重建；只有尺寸变化（键盘）能重建。
+            // 改用跨帧 GONE→VISIBLE（同帧对撞无效），再叠加 1px 尺寸抖动兜底。
+            surfaceView.setVisibility(GONE);
+            MAIN_HANDLER.postDelayed(() -> {
+                if (surfaceReady || !visible || !host.isAttachedToWindow()
+                    || host.mCurrentRender != SessionRender.this) {
+                    autoRecreating = false;
+                    return;
+                }
+                FableDiagnostics.append("recreateSurface visible");
+                surfaceView.setVisibility(VISIBLE);
+                // 1px 尺寸抖动：强制 ViewRootImpl 重算 surface（若 GONE→VISIBLE 仍无效）。
+                ViewGroup.LayoutParams layoutParams = surfaceView.getLayoutParams();
+                if (layoutParams != null && layoutParams.height > 1) {
+                    layoutParams.height--;
+                    surfaceView.setLayoutParams(layoutParams);
+                    MAIN_HANDLER.post(() -> {
+                        if (surfaceView.getLayoutParams() != null) {
+                            surfaceView.getLayoutParams().height++;
+                            surfaceView.requestLayout();
+                        }
+                    });
+                }
+                if (recreateAttempts < 3) {
+                    MAIN_HANDLER.postDelayed(() -> {
+                        if (!surfaceReady && !hideRequested && visible && host.isAttachedToWindow()
+                            && host.mCurrentRender == SessionRender.this) {
+                            autoRecreateSurface();
+                        } else {
+                            autoRecreating = false;
+                        }
+                    }, 400);
+                } else {
+                    autoRecreating = false;
+                }
+            }, 100);
         }
     }
 }

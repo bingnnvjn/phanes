@@ -35,6 +35,17 @@ public class TermuxApplication extends Application {
 
         // Set crash handler for the app
         TermuxCrashUtils.setDefaultCrashHandler(this);
+        // 崩溃也写进诊断文件（选择空白若伴随崩溃，下轮日志直接带堆栈）。
+        final Thread.UncaughtExceptionHandler crashHandler = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+            StringBuilder stackTrace = new StringBuilder(
+                "CRASH thread=" + thread.getName() + " " + throwable);
+            for (StackTraceElement element : throwable.getStackTrace()) {
+                stackTrace.append("\n  at ").append(element);
+            }
+            FableDiagnostics.append(stackTrace.toString());
+            if (crashHandler != null) crashHandler.uncaughtException(thread, throwable);
+        });
 
         // Set log config for the app
         setLogConfig(context);
