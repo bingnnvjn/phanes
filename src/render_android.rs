@@ -3168,6 +3168,14 @@ impl RendererCore {
             log_error(&self.last_error);
             return false;
         }
+        // 诊断：有选择 overlay 但正文零字形（成功渲染的空白帧，选择空白候选路径）。
+        if store.row_counts.iter().all(|count| *count == 0) && !self.overlays.is_empty() {
+            log_error(&format!(
+                "zero-glyph frame with overlays: dirty={dirty} rows={} overlays={}",
+                snapshot.rows,
+                self.overlays.len()
+            ));
+        }
         self.last_vertex_count = draw_ranges.iter().map(|(_, count)| *count as usize).sum();
         match gpu.render_terminal(
             &draw_ranges,
