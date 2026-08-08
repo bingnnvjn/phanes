@@ -213,7 +213,9 @@ public class TextSelectionCursorController implements CursorController {
 
                 outRect.set(x1, top, x2, bottom);
             }
-        }, ActionMode.TYPE_FLOATING);
+        // 探针（工单 04 选择空白）：<厂商 ROM> 悬浮 ActionMode 收尾疑似销毁 SurfaceView surface，
+        // 换传统 TYPE_PRIMARY 验证；若空白消失则根因坐实。
+        }, ActionMode.TYPE_PRIMARY);
     }
 
     @Override

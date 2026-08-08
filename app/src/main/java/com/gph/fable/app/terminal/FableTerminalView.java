@@ -31,6 +31,28 @@ public final class FableTerminalView extends FrameLayout {
 
     private static final Handler MAIN_HANDLER = new Handler(Looper.getMainLooper());
 
+    /** watchdog：surface 静默丢失（无回调）时强制恢复 + 心跳确认进程存活。 */
+    private final Runnable mSurfaceWatchdog = new Runnable() {
+        private int mTick;
+
+        @Override
+        public void run() {
+            if (mDetached || mCurrentRender == null) return;
+            mTick++;
+            SessionRender render = mCurrentRender;
+            if (render.visible && render.surfaceView != null && !render.surfaceReady
+                && !render.hideRequested && !render.autoRecreating && isAttachedToWindow()) {
+                FableDiagnostics.append("watchdog: surface missing, forcing recovery");
+                render.autoRecreateSurface();
+            }
+            if (mTick % 10 == 0) {
+                FableDiagnostics.append("watchdog alive surfaceReady=" + render.surfaceReady
+                    + " visible=" + render.visible);
+            }
+            MAIN_HANDLER.postDelayed(this, 500);
+        }
+    };
+
     private final Map<TerminalSession, SessionRender> mSessionRenders = new HashMap<>();
     private FableInputTerminalView mInputView;
     private TerminalSession mCurrentSession;
@@ -39,6 +61,13 @@ public final class FableTerminalView extends FrameLayout {
 
     public FableTerminalView(Context context, AttributeSet attrs) {
         super(context, attrs);
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        mDetached = false;
+        MAIN_HANDLER.post(mSurfaceWatchdog);
     }
 
     public void setInputView(FableInputTerminalView inputView) {
