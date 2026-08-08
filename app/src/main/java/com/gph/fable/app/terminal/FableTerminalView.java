@@ -237,6 +237,14 @@ public final class FableTerminalView extends FrameLayout {
             session.updateSize(cols, rows, cellWidth, cellHeight);
             adapter.attach(surfaceView.getHolder().getSurface(), widthPx, heightPx);
             adapter.render(widthPx, heightPx);
+            // surface 重建后首帧可能 present 到未上屏缓冲且签名被去重：
+            // 延迟强制重绘，保证重建后内容真正上屏（工单 04 选择空白恢复）。
+            MAIN_HANDLER.postDelayed(() -> {
+                if (surfaceReady && widthPx > 0 && heightPx > 0
+                    && host.mCurrentRender == SessionRender.this) {
+                    adapter.forceRender(widthPx, heightPx);
+                }
+            }, 250);
         }
 
         private void attachIfSurfaceReady() {

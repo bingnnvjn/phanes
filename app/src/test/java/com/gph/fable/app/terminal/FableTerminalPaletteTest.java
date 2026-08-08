@@ -218,6 +218,10 @@ public class FableTerminalPaletteTest {
         }
 
         @Override
+        public void forceRender(int widthPx, int heightPx) {
+        }
+
+        @Override
         public void reset() {
         }
 

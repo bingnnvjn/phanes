@@ -133,6 +133,11 @@ public final class TerminalEmulatorCoreAdapter implements CoreAdapter {
     }
 
     @Override
+    public void forceRender(int widthPx, int heightPx) {
+        // 旧路径无独立渲染器，见 render()。
+    }
+
+    @Override
     public void reset() {
         mEmulator.reset();
         mTopRow = 0;

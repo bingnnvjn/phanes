@@ -50,6 +50,9 @@ public final class RenderCore {
 
     public static native boolean rendererRender(long handle, int widthPx, int heightPx);
 
+    /** 强制重绘一帧（清除内容签名；surface 重建后首帧可能未上屏）。 */
+    public static native boolean rendererForceRender(long handle, int widthPx, int heightPx);
+
     /** 最近一次渲染失败/跳帧原因（选择空白诊断）。 */
     public static native String rendererLastError(long handle);
 

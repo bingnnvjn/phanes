@@ -224,6 +224,20 @@ public final class FableRenderCoreAdapter implements CoreAdapter {
     }
 
     @Override
+    public void forceRender(int widthPx, int heightPx) {
+        long handle;
+        synchronized (mLock) {
+            handle = mHandle;
+        }
+        if (handle != 0) {
+            boolean rendered = RenderCore.rendererForceRender(handle, widthPx, heightPx);
+            if (!rendered) {
+                FableDiagnostics.append("forceRender=false reason=" + RenderCore.rendererLastError(handle));
+            }
+        }
+    }
+
+    @Override
     public void reset() {
         long oldHandle;
         int cols;

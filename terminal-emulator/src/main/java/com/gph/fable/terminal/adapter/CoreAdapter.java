@@ -56,6 +56,9 @@ public interface CoreAdapter {
     /** 请求渲染一帧（宽高为像素；核心可自行去重）。 */
     void render(int widthPx, int heightPx);
 
+    /** 强制重绘一帧（清除渲染器内容签名；surface 重建后首帧可能未上屏）。 */
+    void forceRender(int widthPx, int heightPx);
+
     /** 重置核心状态（清屏/清滚动缓冲）。 */
     void reset();
 
