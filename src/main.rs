@@ -510,18 +510,26 @@ fn rasterize_grid(
                 }
             }
 
-            // 程序化下划线/删除线/上划线（工单 13：更粗，真机 25px 行高下
-            // 2px 不可见；软件/GPU 两路统一 max(3px, 12% 行高)）。
-            let thickness = ((CELL_H as f32 * 0.12).round() as usize).max(3);
+            // 程序化下划线/删除线/上划线。工单 13 真机反馈：12% 太粗 → 减半
+            // max(2px, 6%)；下划线贴文字基线下方 1px（不再画在行底）。
+            let thickness = ((CELL_H as f32 * 0.06).round() as usize).max(2);
             if cell.underline {
                 // 更高对比：样式显式下划线色优先，否则用前景色。
                 let (ul_r, ul_g, ul_b) = cell
                     .underline_color
                     .map(|c| (c.r, c.g, c.b))
                     .unwrap_or((fg_r, fg_g, fg_b));
+                let (ascent_px, descent_px, line_gap_px) = font
+                    .horizontal_line_metrics(px_per_em)
+                    .map(|m| (m.ascent, m.descent, m.line_gap))
+                    .unwrap_or((px_per_em * 0.8, -px_per_em * 0.2, 0.0));
+                let line_h_px = (ascent_px - descent_px + line_gap_px).max(px_per_em);
+                let baseline_y =
+                    (origin_y as f32 + ((CELL_H as f32 - line_h_px) / 2.0).max(0.0) + ascent_px)
+                        as usize;
                 for x in 0..CELL_W {
                     for t in 0..thickness {
-                        let dy = origin_y + CELL_H - 1 - t;
+                        let dy = baseline_y + 1 + t;
                         let dx = origin_x + x;
                         if dy < height && dx < width {
                             let i = (dy * width + dx) * 4;
@@ -1374,11 +1382,19 @@ fn main() {
                 );
                 all_ok &= emoji_colored;
 
-                // 下划线可见性：SGR 4 行（第 5 行）底部 thickness 行内应有
-                // 成片前景色像素（对比背景），离屏先验，真机再确认。
+                // 下划线可见性：SGR 4 行（第 5 行）文字基线下方 1px 起
+                // thickness 行内应有成片前景色像素（工单 13：贴基线定位）。
                 let ul_row = 4usize;
-                let ul_thickness = ((CELL_H as f32 * 0.12).round() as usize).max(3);
-                let ul_pixels = (ul_row * CELL_H + CELL_H - ul_thickness..ul_row * CELL_H + CELL_H)
+                let ul_thickness = ((CELL_H as f32 * 0.06).round() as usize).max(2);
+                let (ascent_px, descent_px, line_gap_px) = font
+                    .horizontal_line_metrics(16.0)
+                    .map(|m| (m.ascent, m.descent, m.line_gap))
+                    .unwrap_or((16.0 * 0.8, -16.0 * 0.2, 0.0));
+                let line_h_px = (ascent_px - descent_px + line_gap_px).max(16.0);
+                let ul_baseline =
+                    (ul_row * CELL_H) as f32 + ((CELL_H as f32 - line_h_px) / 2.0).max(0.0) + ascent_px;
+                let ul_start = (ul_baseline + 1.0) as usize;
+                let ul_pixels = (ul_start..ul_start + ul_thickness)
                     .flat_map(|y| (0..CELL_W * 20).map(move |x| (y, x)))
                     .filter(|&(y, x)| {
                         let i = (y * w + x) * 4;
@@ -1387,7 +1403,7 @@ fn main() {
                     .count();
                 let underline_ok = ul_pixels >= 40;
                 println!(
-                    "  {} : SGR 4 下划线可见（底部 {}px 前景像素 {} 个 ≥40）",
+                    "  {} : SGR 4 下划线可见（基线下方 {}px 前景像素 {} 个 ≥40）",
                     if underline_ok { "PASS" } else { "FAIL" },
                     ul_thickness,
                     ul_pixels

@@ -73,6 +73,7 @@ unsafe fn collect(state: GhosttyRenderState) -> Snapshot {
 }
 
 fn main() {
+    fable_render::ffi::force_tls_pad();
     unsafe {
         let opts = GhosttyTerminalOptions {
             cols: COLS,
@@ -105,6 +106,8 @@ fn main() {
         println!("snapshot: any_underline={any_underline}");
 
         let mut atlas = GlyphAtlas::new().expect("atlas");
+        // 测试表面 row_h=20px：字号设为 16px，基线才在行内。
+        atlas.set_pixels_per_em(16.0);
         let mut store = RowVertexStore::new(COLS, ROWS);
         let mut ranges = Vec::new();
         for row in 0..snapshot.rows as usize {
@@ -373,17 +376,24 @@ fn main() {
             .expect("poll");
         let data = readback.slice(..).get_mapped_range().expect("map");
 
-        // 断言：第一行（row 0，y 0..20）底部 3px（y 17..20）存在白色像素带。
+        // 断言：第一行（row 0）文字基线下方 1px 起存在白色下划线像素带。
         let row_h = H / ROWS as u32;
+        let baseline = atlas.baseline(0.0, row_h as f32);
+        let thickness = (row_h as f32 * 0.06).max(1.5);
+        let ul_start = baseline + 1.0;
+        let ul_end = ul_start + thickness;
+        println!("baseline={baseline} ul_start={ul_start} ul_end={ul_end}");
         let mut text_white = 0u32;
         let mut underline_white = 0u32;
+        let mut white_rows = std::collections::BTreeMap::new();
         for col in 0..W {
             for dy in 0..row_h {
-                let y = dy;
+                let y = dy as f32;
                 let i = (y as usize * row_pitch as usize + col as usize * 4) as usize;
                 let px = &data[i..i + 4];
                 if px[0] > 200 && px[1] > 200 && px[2] > 200 {
-                    if dy >= row_h - 3 {
+                    *white_rows.entry(dy).or_insert(0u32) += 1;
+                    if y >= ul_start && y < ul_end {
                         underline_white += 1;
                     } else {
                         text_white += 1;
@@ -391,8 +401,9 @@ fn main() {
                 }
             }
         }
+        println!("white_rows: {white_rows:?}");
         println!("row0: text_white={text_white} underline_white={underline_white}");
-        let ok = any_underline && solid_verts > 0 && underline_white > 100;
+        let ok = any_underline && solid_verts > 0 && underline_white > 50;
         println!(
             "RESULT: {}",
             if ok {

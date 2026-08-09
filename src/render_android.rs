@@ -559,6 +559,62 @@ mod tests {
     use super::*;
 
     #[test]
+    fn emoji_layout_not_overlapping() {
+        // 工单 13 真机修复回归：build_row_vertices 的 col_pos 必须在
+        // continue 前累加，否则所有 emoji 叠在同一列。
+        let mut atlas = GlyphAtlas::new().expect("atlas");
+        let texts = ["🚀", "✅", "👨\u{200d}👩\u{200d}👧\u{200d}👦", "👍🏻", "🇨🇳", "⌨\u{fe0f}", "🔋", "🧑\u{200d}🚀", "🫖", "🫶"];
+        let row: Vec<Cell> = texts
+            .iter()
+            .map(|t| Cell {
+                text: t.to_string(),
+                fg: None,
+                bg: None,
+                selected: false,
+                underline: false,
+                underline_color: None,
+                strikethrough: false,
+                overline: false,
+                col_span: 2,
+            })
+            .collect();
+        let snapshot = Snapshot {
+            cols: 40,
+            rows: 1,
+            lines: vec![row.clone()],
+            cursor: None,
+            cursor_style: 0,
+            default_fg: Rgb { r: 255, g: 255, b: 255 },
+            default_bg: Rgb { r: 0, g: 0, b: 0 },
+            cursor_color: Rgb { r: 255, g: 255, b: 255 },
+            dirty: 1,
+            dirty_rows: vec![0],
+            selection_color: Rgb { r: 0, g: 0, b: 255 },
+            palette: None,
+            ansi_override: None,
+        };
+        let verts = build_row_vertices(0, &row, &snapshot, &mut atlas, 400, 20);
+        let mut xs: Vec<f32> = Vec::new();
+        for g in verts.chunks_exact(6) {
+            if g[0].mode > 1.5 {
+                xs.push((g[0].position[0] + 1.0) / 2.0 * 400.0);
+            }
+        }
+        assert_eq!(xs.len(), texts.len(), "每个 emoji 一个彩色字形");
+        for w in xs.windows(2) {
+            assert!(
+                w[1] > w[0],
+                "emoji 重叠：x={} 与 x={}",
+                w[0],
+                w[1]
+            );
+        }
+        // 首个 emoji 应在第 1 格（x=0..40 内），末个在第 19 格附近（col 18=180px）。
+        assert!(xs[0] >= 0.0 && xs[0] < 40.0);
+        assert!(xs[xs.len() - 1] > 160.0);
+    }
+
+    #[test]
     fn ansi_override_maps_palette_indexed_cells() {
         let mut ansi = DEFAULT_ANSI_16;
         ansi[1] = Rgb { r: 1, g: 2, b: 3 };
@@ -766,6 +822,22 @@ impl GlyphAtlas {
 
     pub fn pixels_per_em(&self) -> f32 {
         self.pixels_per_em
+    }
+
+    /// 该行文字的基线 y（像素，相对行顶 row_y）。基于主字体 metrics，
+    /// 与字形绘制分支的 baseline 公式一致。
+    pub fn baseline(&self, row_y: f32, row_h: f32) -> f32 {
+        let px = self.pixels_per_em;
+        let (ascent, descent, line_gap) = match self
+            .faces
+            .first()
+            .and_then(|f| f.font.horizontal_line_metrics(px))
+        {
+            Some(m) => (m.ascent, m.descent, m.line_gap),
+            None => (px * 0.8, -px * 0.2, 0.0),
+        };
+        let line_height = (ascent - descent + line_gap).max(px);
+        row_y + ((row_h - line_height) / 2.0).max(0.0) + ascent
     }
 
     /// 切换字号：清空灰度/彩色图集，下一帧按新字号重光栅化（工单 14）。
@@ -1458,6 +1530,9 @@ pub fn build_row_vertices(
     let mut col_pos = 0u32;
     for cell in row {
         let x = col_pos as f32 * cell_w;
+        // 工单 13 真机修复：col_pos 必须在任何 continue 之前累加，
+        // 否则 emoji 分支 continue 跳过累加，所有 emoji 叠在同一列。
+        col_pos += cell.col_span.max(1);
         let y = row_y;
 
         // 清屏色 = push 配色板背景（否则维持现状深灰）；
@@ -1608,15 +1683,18 @@ pub fn build_row_vertices(
         }
 
         // 程序化文字装饰（下划线/删除线/上划线，不依赖字体）。
-        // 工单 13：25px 行高下 2px 真机仍不可见 → max(3px, 12% 行高)。
-        let thickness = (row_h * 0.12).max(3.0);
+        // 工单 13 真机反馈：12% 太粗 → 减半 max(1.5px, 6% 行高)；
+        // 下划线画在行底离文字太远 → 改贴文字基线下方 1px。
+        let thickness = (row_h * 0.06).max(1.5);
         if cell.underline {
             // 更高对比：样式显式下划线色优先，否则用前景色。
             let ul_color = cell.underline_color.unwrap_or(fg_for_cell(cell, snapshot));
+            // 贴基线下方 1px；字号/行高失配时 clamp 在行内，避免画出界被裁。
+            let ul_y = (atlas.baseline(y, row_h) + 1.0).clamp(y + 1.0, y + row_h - thickness);
             push_solid_rect(
                 &mut vertices,
                 x,
-                y + row_h - thickness,
+                ul_y,
                 target_cell_w,
                 thickness,
                 rgb_components(ul_color),
@@ -1648,7 +1726,6 @@ pub fn build_row_vertices(
                 surface_h,
             );
         }
-        col_pos += cell.col_span.max(1);
     }
     vertices
 }
