@@ -22,6 +22,7 @@ fn empty_cell() -> Cell {
         underline_color: None,
         strikethrough: false,
         overline: false,
+        col_span: 1,
     }
 }
 

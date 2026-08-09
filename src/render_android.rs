@@ -147,6 +147,9 @@ pub struct Cell {
     pub underline_color: Option<Rgb>,
     pub strikethrough: bool,
     pub overline: bool,
+    /// 占几列（工单 13 布局：emoji cluster 一律 2 格；核心拆分/1 格宽由
+    /// `merge_emoji_runs` 归一）。
+    pub col_span: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -438,8 +441,13 @@ pub unsafe fn collect_snapshot(
                 },
                 strikethrough: style.strikethrough,
                 overline: style.overline,
+                col_span: 1,
             });
         }
+        // 工单 13：核心把 ZWJ/肤色/旗帜拆成片段、⌨️ 等按 1 格宽；
+        // 渲染前重组完整 cluster 并归一 emoji 为 2 格（否则相邻 emoji
+        // 位图重叠、旗帜被拆成 C N）。
+        merge_emoji_runs(&mut row_cells);
         lines.push(row_cells);
     }
 
@@ -492,6 +500,58 @@ fn apply_ansi_override(
         }
     }
     fallback
+}
+
+/// 工单 13：核心（libghostty-vt 预编译 b0947378）把 ZWJ 家庭/肤色/旗帜
+/// 拆成多个 cell，且 ⌨️ 等带 VS16 字符按 1 格宽。渲染前把片段重组成完整
+/// emoji cluster，并把宽度归一为 2 格（累计列布局由 build_row_vertices 用
+/// `col_span` 实现），否则相邻 emoji 位图重叠、旗帜被画成 C N 两个字符。
+pub fn merge_emoji_runs(cells: &mut Vec<Cell>) {
+    if cells.is_empty() {
+        return;
+    }
+    let mut out: Vec<Cell> = Vec::with_capacity(cells.len());
+    let mut i = 0usize;
+    while i < cells.len() {
+        let mut cell = cells[i].clone();
+        if cell.text.is_empty() {
+            i += 1;
+            continue;
+        }
+        let mut span = 1u32;
+        if crate::emoji::is_emoji_run(&cell.text) {
+            span = 2;
+        }
+        let mut j = i + 1;
+        loop {
+            // 跳过 emoji 的伴随空格 cell（核心按 2 格拆出的第二格）。
+            while j < cells.len() && cells[j].text.is_empty() {
+                j += 1;
+            }
+            if j >= cells.len() {
+                break;
+            }
+            let next = &cells[j].text;
+            let next_is_skin = next.chars().any(|c| (0x1F3FB..=0x1F3FF).contains(&(c as u32)));
+            let cell_all_ri =
+                cell.text.chars().all(|c| (0x1F1E6..=0x1F1FF).contains(&(c as u32)));
+            let next_all_ri = next.chars().all(|c| (0x1F1E6..=0x1F1FF).contains(&(c as u32)));
+            let need_merge =
+                cell.text.ends_with('\u{200d}') || next_is_skin || (cell_all_ri && next_all_ri);
+            if !need_merge {
+                break;
+            }
+            cell.text.push_str(next);
+            if crate::emoji::is_emoji_run(&cell.text) {
+                span = 2;
+            }
+            j += 1;
+        }
+        cell.col_span = span;
+        out.push(cell);
+        i = j;
+    }
+    *cells = out;
 }
 
 #[cfg(test)]
@@ -574,6 +634,7 @@ fn hash_row(row: &[Cell]) -> u64 {
         cell.underline_color.hash(&mut hasher);
         cell.strikethrough.hash(&mut hasher);
         cell.overline.hash(&mut hasher);
+        cell.col_span.hash(&mut hasher);
     }
     hasher.finish()
 }
@@ -1392,8 +1453,11 @@ pub fn build_row_vertices(
     let (color_w, color_h) = atlas.color_extent();
     let row_y = row_index as f32 * row_h;
 
-    for (col_index, cell) in row.iter().enumerate() {
-        let x = col_index as f32 * cell_w;
+    // 工单 13：按累计列定位（col_span 由 merge_emoji_runs 归一；核心拆分的
+    // ZWJ/旗帜/⌨️ 片段不再各自占位，避免位图重叠/被拆成两字）。
+    let mut col_pos = 0u32;
+    for cell in row {
+        let x = col_pos as f32 * cell_w;
         let y = row_y;
 
         // 清屏色 = push 配色板背景（否则维持现状深灰）；
@@ -1584,6 +1648,7 @@ pub fn build_row_vertices(
                 surface_h,
             );
         }
+        col_pos += cell.col_span.max(1);
     }
     vertices
 }

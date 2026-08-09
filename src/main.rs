@@ -185,6 +185,8 @@ struct Cell {
     underline_color: Option<GhosttyColorRgb>,
     strikethrough: bool,
     overline: bool,
+    /// 占几列（工单 13：merge_emoji_runs 归一 emoji 为 2 格）。
+    col_span: usize,
 }
 
 impl Default for Cell {
@@ -198,12 +200,59 @@ impl Default for Cell {
             underline_color: None,
             strikethrough: false,
             overline: false,
+            col_span: 1,
         }
     }
 }
 
 fn ansi_fg(c: GhosttyColorRgb) -> String {
     format!("\x1b[38;2;{};{};{}m", c.r, c.g, c.b)
+}
+
+/// 工单 13：核心把 ZWJ/肤色/旗帜拆成片段、⌨️ 等按 1 格宽；
+/// 软件光栅与 GPU 同款重组（见 render_android::merge_emoji_runs）。
+fn merge_emoji_runs_main(cells: &mut Vec<Cell>) {
+    let mut out: Vec<Cell> = Vec::with_capacity(cells.len());
+    let mut i = 0usize;
+    while i < cells.len() {
+        let mut cell = cells[i].clone();
+        if cell.text.is_empty() {
+            i += 1;
+            continue;
+        }
+        let mut span = 1usize;
+        if fable_render::emoji::is_emoji_run(&cell.text) {
+            span = 2;
+        }
+        let mut j = i + 1;
+        loop {
+            while j < cells.len() && cells[j].text.is_empty() {
+                j += 1;
+            }
+            if j >= cells.len() {
+                break;
+            }
+            let next = &cells[j].text;
+            let next_is_skin = next.chars().any(|c| (0x1F3FB..=0x1F3FF).contains(&(c as u32)));
+            let cell_all_ri =
+                cell.text.chars().all(|c| (0x1F1E6..=0x1F1FF).contains(&(c as u32)));
+            let next_all_ri = next.chars().all(|c| (0x1F1E6..=0x1F1FF).contains(&(c as u32)));
+            let need_merge =
+                cell.text.ends_with('\u{200d}') || next_is_skin || (cell_all_ri && next_all_ri);
+            if !need_merge {
+                break;
+            }
+            cell.text.push_str(next);
+            if fable_render::emoji::is_emoji_run(&cell.text) {
+                span = 2;
+            }
+            j += 1;
+        }
+        cell.col_span = span;
+        out.push(cell);
+        i = j;
+    }
+    *cells = out;
 }
 
 fn ansi_bg(c: GhosttyColorRgb) -> String {
@@ -297,8 +346,9 @@ fn rasterize_grid(
         };
 
     for (row_index, row) in rows.iter().enumerate() {
-        for (col_index, cell) in row.iter().enumerate() {
-            let origin_x = col_index * CELL_W;
+        let mut col_pos = 0usize;
+        for cell in row {
+            let origin_x = col_pos * CELL_W;
             let origin_y = row_index * CELL_H;
 
             // 背景色
@@ -317,8 +367,9 @@ fn rasterize_grid(
                 }
             }
 
+            col_pos += cell.col_span.max(1);
             // 光标（块状）：光标格画反色底
-            let is_cursor = cursor == Some((col_index, row_index));
+            let is_cursor = cursor == Some((col_pos - cell.col_span.max(1), row_index));
             if is_cursor {
                 for y in 0..CELL_H {
                     for x in 0..CELL_W {
@@ -343,8 +394,10 @@ fn rasterize_grid(
                 if emoji::is_emoji_run(&cell.text) {
                     if let Some(bitmap) = emoji_font.rasterize_cluster(&cell.text, px_per_em as u16) {
                         let target_w = CELL_W * 2;
-                        let scale = (target_w as f32 / bitmap.width.max(1) as f32)
-                            .min((CELL_H as f32 * 0.9) / bitmap.height.max(1) as f32)
+                        // 与 GPU 路径一致：图形最多占 92% 格宽，相邻 emoji
+                        // 保留视觉间隙（否则旗帜/键盘等扁宽字形占满 2 格紧贴）。
+                        let scale = ((target_w as f32 * 0.92) / bitmap.width.max(1) as f32)
+                            .min((CELL_H as f32 * 0.92) / bitmap.height.max(1) as f32)
                             .max(0.01);
                         let draw_w = (bitmap.width as f32 * scale).round() as usize;
                         let draw_h = (bitmap.height as f32 * scale).round() as usize;
@@ -765,7 +818,7 @@ fn main() {
                    \xe2\x94\x8c\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x90\r\n\
                    \xe2\x94\x82 x \xe2\x94\x82\r\n\
                    \xe2\x94\x94\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x98\r\n\
-                   \xf0\x9f\x9a\x80 \xe2\x9c\x85\r\n\
+                   \xf0\x9f\x9a\x80\xe2\x9c\x85\xf0\x9f\x91\xa8\xe2\x80\x8d\xf0\x9f\x91\xa9\xe2\x80\x8d\xf0\x9f\x91\xa7\xe2\x80\x8d\xf0\x9f\x91\xa6\xf0\x9f\x91\x8d\xf0\x9f\x8f\xbb\xf0\x9f\x87\xa8\xf0\x9f\x87\xb3\xe2\x8c\xa8\xef\xb8\x8f\xf0\x9f\x94\x8b\xf0\x9f\xa7\x91\xe2\x80\x8d\xf0\x9f\x9a\x80\xf0\x9f\xab\x96\xf0\x9f\xab\xb6\r\n\
                    end";
         ghostty_terminal_vt_write(terminal, vt.as_ptr(), vt.len());
 
@@ -908,6 +961,7 @@ fn main() {
                     },
                     strikethrough: style.strikethrough,
                     overline: style.overline,
+                    col_span: 1,
                 });
             }
 
@@ -951,7 +1005,7 @@ fn main() {
             "┌───┐",
             "│ x │",
             "└───┘",
-            "🚀 ✅",
+            "🚀✅👨‍👩‍👧‍👦👍🏻🇨🇳⌨️🔋🧑‍🚀🫖🫶",
             "end",
         ];
         // 重新读一遍纯文本行（上面已经输出，这里再走一遍迭代器做断言）
@@ -1129,6 +1183,40 @@ fn main() {
         );
         all_ok &= cold_ok;
 
+        // 扩展测试集（工单 13 真机反馈后补充）：黄脸/动物/食物/活动/物体/
+        // 符号/ZWJ 共 27 个代表性码位。断言：非空 + 彩色 + 尺寸 ≥0.7em。
+        let ext: [&str; 27] = [
+            "😀", "😢", "😂", "😍", "😡", "🥺", "🐶", "🐱", "🐼", "🦊", "🍎", "🍕", "🍜",
+            "⚽", "🎮", "🎵", "📱", "💻", "☕", "❤️", "⭐", "⚠️", "🎄", "🎂", "💯", "👋🏻",
+            "🏳️‍🌈",
+        ];
+        let ext_ok = emoji_font
+            .as_ref()
+            .map(|font| {
+                ext.iter().all(|s| {
+                    font.rasterize_cluster(s, 24)
+                        .map(|b| {
+                            let alpha = b.pixels.chunks_exact(4).any(|p| p[3] > 0);
+                            let colored = b.pixels.chunks_exact(4).any(|p| {
+                                p[3] > 0 && (p[0] != p[1] || p[1] != p[2])
+                            });
+                            alpha
+                                && colored
+                                // 至少一维 ≥0.7em，两维都 ≥0.3em（📱 等窄形通过）。
+                                && (b.width as f32 > 24.0 * 0.7 || b.height as f32 > 24.0 * 0.7)
+                                && b.width as f32 > 24.0 * 0.3
+                                && b.height as f32 > 24.0 * 0.3
+                        })
+                        .unwrap_or(false)
+                })
+            })
+            .unwrap_or(false);
+        println!(
+            "  {} : 扩展测试集 27 个（黄脸/动物/食物/活动/物体/符号/ZWJ）非空彩色且尺寸正常",
+            if ext_ok { "PASS" } else { "FAIL" }
+        );
+        all_ok &= ext_ok;
+
         let sprite_ok = symbols::sprite_bitmap('┌', 32)
             .map(|bitmap| bitmap.alpha.iter().any(|&a| a > 0))
             .unwrap_or(false);
@@ -1214,8 +1302,10 @@ fn main() {
                     },
                     strikethrough: style.strikethrough,
                     overline: style.overline,
+                    col_span: 1,
                 });
             }
+            merge_emoji_runs_main(&mut row_cells);
             grid.push(row_cells);
         }
         ghostty_render_state_row_iterator_free(row_it3);
