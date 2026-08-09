@@ -58,6 +58,12 @@ Status: 待验收
 - **回退代价说明**：本构建 `ftoption.h` 关闭 `FT_CONFIG_OPTION_USE_PNG`，旧 CBDT-2017 的 PNG strike 无法经 FreeType 解码；真机验收通过后移除旧字体即无此约束。若中途需回退，重开 USE_PNG + 静态 libpng。
 - FFI 清理：删除未使用声明（`FT_Get_Char_Index`/`FT_Get_Color_Glyph_ClipBox`/`FT_LOAD_DEFAULT`/`FT_LOAD_NO_HINTING`/`FT_ClipBox`）；`FT_GlyphSlotRec` 布局注释修正为"读到 outline"；`EmojiFont::is_bitmap` 改名 `has_color`。
 
+2026-08-10 真机反馈修复（探针 UI）：
+
+- 用户反馈：探针顶部黄字状态区占满屏幕，看不到终端。根因：spawn/attach 后 `setStatus` 把整段 `rendererInfo`（几十个字段）塞进 WRAP_CONTENT TextView，换行成十几行。
+- 修复：状态区 `maxLines(2)` + 省略号 + 深色底；自动状态文本精简（attach/spawn/render OK 不再拼 rendererInfo，完整信息进 debug log）；点击状态区可展开/收起全文；`[info]`/`[gpu]` 等主动查询仍显示完整信息。
+- **新包（覆盖同路径）**：`~/storage/downloads/fable-render-13_arm64-v8a.apk`，sha256 `cfc187653883e65b9cf4e64b8dbb960e53a324bfbc20dc6830cf8d4596f8b7b1`（仅 Java 改动，.so 未变）。
+
 **验证数据**
 
 - `cd spike-render && cargo run --release` → `结果: ALL PASS`（新增：🚀 饱和差≥96、✅ 绿底白勾、ZWJ 家庭≠单人且更宽、👍🏻≠👍、🇨🇳 红色、🧑🚀/🫖(U+17)/🫶 冷门码位非空彩色、下划线 420px；既有灰度文本/滚动/resize 全保持）。
