@@ -178,6 +178,9 @@ public class RenderActivity extends Activity {
         // 工单 13：COLRv1 验收序列（彩色/绿勾/ZWJ 家庭/肤色/旗帜/杂项/冷门码位）。
         addButton(row3, "emoji13", v -> sendToAll(
             "echo 🚀✅👨‍👩‍👧‍👦👍🏻🇨🇳⌨️🔋🧑‍🚀🫖🫶\n"));
+        // 工单 13 扩展测试集：黄脸/动物/食物/活动/物体/符号/ZWJ 27 个。
+        addButton(row3, "emoji27", v -> sendToAll(
+            "echo 😀😢😂😍😡🥺🐶🐱🐼🦊🍎🍕🍜⚽🎮🎵📱💻☕❤️⭐⚠️🎄🎂💯👋🏻🏳️‍🌈\n"));
         addButton(row3, "emoji", v -> sendToAll("echo 🚀✅\n"));
         addButton(row3, "box", v -> sendToAll("printf '┌───┐\\n│ x │\\n└───┘\\n'"));
         addButton(row3, "u-line", v -> sendToAll("printf '\\033[4munderline\\033[0m\\n'"));
