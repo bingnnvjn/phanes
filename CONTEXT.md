@@ -34,3 +34,4 @@ Fable（寓言）= 私人 Android 终端 App：**Kotlin 壳 + Rust 底层 + libg
 - ADR-0003：终态 = Kotlin 壳 + Rust 底层 + libghostty-vt 核心；验证切片先行
 - ADR-0004：渲染器 = Rust + wgpu（安卓 Vulkan），以 Shellow 为骨架、按官方架构补齐
 - ADR-0005：Fable 包仓库（自建 fable 前缀扁平 apt 仓库，GitHub Releases 托管 + GPG 签名）
+- ADR-0006：彩色字形通路 = FreeType + 内嵌 NotoColorEmoji COLRv1（ZWJ 经 rustybuzz 整形一并解决；灰度正文保持 fontdue）

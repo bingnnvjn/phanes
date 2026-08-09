@@ -2,7 +2,7 @@
 
 > Status: 待开工
 > 功能目录：fable-v1
-> 更新：2026-08-07
+> 更新：2026-08-09
 > 来源：项目总览与交接 + 本仓库现状探索（to-spec）
 
 > 架构约束（2026-08-07 补，见 `docs/adr/0003`、`docs/adr/0004`）：v1 交付范围不变（纯终端、打开即终端）；UI 只对着 **CoreAdapter** 缝写，保证后续换核不动 UI；终态方向 = Kotlin 壳 + Rust 底层（渲染/会话/事件流）+ libghostty-vt 核心，渲染器定案 Rust + wgpu（安卓 Vulkan）。
@@ -53,6 +53,7 @@ Fable v1 是一个纯终端 Android App：包名 `com.gph.fable`、正式签名�
 9. **架构方向（非 v1 实现）**：终端三层（界面层/仿真核心/会话层）、CoreAdapter 换引擎缝、Environment 环境接口、会话事件流、HUD 交互语言——v1 只保证不阻碍这些方向（如事件流定义成本低，可在需要时补），不在 v1 实现。
 10. **主终端渲染路径（2026-08-07 集成定案）**：会话层 Termux Java（PTY/进程/环境/生命周期）保持不动；字节经 CoreAdapter 缝从会话层喂给 fable-render 核心（libghostty-vt）；每会话一个渲染器 + 一个 SurfaceView；渲染驱动 = 独立渲染线程 + mailbox（工单 12 产物）；选中文本读取、字号、配色板等集成所需能力经渲染器 JNI API 补齐（工单 14），主终端接线与真机验收见工单 15。
 11. **包安装源（2026-08-09 决策窗口 5）**：Fable 环境不消费官方 termux-main（com.termux 前缀包路径硬编码）；自建 Fable 包仓库（fable-repo，ADR-0005）——扁平 apt 仓库托管于 fable-bootstrap GitHub Releases（`latest/download` 稳定 URL），GPG 签名，CI 按需构建指定包；迁移期先本地 dpkg 装归档内 debs（工单 02 现状），自举 + 日常缺口（git/nodejs/openjdk/rust/clang/runit 等）经仓库按需补齐。
+12. **彩色字形通路（2026-08-09 决策窗口 6 / 工单 13，ADR-0006）**：彩色 emoji 字形 = FreeType 光栅 COLRv1 + 内嵌 NotoColorEmoji（COLRv1 完整版，Unicode 17.0，替换 2017 CBDT）；ZWJ 家庭/肤色/旗帜经 rustybuzz 整形一并解决；✅ 接受原生彩色绿勾；灰度正文保持 fontdue（FreeType 只接彩色字形）；下划线专项并入工单 13；图集增量上传与灰度统一为独立 backlog。
 
 ## Testing Decisions
 
