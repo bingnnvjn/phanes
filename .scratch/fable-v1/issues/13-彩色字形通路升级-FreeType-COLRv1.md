@@ -102,6 +102,13 @@ Status: 待验收
 - 反编译 APK dex 提取按钮字符串：`"printf '\033[4munderline\033[0m\n'`（结尾单引号，正确）；bash 实测该命令输出 `ESC[4munderline ESC[0m`。用户复制的 `\n"`（双引号）会导致 bash `unexpected EOF` 不执行——请直接点 `[u-line]` 按钮。
 - **新包（覆盖同路径）**：`~/storage/downloads/fable-render-13_arm64-v8a.apk`，sha256 `9502acb66c8b51b725f7fe4dbb46208e81b9542669a6dadb7707c9d5b19e325a`。
 
+2026-08-10 下划线真根因（用户坚持点按钮，复核后确认是我的错）：
+
+- **按钮命令漏末尾真换行**：`[u-line]`/`[box]` 按钮发送 `printf '...\n'`（`\n` 是字面字符给 printf 用），**命令末尾没有换行符** → bash 一直等回车，printf 从未执行 → 终端只显示 bash 回显的命令行，没有 SGR 4 输出，下划线自然没有。emoji 按钮（`echo ...\n`）末尾有真换行所以正常。**这是我的 bug，用户从始至终点的按钮。**
+- 修复：按钮命令末尾补真换行 `...\n'\n`（Java 字符串末尾 `\n`）。bash 实测 `printf "printf '\\033[4munderline\\033[0m\\n'\n" | bash` → 输出 `ESC[4munderline ESC[0m` ✓。
+- 新增 `wgpu_underline_check` 回归回路：核心 SGR 4 → 快照 → 顶点 → wgpu 离屏 → 像素读回，断言文字行底部白色下划线像素带（`underline_white=270` PASS）——渲染链本身无 bug，问题在按钮命令。
+- **新包（覆盖同路径）**：`~/storage/downloads/fable-render-13_arm64-v8a.apk`，sha256 `dad16ed888e073e6777b530821bde9470e9f2987e888e13ec56dc02fb31ba0c2`。
+
 **验证数据**
 
 - `cd spike-render && cargo run --release` → `结果: ALL PASS`（新增：🚀 饱和差≥96、✅ 绿底白勾、ZWJ 家庭≠单人且更宽、👍🏻≠👍、🇨🇳 红色、🧑🚀/🫖(U+17)/🫶 冷门码位非空彩色、下划线 420px；既有灰度文本/滚动/resize 全保持）。
