@@ -109,6 +109,19 @@ Status: 待验收
 - 新增 `wgpu_underline_check` 回归回路：核心 SGR 4 → 快照 → 顶点 → wgpu 离屏 → 像素读回，断言文字行底部白色下划线像素带（`underline_white=270` PASS）——渲染链本身无 bug，问题在按钮命令。
 - **新包（覆盖同路径）**：`~/storage/downloads/fable-render-13_arm64-v8a.apk`，sha256 `dad16ed888e073e6777b530821bde9470e9f2987e888e13ec56dc02fb31ba0c2`。
 
+2026-08-10 真机反馈第五轮（emoji 全叠一起 + 下划线粗细/位置）：
+
+**emoji 全部叠在同一位置（GPU 路径）**
+
+- 根因：`build_row_vertices` 的 `col_pos` 累加放在循环尾部，emoji 分支 `continue` 跳过累加 → 所有 emoji 画在同一列。修复：累加移到循环开头（任何 continue 之前）。`layout_check` 实测 10 个 emoji 分布在 col 5/7/9/…/23；新增单测 `emoji_layout_not_overlapping` 防回归。
+
+**下划线粗细与位置（用户要求减半 + 贴文字）**
+
+- 粗细：12% 行高 / min 3px → **6% / min 1.5px**（GPU），软件路径 min 2px（离屏）。用户实测认可"一半"。
+- 位置：原来画在**行底**（`y+row_h-thickness`），离文字远；改为**贴文字基线下方 1px**（`GlyphAtlas::baseline`，基于主字体 `horizontal_line_metrics`），并 clamp 在行内（字号/行高失配兜底）。
+- `wgpu_underline_check` 同步基线定位断言（y17-18 白色下划线 90px PASS，测试环境需 `set_pixels_per_em(16)` 匹配行高；补 `force_tls_pad` 修 segfault）。
+- **新包（覆盖同路径）**：`~/storage/downloads/fable-render-13_arm64-v8a.apk`，sha256 `59624cea89b1791f5a85325c0d7305430c05bebb36c9a4cf460d8783d13f2aa9`。
+
 **验证数据**
 
 - `cd spike-render && cargo run --release` → `结果: ALL PASS`（新增：🚀 饱和差≥96、✅ 绿底白勾、ZWJ 家庭≠单人且更宽、👍🏻≠👍、🇨🇳 红色、🧑🚀/🫖(U+17)/🫶 冷门码位非空彩色、下划线 420px；既有灰度文本/滚动/resize 全保持）。
