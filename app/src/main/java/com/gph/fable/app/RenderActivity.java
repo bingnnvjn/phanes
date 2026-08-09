@@ -7,6 +7,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.InputType;
+import android.text.TextUtils;
 import android.view.KeyEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -108,6 +109,20 @@ public class RenderActivity extends Activity {
         status.setTextColor(Color.parseColor("#FFD54F"));
         status.setTextSize(12);
         status.setTypeface(Typeface.MONOSPACE);
+        // 工单 13 真机反馈：整段 rendererInfo 塞进状态区会换行成十几行、
+        // 把终端挤出屏幕。限高 2 行省略；完整信息走 [info] / debug log。
+        status.setMaxLines(2);
+        status.setEllipsize(TextUtils.TruncateAt.END);
+        status.setBackgroundColor(Color.parseColor("#1E1E1E"));
+        status.setOnClickListener(v -> {
+            if (status.getMaxLines() == 2) {
+                status.setMaxLines(Integer.MAX_VALUE);
+                status.setEllipsize(null);
+            } else {
+                status.setMaxLines(2);
+                status.setEllipsize(TextUtils.TruncateAt.END);
+            }
+        });
         root.addView(status, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -252,8 +267,9 @@ public class RenderActivity extends Activity {
                 debugLog("before attach");
                 RenderCore.rendererAttach(s.renderer, holder.getSurface(), width, height);
                 debugLog("after attach");
-                setStatus("surface attached " + width + "x" + height + " "
+                debugLog("surface attached info: "
                         + RenderCore.rendererInfo(s.renderer));
+                setStatus("surface attached " + width + "x" + height);
                 renderFrame(s);
             }
 
@@ -272,7 +288,8 @@ public class RenderActivity extends Activity {
         s.reader = new Thread(() -> readLoop(s), "render-reader-" + sessions.size());
         s.reader.start();
         debugLog("reader started");
-        setStatus("会话 " + (sessions.size() - 1) + " 已建立；renderer=" + RenderCore.rendererInfo(s.renderer));
+        debugLog("spawn info: " + RenderCore.rendererInfo(s.renderer));
+        setStatus("会话 " + (sessions.size() - 1) + " 已建立（点 [info] 看渲染详情）");
         debugLog("spawnSession end");
     }
 
@@ -311,7 +328,8 @@ public class RenderActivity extends Activity {
         debugLog("after render");
         if (ok && !s.renderShown) {
             s.renderShown = true;
-            setStatus("render OK: " + RenderCore.rendererInfo(s.renderer));
+            debugLog("render OK info: " + RenderCore.rendererInfo(s.renderer));
+            setStatus("render OK");
         }
     }
 
