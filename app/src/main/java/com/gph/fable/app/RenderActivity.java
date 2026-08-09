@@ -182,8 +182,9 @@ public class RenderActivity extends Activity {
         addButton(row3, "emoji27", v -> sendToAll(
             "echo 😀😢😂😍😡🥺🐶🐱🐼🦊🍎🍕🍜⚽🎮🎵📱💻☕❤️⭐⚠️🎄🎂💯👋🏻🏳️‍🌈\n"));
         addButton(row3, "emoji", v -> sendToAll("echo 🚀✅\n"));
-        addButton(row3, "box", v -> sendToAll("printf '┌───┐\\n│ x │\\n└───┘\\n'"));
-        addButton(row3, "u-line", v -> sendToAll("printf '\\033[4munderline\\033[0m\\n'"));
+        // 工单 13：按钮命令必须带末尾真换行（\n），否则 bash 一直等回车不执行。
+        addButton(row3, "box", v -> sendToAll("printf '┌───┐\\n│ x │\\n└───┘\\n'\n"));
+        addButton(row3, "u-line", v -> sendToAll("printf '\\033[4munderline\\033[0m\\n'\n"));
         root.addView(row3);
 
         setContentView(root);
