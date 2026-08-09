@@ -24,6 +24,8 @@ Fable（寓言）= 私人 Android 终端 App：**Kotlin 壳 + Rust 底层 + libg
 | 脏行 | 渲染状态标记的"需要重画的行" |
 | 核心/引擎 | 指 `libghostty-vt`（ADR-0003 已定；可替换但当前不讨论） |
 | CoreAdapter | 换引擎的缝（喂字节 / 拉网格 / 脏行事件 / 能力清单）；v1 UI 只对着它写 |
+| Fable 包仓库（fable-repo） | 以 `com.gph.fable` 前缀构建、供 Fable 环境 `apt` 安装的包源（ADR-0005）；区别于官方 termux-main |
+| bootstrap 归档 | Fable App 启动所需的预构建最小系统（bootstrap zip + 全量 .deb 归档，工单 06 产物） |
 
 ## 决策指针
 
@@ -31,3 +33,4 @@ Fable（寓言）= 私人 Android 终端 App：**Kotlin 壳 + Rust 底层 + libg
 - ADR-0002：v1 最小集（字号/主题/键盘/会话恢复）
 - ADR-0003：终态 = Kotlin 壳 + Rust 底层 + libghostty-vt 核心；验证切片先行
 - ADR-0004：渲染器 = Rust + wgpu（安卓 Vulkan），以 Shellow 为骨架、按官方架构补齐
+- ADR-0005：Fable 包仓库（自建 fable 前缀扁平 apt 仓库，GitHub Releases 托管 + GPG 签名）

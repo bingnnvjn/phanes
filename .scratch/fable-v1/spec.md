@@ -52,6 +52,7 @@ Fable v1 是一个纯终端 Android App：包名 `com.gph.fable`、正式签名�
 8. **构建约束（技术澄清）**：aarch64 手机本地构建——官方 NDK 与 AAPT2 是 x86_64-only，使用 Termux 原生 clang、假 NDK 与原生 aapt2 覆盖；原生库以 jniLibs 直供 .so；改包名后仍须保持 bootstrap 变体（apt-android-7）与代码内 PackageVariant 一致，否则启动崩溃；构建成功不等于产物正确，必须校验 APK 内容。
 9. **架构方向（非 v1 实现）**：终端三层（界面层/仿真核心/会话层）、CoreAdapter 换引擎缝、Environment 环境接口、会话事件流、HUD 交互语言——v1 只保证不阻碍这些方向（如事件流定义成本低，可在需要时补），不在 v1 实现。
 10. **主终端渲染路径（2026-08-07 集成定案）**：会话层 Termux Java（PTY/进程/环境/生命周期）保持不动；字节经 CoreAdapter 缝从会话层喂给 fable-render 核心（libghostty-vt）；每会话一个渲染器 + 一个 SurfaceView；渲染驱动 = 独立渲染线程 + mailbox（工单 12 产物）；选中文本读取、字号、配色板等集成所需能力经渲染器 JNI API 补齐（工单 14），主终端接线与真机验收见工单 15。
+11. **包安装源（2026-08-09 决策窗口 5）**：Fable 环境不消费官方 termux-main（com.termux 前缀包路径硬编码）；自建 Fable 包仓库（fable-repo，ADR-0005）——扁平 apt 仓库托管于 fable-bootstrap GitHub Releases（`latest/download` 稳定 URL），GPG 签名，CI 按需构建指定包；迁移期先本地 dpkg 装归档内 debs（工单 02 现状），自举 + 日常缺口（git/nodejs/openjdk/rust/clang/runit 等）经仓库按需补齐。
 
 ## Testing Decisions
 
