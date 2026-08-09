@@ -83,6 +83,25 @@ Status: 待验收
 - 本地全链路验证：核心 SGR 4 → `collect_snapshot`（`any_underline=true`）→ `build_row_vertices`（每格生成 10x3 白色 solid 矩形，mode=0）→ shader（mode<0.5 返回 color）全部正确；下划线与光标同属 solid 路径（工单 12 真机光标正常）。
 - 结论：下划线代码链未发现 bug；用户此前观察可能受 emoji 全错画面干扰或为旧包。请用新包重测 `[u-line]`；若仍无，需查真机呈现层（非本单合成器）。
 
+2026-08-10 真机反馈第三轮（布局/间距 + 下划线按钮）：
+
+**emoji 布局根因（核心拆分 + 渲染器兜底）**
+
+- 实测 libghostty-vt（预编译 b0947378）把 ZWJ 家庭/肤色/旗帜拆成多个 cell：👨👩👧👦 → 4 格、👍🏻 → 👍+🏻、🇨🇳 → 🇨+🇳（"CN 间隔大"根因）、🧑🚀 → 2 格；⌨️（带 VS16）按 1 格宽 → 与 🔋 相邻导致 2 格位图重叠（"叠在一起"根因）。
+- 渲染器兜底：`merge_emoji_runs`（render_android.rs + main.rs 各一份）在收集后把片段重组成完整 cluster，`Cell.col_span` 归一 emoji 为 2 格，`build_row_vertices`/`rasterize_grid` 改累计列定位。**不能改核心（红线），渲染层合并是 Ghostty 官方同款思路（cell → shaping run）。**
+- 软件光栅缩放补 0.92 系数（与 GPU 一致），扁宽字形（旗帜/键盘）不再占满 2 格紧贴。
+- 验证：离屏 10 个 emoji 各 2 格、中心精确（10/30/50/…/190）、间距正常；ALL PASS。
+
+**扩展测试集（用户要求 20-30 个）**
+
+- 离屏断言新增 27 个代表性码位（黄脸 😀😢😂😍😡🥺 / 动物 🐶🐱🐼🦊 / 食物 🍎🍕🍜 / 活动 ⚽🎮🎵 / 物体 📱💻☕ / 符号 ❤️⭐⚠️ / 节日 🎄🎂 / 💯 / ZWJ 👋🏻🏳️‍🌈），每个断言非空+彩色+尺寸正常（至少一维 ≥0.7em）。
+- 探针新增 `[emoji27]` 按钮输出上述 27 个。
+
+**下划线按钮（用户坚持按钮发错命令）**
+
+- 反编译 APK dex 提取按钮字符串：`"printf '\033[4munderline\033[0m\n'`（结尾单引号，正确）；bash 实测该命令输出 `ESC[4munderline ESC[0m`。用户复制的 `\n"`（双引号）会导致 bash `unexpected EOF` 不执行——请直接点 `[u-line]` 按钮。
+- **新包（覆盖同路径）**：`~/storage/downloads/fable-render-13_arm64-v8a.apk`，sha256 `9502acb66c8b51b725f7fe4dbb46208e81b9542669a6dadb7707c9d5b19e325a`。
+
 **验证数据**
 
 - `cd spike-render && cargo run --release` → `结果: ALL PASS`（新增：🚀 饱和差≥96、✅ 绿底白勾、ZWJ 家庭≠单人且更宽、👍🏻≠👍、🇨🇳 红色、🧑🚀/🫖(U+17)/🫶 冷门码位非空彩色、下划线 420px；既有灰度文本/滚动/resize 全保持）。
