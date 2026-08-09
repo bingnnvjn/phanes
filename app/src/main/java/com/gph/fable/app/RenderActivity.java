@@ -160,6 +160,9 @@ public class RenderActivity extends Activity {
 
         LinearLayout row3 = new LinearLayout(this);
         row3.setOrientation(LinearLayout.HORIZONTAL);
+        // 工单 13：COLRv1 验收序列（彩色/绿勾/ZWJ 家庭/肤色/旗帜/杂项/冷门码位）。
+        addButton(row3, "emoji13", v -> sendToAll(
+            "echo 🚀✅👨‍👩‍👧‍👦👍🏻🇨🇳⌨️🔋🧑‍🚀🫖🫶\n"));
         addButton(row3, "emoji", v -> sendToAll("echo 🚀✅\n"));
         addButton(row3, "box", v -> sendToAll("printf '┌───┐\\n│ x │\\n└───┘\\n'"));
         addButton(row3, "u-line", v -> sendToAll("printf '\\033[4munderline\\033[0m\\n'"));
