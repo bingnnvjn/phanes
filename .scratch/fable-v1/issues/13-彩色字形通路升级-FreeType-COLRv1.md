@@ -64,6 +64,25 @@ Status: 待验收
 - 修复：状态区 `maxLines(2)` + 省略号 + 深色底；自动状态文本精简（attach/spawn/render OK 不再拼 rendererInfo，完整信息进 debug log）；点击状态区可展开/收起全文；`[info]`/`[gpu]` 等主动查询仍显示完整信息。
 - **新包（覆盖同路径）**：`~/storage/downloads/fable-render-13_arm64-v8a.apk`，sha256 `cfc187653883e65b9cf4e64b8dbb960e53a324bfbc20dc6830cf8d4596f8b7b1`（仅 Java 改动，.so 未变）。
 
+2026-08-10 真机反馈第二轮（emoji 全错 + 下划线"完全没有"）修复：
+
+**emoji 全错根因（两个独立 bug）**
+
+1. **层位图 y 坐标符号错误（最大 bug）**：FT 位图行 0 是顶边（y-up `bitmap_top`），图像 y-down 顶应为 `-bitmap_top`；旧代码 `bitmap_top - rows` 把"底边"当顶边，整层垂直翻转 + 错位 → 火箭解体/头颠倒/勾变竖条/毛边。修复：`colr.rs` `offset_y = -bitmap_top`（渐变反算 top 同步用 `bitmap_top`）。
+2. **cluster 画布 alpha 混合公式错误**：直通 alpha src-over 用了预乘公式且强制 alpha=255，半透明层（家庭灰卡圆角抗锯齿）被染暗 + 变不透明黑条。修复：`emoji.rs` blit 用正确 `oa = sa + da*(1-sa)`。
+
+**验证（与官方 png/128 + SVG 源对比）**
+
+- 🚀 alpha IoU：0.392 → 0.982（翻转版 0.311）；👍：0.875 → 0.980；✅ 白勾轨迹与参考一致；家庭 y0 黑条消失（dark px 0）。
+- 新增回归断言：🚀 黄色火焰必须在字形下半部（y 翻转防护）。
+- `cargo run --release` ALL PASS / `cargo test --release --lib` 7 passed。
+- **新包（覆盖同路径）**：`~/storage/downloads/fable-render-13_arm64-v8a.apk`，sha256 `cf4d23eb8528d5f4d261ffbc0170ec357353e3bb3b4715ed5fd37c7826ebe4e2`（新 .so 含修复）。
+
+**下划线专项排查（用户报告"完全没有"）**
+
+- 本地全链路验证：核心 SGR 4 → `collect_snapshot`（`any_underline=true`）→ `build_row_vertices`（每格生成 10x3 白色 solid 矩形，mode=0）→ shader（mode<0.5 返回 color）全部正确；下划线与光标同属 solid 路径（工单 12 真机光标正常）。
+- 结论：下划线代码链未发现 bug；用户此前观察可能受 emoji 全错画面干扰或为旧包。请用新包重测 `[u-line]`；若仍无，需查真机呈现层（非本单合成器）。
+
 **验证数据**
 
 - `cd spike-render && cargo run --release` → `结果: ALL PASS`（新增：🚀 饱和差≥96、✅ 绿底白勾、ZWJ 家庭≠单人且更宽、👍🏻≠👍、🇨🇳 红色、🧑🚀/🫖(U+17)/🫶 冷门码位非空彩色、下划线 420px；既有灰度文本/滚动/resize 全保持）。
