@@ -28,7 +28,7 @@
 | --- | --- | --- | --- |
 | 正式集成主终端 | 工单 `14/15/04` 启动包、`docs/adr/0001/0003/0004`、`项目总览` 路线图 | 已完成（2026-08-09 真机验收通过） | 无 |
 | 会话层搬 Rust | `docs/adr/0003`、工单 `08` Comments（会话层现状）、`项目总览` | 大雾 → grill-with-docs 或 wayfinder → to-spec → to-tickets | 同上 |
-| v1 界面重写 | 工单 `04`、`docs/adr/0001/0002`、`spec.md` | 已完成；遗留：选择菜单方案待讨论（工单 04 Comments）、浅色专项 `fable-v1/16`（backlog） | 无（遗留决策见工单 04 Comments） |
+| v1 界面重写 | 工单 `04`、`docs/adr/0001/0002`、`spec.md` | 已完成；遗留：选择菜单路线已定（自绘浮条，随 Kotlin 壳重构实现，见工单 04 Comments）、浅色专项 `fable-v1/16`（backlog） | 无（遗留决策见工单 04 Comments） |
 | Android 15 权限 | 工单 `05`、`项目总览` | 工单已存在，直接实施 | 完成工单 05 |
 | 数据迁移验证 | 工单 `02`、`.scratch/fable-v1/migration/` | 工单已存在；人工部分由用户执行 | 完成工单 02 |
 | 渲染器 backlog | 工单 `12` Comments（遗留清单）、`docs/adr/0004` | 已拆为工单 13（emoji 字形方向未定，开工时重调研；ZWJ / 图集增量 / 双线角形并入） | 工单 13 + 启动包 |
