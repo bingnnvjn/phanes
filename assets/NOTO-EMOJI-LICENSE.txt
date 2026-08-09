@@ -1,8 +1,17 @@
-Noto Color Emoji (CBDT/CBLC bitmap edition, googlefonts/noto-emoji tag
-v2017-03-10-color-emoji-binary) is licensed under the SIL Open Font
-License, Version 1.1.
+Noto Color Emoji fonts (googlefonts/noto-emoji, main branch) are
+licensed under the SIL Open Font License, Version 1.1.
 
-Copyright 2013-2017 Google Inc. All Rights Reserved.
+Embedded font (assets/NotoColorEmoji.ttf, 工单 13):
+- Noto-COLRv1.ttf（COLRv1 完整版，含旗帜），main 分支 2026-08-09 核实
+- 版本串: Version 2.051;GOOG;noto-emoji:20250818:e92753bfa55fd449e427d4d325f9c8c40408c74e
+- sha256: 0ae57fe58645638523ba35f388d93739d292539a9acb84df5700c81b1e1a28d2
+- 大小: 4,991,984 bytes
+
+Rollback copy (assets/NotoColorEmoji-CBDT-2017.ttf，真机验收通过后移除):
+- 2017 CBDT/CBLC 位图版（v2017-03-10-color-emoji-binary，5,334,180 bytes）
+- sha256: 5911ad9f76002995c081d3cd27c4bcf8191166d6fce3e4e61b21b70d61b02ad2
+
+Copyright 2013-2025 Google Inc. All Rights Reserved.
 
 This font software is distributed WITHOUT ANY WARRANTY, express or
 implied. This font software is provided "AS IS" and no representations

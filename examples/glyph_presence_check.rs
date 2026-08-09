@@ -19,6 +19,7 @@ fn empty_cell() -> Cell {
         bg: None,
         selected: false,
         underline: false,
+        underline_color: None,
         strikethrough: false,
         overline: false,
     }

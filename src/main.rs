@@ -181,6 +181,8 @@ struct Cell {
     bg: Option<GhosttyColorRgb>,
     selected: bool,
     underline: bool,
+    /// SGR 4 下划线颜色（样式显式指定；None = 用前景色，工单 13 更高对比）。
+    underline_color: Option<GhosttyColorRgb>,
     strikethrough: bool,
     overline: bool,
 }
@@ -193,6 +195,7 @@ impl Default for Cell {
             bg: None,
             selected: false,
             underline: false,
+            underline_color: None,
             strikethrough: false,
             overline: false,
         }
@@ -334,11 +337,11 @@ fn rasterize_grid(
             let (fg_r, fg_g, fg_b) = color_bytes(cell.fg, default_fg);
             let ch = cell.text.chars().next().unwrap_or(' ');
 
-            // 彩色 emoji：位图直绘（RGBA 混合）。
+            // 彩色 emoji：整段 cluster（含 ZWJ）整形 + FreeType 光栅直绘。
             let mut drew = false;
             if let Some(emoji_font) = emoji_font {
-                if emoji::is_emoji(ch) {
-                    if let Some(bitmap) = emoji_font.rasterize(ch, px_per_em as u16) {
+                if emoji::is_emoji_run(&cell.text) {
+                    if let Some(bitmap) = emoji_font.rasterize_cluster(&cell.text, px_per_em as u16) {
                         let target_w = CELL_W * 2;
                         let scale = (target_w as f32 / bitmap.width.max(1) as f32)
                             .min((CELL_H as f32 * 0.9) / bitmap.height.max(1) as f32)
@@ -454,18 +457,24 @@ fn rasterize_grid(
                 }
             }
 
-            // 程序化下划线/删除线/上划线。
-            let thickness = (CELL_H as f32 * 0.1).round().max(1.0) as usize;
+            // 程序化下划线/删除线/上划线（工单 13：更粗，真机 25px 行高下
+            // 2px 不可见；软件/GPU 两路统一 max(3px, 12% 行高)）。
+            let thickness = ((CELL_H as f32 * 0.12).round() as usize).max(3);
             if cell.underline {
+                // 更高对比：样式显式下划线色优先，否则用前景色。
+                let (ul_r, ul_g, ul_b) = cell
+                    .underline_color
+                    .map(|c| (c.r, c.g, c.b))
+                    .unwrap_or((fg_r, fg_g, fg_b));
                 for x in 0..CELL_W {
                     for t in 0..thickness {
                         let dy = origin_y + CELL_H - 1 - t;
                         let dx = origin_x + x;
                         if dy < height && dx < width {
                             let i = (dy * width + dx) * 4;
-                            framebuffer[i] = fg_r;
-                            framebuffer[i + 1] = fg_g;
-                            framebuffer[i + 2] = fg_b;
+                            framebuffer[i] = ul_r;
+                            framebuffer[i + 1] = ul_g;
+                            framebuffer[i + 2] = ul_b;
                             framebuffer[i + 3] = 255;
                         }
                     }
@@ -893,6 +902,10 @@ fn main() {
                     bg,
                     selected,
                     underline: style.underline != SGR_UNDERLINE_NONE,
+                    underline_color: match style.underline_color.tag {
+                        2 => Some(style.underline_color.value.rgb),
+                        _ => None,
+                    },
                     strikethrough: style.strikethrough,
                     overline: style.overline,
                 });
@@ -987,21 +1000,109 @@ fn main() {
             all_ok = false;
         }
 
-        // 工单 12 程序化校验：彩色 emoji 位图含彩色像素；sprite 位图非空。
-        let emoji_color_ok = emoji::load_emoji_font()
+        // 工单 13 程序化校验：FreeType COLRv1 光栅
+        // （RGBA / 🚀 不偏淡 / ✅ 绿勾 / ZWJ 家庭 / 肤色 / 旗帜）+ sprite。
+        let emoji_font = emoji::load_emoji_font();
+        let rocket_ok = emoji_font
+            .as_ref()
             .and_then(|font| font.rasterize('🚀', 24))
-            .map(|bitmap| {
-                bitmap
-                    .pixels
-                    .chunks_exact(4)
-                    .any(|p| p[0] != p[1] || p[1] != p[2])
+            .map(|bmp| {
+                bmp.pixels.chunks_exact(4).any(|p| {
+                    let max = p[0].max(p[1]).max(p[2]);
+                    let min = p[0].min(p[1]).min(p[2]);
+                    max - min >= 96
+                })
             })
             .unwrap_or(false);
         println!(
-            "  {} : emoji 彩色位图（🚀 含非灰像素）",
-            if emoji_color_ok { "PASS" } else { "FAIL" }
+            "  {} : COLRv1 光栅 🚀 出 RGBA 且彩色不偏淡（饱和差 ≥96）",
+            if rocket_ok { "PASS" } else { "FAIL" }
         );
-        all_ok &= emoji_color_ok;
+        all_ok &= rocket_ok;
+
+        let check_ok = emoji_font
+            .as_ref()
+            .and_then(|font| font.rasterize('✅', 24))
+            .map(|bmp| {
+                let green = bmp.pixels.chunks_exact(4).any(|p| {
+                    p[1] >= 120 && p[1] as u16 >= p[0] as u16 + 30 && p[1] as u16 >= p[2] as u16 + 30
+                });
+                let white = bmp
+                    .pixels
+                    .chunks_exact(4)
+                    .any(|p| p[0] >= 220 && p[1] >= 220 && p[2] >= 220);
+                green && white
+            })
+            .unwrap_or(false);
+        println!(
+            "  {} : ✅ 为 COLRv1 原生彩色绿底白勾（不做灰勾覆盖）",
+            if check_ok { "PASS" } else { "FAIL" }
+        );
+        all_ok &= check_ok;
+
+        let (family_ok, skin_ok, flag_ok) = emoji_font
+            .as_ref()
+            .and_then(|font| {
+                let family = font.rasterize_cluster("👨‍👩‍👧‍👦", 24)?;
+                let person = font.rasterize_cluster("👨", 24)?;
+                let thumb = font.rasterize_cluster("👍", 24)?;
+                let tone = font.rasterize_cluster("👍🏻", 24)?;
+                let flag = font.rasterize_cluster("🇨🇳", 24)?;
+                let flag_red = flag
+                    .pixels
+                    .chunks_exact(4)
+                    .any(|p| p[0] >= 150 && p[1] <= 110 && p[2] <= 110);
+                Some((
+                    // 家庭序列必须与单个 👨 不同且更宽（ZWJ 不是只画首码位；
+                    // Noto 家庭设计为灰卡+黑色人形，故不断言彩色）。
+                    family.pixels != person.pixels
+                        && family.width as f32 > person.width as f32 * 1.1,
+                    // 肤色修饰必须产出与默认 👍 不同的字形。
+                    thumb.pixels != tone.pixels || thumb.width != tone.width,
+                    // 旗帜 ligature 必须含红色（🇨🇳）。
+                    flag_red,
+                ))
+            })
+            .unwrap_or((false, false, false));
+        println!(
+            "  {} : ZWJ 家庭 👨‍👩‍👧‍👦 整形为独立宽字形（≠ 单人）",
+            if family_ok { "PASS" } else { "FAIL" }
+        );
+        all_ok &= family_ok;
+        println!(
+            "  {} : 肤色 👍🏻 与默认 👍 字形不同",
+            if skin_ok { "PASS" } else { "FAIL" }
+        );
+        all_ok &= skin_ok;
+        println!(
+            "  {} : 旗帜 🇨🇳 整形出红色（ligature 生效）",
+            if flag_ok { "PASS" } else { "FAIL" }
+        );
+        all_ok &= flag_ok;
+
+        // 冷门码位抽查（工单 13 验收补充清单）：ZWJ 宇航员、近年码位
+        // （🫖 U+1FAD6、🫶 U+1FAF6）。断言：非空 + 含彩色像素。
+        let cold_ok = emoji_font
+            .as_ref()
+            .map(|font| {
+                ["🧑‍🚀", "🫖", "🫶"].iter().all(|s| {
+                    font.rasterize_cluster(s, 24).map(|bmp| {
+                        let alpha = bmp.pixels.chunks_exact(4).any(|p| p[3] > 0);
+                        let colored = bmp
+                            .pixels
+                            .chunks_exact(4)
+                            .any(|p| p[3] > 0 && (p[0] != p[1] || p[1] != p[2]));
+                        alpha && colored
+                    }).unwrap_or(false)
+                })
+            })
+            .unwrap_or(false);
+        println!(
+            "  {} : 冷门码位抽查（🧑‍🚀 / 🫖 / 🫶）非空且彩色",
+            if cold_ok { "PASS" } else { "FAIL" }
+        );
+        all_ok &= cold_ok;
+
         let sprite_ok = symbols::sprite_bitmap('┌', 32)
             .map(|bitmap| bitmap.alpha.iter().any(|&a| a > 0))
             .unwrap_or(false);
@@ -1081,6 +1182,10 @@ fn main() {
                     bg,
                     selected,
                     underline: style.underline != SGR_UNDERLINE_NONE,
+                    underline_color: match style.underline_color.tag {
+                        2 => Some(style.underline_color.value.rgb),
+                        _ => None,
+                    },
                     strikethrough: style.strikethrough,
                     overline: style.overline,
                 });
@@ -1152,6 +1257,26 @@ fn main() {
                     if emoji_colored { "PASS" } else { "FAIL" }
                 );
                 all_ok &= emoji_colored;
+
+                // 下划线可见性：SGR 4 行（第 5 行）底部 thickness 行内应有
+                // 成片前景色像素（对比背景），离屏先验，真机再确认。
+                let ul_row = 4usize;
+                let ul_thickness = ((CELL_H as f32 * 0.12).round() as usize).max(3);
+                let ul_pixels = (ul_row * CELL_H + CELL_H - ul_thickness..ul_row * CELL_H + CELL_H)
+                    .flat_map(|y| (0..CELL_W * 20).map(move |x| (y, x)))
+                    .filter(|&(y, x)| {
+                        let i = (y * w + x) * 4;
+                        pixels[i] == 255 && pixels[i + 1] == 255 && pixels[i + 2] == 255
+                    })
+                    .count();
+                let underline_ok = ul_pixels >= 40;
+                println!(
+                    "  {} : SGR 4 下划线可见（底部 {}px 前景像素 {} 个 ≥40）",
+                    if underline_ok { "PASS" } else { "FAIL" },
+                    ul_thickness,
+                    ul_pixels
+                );
+                all_ok &= underline_ok;
             }
             None => {
                 println!("\n警告: 未找到可用字体，跳过 PNG 输出");

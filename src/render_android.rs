@@ -143,6 +143,8 @@ pub struct Cell {
     pub bg: Option<Rgb>,
     pub selected: bool,
     pub underline: bool,
+    /// SGR 4 下划线颜色（样式显式指定；None = 用前景色，工单 13 更高对比）。
+    pub underline_color: Option<Rgb>,
     pub strikethrough: bool,
     pub overline: bool,
 }
@@ -420,6 +422,20 @@ pub unsafe fn collect_snapshot(
                 bg,
                 selected,
                 underline: style.underline != SGR_UNDERLINE_NONE,
+                underline_color: match style.underline_color.tag {
+                    1 => apply_ansi_override(
+                        style.underline_color.tag,
+                        style.underline_color.value.palette,
+                        fg,
+                        ansi_override,
+                    ),
+                    2 => Some(Rgb {
+                        r: style.underline_color.value.rgb.r,
+                        g: style.underline_color.value.rgb.g,
+                        b: style.underline_color.value.rgb.b,
+                    }),
+                    _ => None,
+                },
                 strikethrough: style.strikethrough,
                 overline: style.overline,
             });
@@ -555,6 +571,7 @@ fn hash_row(row: &[Cell]) -> u64 {
         cell.bg.hash(&mut hasher);
         cell.selected.hash(&mut hasher);
         cell.underline.hash(&mut hasher);
+        cell.underline_color.hash(&mut hasher);
         cell.strikethrough.hash(&mut hasher);
         cell.overline.hash(&mut hasher);
     }
@@ -607,7 +624,7 @@ pub struct GlyphAtlas {
     revision: u64,
     pixels_per_em: f32,
     emoji_font: Option<crate::emoji::EmojiFont>,
-    color_entries: HashMap<char, ColorGlyphEntry>,
+    color_entries: HashMap<String, ColorGlyphEntry>,
     color_pixels: Vec<u8>,
     color_next_cell: u32,
     color_revision: u64,
@@ -916,16 +933,17 @@ impl GlyphAtlas {
         Some(entry)
     }
 
-    /// 取彩色 emoji 字形；非 emoji / 无彩色字体 / 提取失败返回 None。
-    pub fn ensure_color_glyph(&mut self, ch: char) -> Option<ColorGlyphEntry> {
-        if let Some(entry) = self.color_entries.get(&ch) {
+    /// 取彩色 emoji 字形（cluster 键：ZWJ 序列整段进图集）；
+    /// 非 emoji run / 无彩色字体 / 光栅失败返回 None。
+    pub fn ensure_color_glyph(&mut self, cluster: &str) -> Option<ColorGlyphEntry> {
+        if let Some(entry) = self.color_entries.get(cluster) {
             return Some(*entry);
         }
-        if !crate::emoji::is_emoji(ch) {
+        if !crate::emoji::is_emoji_run(cluster) {
             return None;
         }
         let font = self.emoji_font.as_ref()?;
-        let bitmap = font.rasterize(ch, self.pixels_per_em as u16)?;
+        let bitmap = font.rasterize_cluster(cluster, self.pixels_per_em as u16)?;
         if bitmap.width == 0 || bitmap.height == 0 || bitmap.pixels.is_empty() {
             return None;
         }
@@ -979,7 +997,7 @@ impl GlyphAtlas {
             pad_y,
         };
         self.color_revision = self.color_revision.wrapping_add(1);
-        self.color_entries.insert(ch, entry);
+        self.color_entries.insert(cluster.to_string(), entry);
         Some(entry)
     }
 
@@ -1419,8 +1437,8 @@ pub fn build_row_vertices(
         let target_cell_w = cell_w * width_cells as f32;
         let fg = rgb_components(fg_for_cell(cell, snapshot));
 
-        // 彩色 emoji 优先走彩色图集（工单 12 ②）。
-        if let Some(color_entry) = atlas.ensure_color_glyph(ch) {
+        // 彩色 emoji 优先走彩色图集（工单 13：整段 cluster 整形后入图集）。
+        if let Some(color_entry) = atlas.ensure_color_glyph(&cell.text) {
             let scale = ((target_cell_w * 0.92) / color_entry.bitmap_w.max(1) as f32)
                 .min((row_h * 0.92) / color_entry.bitmap_h.max(1) as f32)
                 .max(0.01);
@@ -1526,16 +1544,18 @@ pub fn build_row_vertices(
         }
 
         // 程序化文字装饰（下划线/删除线/上划线，不依赖字体）。
-        // 真机 25px 行高下 1px 线几乎不可见，最小 2px。
-        let thickness = (row_h * 0.08).max(2.0);
+        // 工单 13：25px 行高下 2px 真机仍不可见 → max(3px, 12% 行高)。
+        let thickness = (row_h * 0.12).max(3.0);
         if cell.underline {
+            // 更高对比：样式显式下划线色优先，否则用前景色。
+            let ul_color = cell.underline_color.unwrap_or(fg_for_cell(cell, snapshot));
             push_solid_rect(
                 &mut vertices,
                 x,
                 y + row_h - thickness,
                 target_cell_w,
                 thickness,
-                fg,
+                rgb_components(ul_color),
                 surface_w,
                 surface_h,
             );
@@ -1651,8 +1671,8 @@ pub fn build_overlay_vertices(
                     );
                 }
                 2 => {
-                    // UNDERLINE：底部线
-                    let thickness = (row_h * 0.08).max(2.0);
+                    // UNDERLINE：底部线（工单 13：更粗 max(3px, 12%)）
+                    let thickness = (row_h * 0.12).max(3.0);
                     push_solid_rect(
                         &mut vertices,
                         x,

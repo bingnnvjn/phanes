@@ -2,6 +2,8 @@
 
 pub mod ffi;
 pub mod emoji;
+pub mod colr;
+pub mod freetype_ffi;
 pub mod symbols;
 mod jni;
 pub mod render_android;

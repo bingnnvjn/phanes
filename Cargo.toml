@@ -15,9 +15,9 @@ fontdue = "0.9"
 jni = "0.22.4"
 log = "0.4"
 png = "0.18"
+rustybuzz = "0.20.1"
 wgpu = { version = "30.0.0", default-features = false, features = ["std", "vulkan", "wgsl", "parking_lot"] }
 pollster = "0.4"
-ttf-parser = "0.25"
 
 [profile.dev]
 opt-level = 1
