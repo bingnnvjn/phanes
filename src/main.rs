@@ -1020,6 +1020,32 @@ fn main() {
         );
         all_ok &= rocket_ok;
 
+        // 方向 sanity（工单 13 真机 y 翻转回归防护）：🚀 黄色火焰必须在下半部。
+        let rocket_flame_ok = emoji_font
+            .as_ref()
+            .and_then(|font| font.rasterize('🚀', 24))
+            .map(|bmp| {
+                let h = bmp.height as usize;
+                let mut top_yellow = 0usize;
+                let mut bottom_yellow = 0usize;
+                for (i, p) in bmp.pixels.chunks_exact(4).enumerate() {
+                    if p[3] > 0 && p[0] > 230 && p[1] > 170 && p[2] < 100 {
+                        if i / (bmp.width as usize) < h / 2 {
+                            top_yellow += 1;
+                        } else {
+                            bottom_yellow += 1;
+                        }
+                    }
+                }
+                bottom_yellow > top_yellow
+            })
+            .unwrap_or(false);
+        println!(
+            "  {} : 🚀 方向正确（黄色火焰在下半部，y 翻转回归防护）",
+            if rocket_flame_ok { "PASS" } else { "FAIL" }
+        );
+        all_ok &= rocket_flame_ok;
+
         let check_ok = emoji_font
             .as_ref()
             .and_then(|font| font.rasterize('✅', 24))

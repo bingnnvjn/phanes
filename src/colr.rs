@@ -169,6 +169,7 @@ pub fn render_color_glyph(ctx: &ColrCtx, glyph_id: u32, pixels_per_em: u16) -> O
     render_paint(ctx, root, &Affine::identity(), 0)
 }
 
+
 fn render_paint(ctx: &ColrCtx, op: FT_OpaquePaint, affine: &Affine, depth: u32) -> Option<RgbaImage> {
     if depth > MAX_DEPTH {
         return None;
@@ -341,7 +342,10 @@ fn render_glyph(ctx: &ColrCtx, gid: u32, affine: &Affine, fill: &Fill) -> Option
         };
         let src = std::slice::from_raw_parts(bmp.buffer, pitch * h);
         let offset_x = (*slot).bitmap_left;
-        let offset_y = (*slot).bitmap_top - bmp.rows as c_int;
+        // 工单 13 真机修复：FT 位图行 0 = 顶边（y-up bitmap_top）。
+        // 图像左上角（y-down）= -bitmap_top；旧代码 bitmap_top - rows 把
+        // "底边"当顶边，整层垂直翻转 + 错位（火箭解体/头颠倒/勾变竖条）。
+        let offset_y = -(*slot).bitmap_top;
         let mut img = RgbaImage::new(offset_x, offset_y, w as u32, h as u32);
         let inv = affine.invert();
         for y in 0..h {
@@ -351,7 +355,7 @@ fn render_glyph(ctx: &ColrCtx, gid: u32, affine: &Affine, fill: &Fill) -> Option
                     continue;
                 }
                 let left_f = offset_x as f64;
-                let top_f = offset_y as f64 + h as f64; // y-up 顶
+                let top_f = (*slot).bitmap_top as f64; // y-up 顶（渐变反算用）
                 let color = match fill {
                     Fill::Solid(c) => *c,
                     Fill::Linear(g) => gradient_color(

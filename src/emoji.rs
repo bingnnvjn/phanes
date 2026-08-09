@@ -288,12 +288,21 @@ impl EmojiFont {
                         }
                         let di = (dy * cw + dx) * 4;
                         let sa = a as f32 / 255.0;
+                        let da = canvas[di + 3] as f32 / 255.0;
+                        // 工单 13 真机修复：直通 alpha 正确 src-over。
+                        // 旧公式把 dst 当预乘处理且强制 alpha=255，半透明层
+                        // （如家庭灰卡圆角抗锯齿）会被染暗 + 变不透明黑条。
+                        let oa = sa + da * (1.0 - sa);
+                        if oa <= 0.0 {
+                            continue;
+                        }
                         for k in 0..3 {
-                            canvas[di + k] = (bmp.pixels[si + k] as f32 * sa
-                                + canvas[di + k] as f32 * (1.0 - sa))
+                            canvas[di + k] = ((bmp.pixels[si + k] as f32 * sa
+                                + canvas[di + k] as f32 * da * (1.0 - sa))
+                                / oa)
                                 as u8;
                         }
-                        canvas[di + 3] = 255;
+                        canvas[di + 3] = (oa * 255.0) as u8;
                     }
                 }
             }
