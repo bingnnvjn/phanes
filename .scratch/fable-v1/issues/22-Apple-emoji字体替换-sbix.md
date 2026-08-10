@@ -70,3 +70,37 @@
 - **换字体步骤补 ssot 常量清单**：fetch 脚本 / emoji.rs / FontAssets.java / check 脚本 / main.rs 断言 / 溯源文档共 6 处同步点。
 - 评审遗留说明：`coverage_diff` 为单码位粒度（组合字形经 36/36 样例断言覆盖，报告中注明）；系统字体回退链删除与新增 C shim（mmap/sha256，沿用既有 shim 先例）均按 ADR-0007 决策 4 记录在案。
 - **新包（覆盖同路径）**：`~/storage/downloads/fable-render-22_arm64-v8a.apk`，sha256 `313c232c7dd0e6480d76464cbd359446d4f06602d270174c3e18c1e008a357d9`。
+
+2026-08-10 真机反馈修复（用户验收不满意：清晰度糊/锯齿 + 国旗极小、电池极大）：
+
+**用户可操作性问题（先解答）**
+
+- 探针（RenderActivity）**没有字号按钮、没有深浅主题切换**；字号/主题在主终端（Termux 设置 + FableTerminalPalette）。探针固定 24px 字号、固定深色黑底。40×10 是格子变大而非字号变大。
+
+**根因调查（代码 + 数据双线，非点修）**
+
+1. **布局基准错误（国旗/电池两极分化的直接机制）**：
+   - 旧实现 `build_row_vertices` 用「非透明包围盒 bbox」fit 进「2 格宽 × 行高」盒。Apple sbix 原生语义是**位图画布（160×160 = 1em 方块，含透明边）按 origin 摆进 em 盒**；位图内容在画布内的位置/大小是字体设计。
+   - 实测（160 档位图）：🇨🇳 画布 160×160、内容 bbox (9,29,142,102)（0.89em×0.64em，垂直画布内 y29..131）；🔋 画布 160×160、内容全满；⌨️ 画布 160×160、内容 (0,14,160,23)（0.14em 高的横条）。**国旗内容只有 0.64em 是苹果原生设计**（iOS 上同样如此；Apple 官方文档确认单 RI 码位无位图、旗帜在组合字形上）。
+   - 叠加第二个 bug：`build_row_vertices` 用 `terminal_cell_width(chars().next())` 判宽，区域指示符（🇨）单码位判宽=1 → **国旗只按 1 格宽（27px）计算**，电池（U+1F50B 判宽=2）按 2 格宽（54px）计算 → 国旗直接比电池小一半。`merge_emoji_runs` 已把 emoji 归一 col_span=2，宽度基准却没用 col_span。
+2. **清晰度（糊/锯齿）**：emoji 按固定 `pixels_per_em=24px` 光栅化，探针 40×10（行高 192px、2 格宽 54px）下上屏放大 2.3 倍；任何双线性在该倍率都糊。根因是**目标尺寸基准错位**：光栅化尺寸≠显示尺寸。
+3. **探针行高与字号脱节**：探针行列写死（40×10/80×24），`row_h = surface_h/rows` 与字号无关；主终端行列由 `cell_size()`（字号驱动）推导，无此问题。
+
+**修复（画布=em 盒统一语义，全类一劳永逸，不点修）**
+
+- `apple_rasterize_cluster`：合成画布 = em 盒（advance × 1em，含透明边），位图按 origin 摆进画布，内容位置保持字体原生；`RgbaBitmap` 增加 `canvas_origin_x/y`。
+- `build_row_vertices`：宽度基准改用 `merge_emoji_runs` 归一后的 `col_span`（emoji=2 格，tab=4 格保留）；布局以画布整体（非内容 bbox）缩放：目标 em 边长 `E = min(row_h×0.9, max(字号, 2格宽×0.95))`，画布 fit 2 格宽防溢出、垂直居中于行。国旗/电池/键盘画布尺寸统一 = em 盒，内容差异回归字体原生（国旗 0.64em、电池 1em、键盘横条 0.14em —— 与 iOS 一致）。
+- 清晰度：emoji 按目标 em 边长光栅化（不再固定 24px）；彩色图集独立纹理 4096 + 动态格子（max(64, 2^⌈log2(画布最大边)⌉)；64px 格 4096 格、128px 格 1024 格，容量不削），大字号/大格子下清晰显示；灰度图集保持 2048、双图集通道结构不变。
+- 探针：新增 `font-`/`font+` 字号调节（12..192px，`rendererSetFontSize`），emoji 按字号重光栅化；40×10 大格子下 emoji 清晰放大。
+
+**验证数据（修复后）**
+
+- `cargo run --release` → `结果: ALL PASS`（新增「画布语义全类回归 59 项」：26 个单 RI + 组合旗帜 + 竖条/横条硬件 + ZWJ + 冷门，断言画布=em 盒、内容不越界）。性能：加载 117.7ms ≤200ms、🚀 首现 1.37ms ≤50ms、预热 50/50 20.4ms ≤2000ms。
+- `cargo test --release` 全绿（含新单测 `emoji_canvas_em_box_uniform_after_ticket22`：40×10 下国旗/电池/键盘画布统一 51×51、≤2 格宽、国旗内容 ≥0.55em）。
+- 修复前 vs 后对比（40×10、1080×1920）：国旗 target 宽度 27px（1 格）→ 54px（2 格）；画布基准 内容 bbox → em 盒；光栅化 24px → 51px（160 档超采样 3.1×）。
+- APK：`fable-render-22-fix_arm64-v8a.apk` 已重建（libfable-render.so 11,223,760B 未 strip / APK 内 strip 后 8,079,848B，NEEDED 五件套不变；assets 字体 noCompress 不变）。
+
+**已知限制（如实记录，非本次修复范围）**
+
+- 国旗内容 0.64em、键盘横条 0.14em 是字体原生设计（iOS/macOS 同字体同比例）；本次修复保证画布（em 盒）与位置语义与苹果一致，不做内容强行放大（点修被明确禁止）。
+- 👩❤️👨 等部分 ZWJ 序列 rustybuzz 整形成 2 个 glyph 且 x_offset 回退重叠（Apple 字体该序列无 GSUB 预组合；👨👩👧👦 等家庭序列有预组合单 glyph）；渲染结果可能只显示后半组合。已在诊断中记录，列为后续观察项（不属于本次国旗/电池/清晰度验收范围）。
