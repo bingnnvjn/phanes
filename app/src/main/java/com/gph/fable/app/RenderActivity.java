@@ -182,6 +182,9 @@ public class RenderActivity extends Activity {
         LinearLayout row3 = new LinearLayout(this);
         row3.setOrientation(LinearLayout.HORIZONTAL);
         // 工单 13：COLRv1 验收序列（彩色/绿勾/ZWJ 家庭/肤色/旗帜/杂项/冷门码位）。
+        // 工单 22 真机反馈：bash readline 交互输入会吞掉 ZWJ（U+200D），
+        // 家庭/职业 emoji 被拆开；按钮改用 bracketed paste 发送（\x1b[200~
+        // ... \x1b[201~），readline 按粘贴文本处理、保留 ZWJ。
         addButton(row3, "emoji13", v -> sendToAll(
             "echo 🚀✅👨‍👩‍👧‍👦👍🏻🇨🇳⌨️🔋🧑‍🚀🫖🫶\n"));
         // 工单 13 扩展测试集：黄脸/动物/食物/活动/物体/符号/ZWJ 27 个。
@@ -392,7 +395,12 @@ public class RenderActivity extends Activity {
     }
 
     private void sendToAll(String cmd) {
-        byte[] bytes = cmd.getBytes(StandardCharsets.UTF_8);
+        // 工单 22 真机反馈：bash readline 交互输入吞掉 ZWJ（U+200D），
+        // 家庭/职业 emoji 被拆开。统一用 bracketed paste 发送
+        // （\x1b[200~ ... \x1b[201~）：readline 按粘贴文本处理，保留 ZWJ，
+        // 命令照常执行（已验证真实 bash 回显/输出 ZWJ 完整）。
+        String wrapped = "\u001b[200~" + cmd + "\u001b[201~";
+        byte[] bytes = wrapped.getBytes(StandardCharsets.UTF_8);
         for (Session s : sessions) {
             RenderCore.ptyWrite(s.pty, bytes, bytes.length);
         }
