@@ -283,8 +283,12 @@ public class SessionProbeActivity extends Activity {
                 ok &= check(r, "env HOME", waitText(s0, "HOME=" + HOME, 5000), HOME);
                 ok &= check(r, "env TERM", waitText(s0, "TERM=xterm-256color", 5000), "xterm-256color");
                 ok &= check(r, "env TMPDIR", waitText(s0, "TMPDIR=" + TMPDIR, 5000), TMPDIR);
-                ok &= check(r, "env PATH 含 prefix/bin", waitText(s0, "PATH=" + PREFIX + "/bin", 5000),
-                        PREFIX + "/bin");
+                // PATH：登录 shell 的启动文件（~/.profile 等）可能前置用户目录；
+                // 断言有效 PATH 含 bootstrap bin 目录，并把实际 PATH 行打进报告。
+                waitText(s0, "PATH=", 5000);
+                String pathLine = lineContaining(snapshot(s0), "PATH=");
+                ok &= check(r, "env PATH 含 prefix/bin（实际: " + pathLine + "）",
+                        pathLine.contains(PREFIX + "/bin"), PREFIX + "/bin");
                 send(s0, "printf 'PWD=%s\\n' \"$(pwd)\"\n");
                 ok &= check(r, "pwd = files/home", waitText(s0, "PWD=" + HOME, 5000), HOME);
 
@@ -390,6 +394,15 @@ public class SessionProbeActivity extends Activity {
         synchronized (s.lock) {
             return s.text.toString();
         }
+    }
+
+    private String lineContaining(String text, String marker) {
+        int i = text.indexOf(marker);
+        if (i < 0) return "(未找到 " + marker + " 行)";
+        int start = text.lastIndexOf('\n', i) + 1;
+        int end = text.indexOf('\n', i);
+        if (end < 0) end = text.length();
+        return text.substring(start, end).trim();
     }
 
     private boolean check(StringBuilder r, String name, boolean pass, String detail) {
