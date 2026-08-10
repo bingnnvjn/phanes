@@ -111,3 +111,17 @@
 - **为何本地自检没抓到**：`wgpu_offscreen_check` 用独立旧 shader 只画 solid 红色，从未覆盖真实 SURFACE_SHADER 的纹理路径；宿主 `cargo run` 是软件光栅（不走 wgpu）。已重写 `wgpu_offscreen_check`：直接用 `render_android::SURFACE_SHADER` + 3-binding 双纹理布局 + 4096 彩色纹理，画 mode=2 彩色 glyph 读回验证 → PASS（修复前该检查必 FAIL）。
 - **顺带加固**：彩色图集尺寸按设备 `max_texture_dimension_2d` 自适应降级（默认 4096，不足时降到 1024/2048/4096 的下一个 2 幂；`GlyphAtlas::set_color_size` 重建缓冲并清空条目，容量随格子动态换算）——避免旧设备不支持 4096 纹理时再次黑屏。
 - **验证**：`cargo run --release` ALL PASS；`cargo test --release` 14 passed；`wgpu_offscreen_check` PASS（真实管线 + 4096 采样）；APK 重建 `fable-render-22-fix_arm64-v8a.apk`（so 8,080,856B，NEEDED 五件套不变）。
+
+2026-08-10 真机反馈修复（emoji22 命令行/输出行合成不一致）：
+
+- **现象**：命令输入行中间家庭（👨👩👦）未合成、输出行肤色第一个（👍🏻）未合成；两边还互相反着。
+- **根因（实测定位，非渲染 bug）**：交互式 bash（PTY + readline）把输入里的 **ZWJ（U+200D）吞掉**：
+  - python pty 跑真实 bash 捕获：`echo <emoji22>` 的完整字节流（回显 + echo 输出）里 **ZWJ 计数 = 0**（家庭/职业全部失去连接符，被拆成独立 emoji）。
+  - 对照实验：非交互管道 `printf 'echo 👨\u200d👩\n' | bash` 输出 **ZWJ 保留**（1 个）→ 吞 ZWJ 是 readline 交互行为，不是渲染器/核心问题。
+  - 核心 cell 拆分（真实 bash 字节流喂 libghostty-vt）确认：命令行和输出行都是 `👨 / 👩 / 👦`（无 ZWJ），merge 无从合成。
+- **修复**：探针 `sendToAll` 统一用 **bracketed paste**（`\x1b[200~...\x1b[201~`）发送命令。readline 把粘贴内容当字面文本插入、**不吞 ZWJ**：
+  - pty 验证：bracketed paste 发送 emoji22 → 回显+输出 **ZWJ 11/11 完整**；
+  - 核心拆分验证：命令行家庭 `👨|ZWJ / 👩|ZWJ / 👧|ZWJ / 👦`、职业 `🧑|ZWJ / 🚀` 全部含 ZWJ → merge 正常合成；
+  - 肤色（非 ZWJ，readline 不吞）随 merge 的 next_is_skin 修复一并正常。
+- 手动输入框（sendInput）同样走 sendToAll，粘贴 emoji 也保留 ZWJ。
+- APK：`fable-render-22-fix_arm64-v8a.apk`（sha256 `8232a61c…`）。
