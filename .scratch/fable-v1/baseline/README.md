@@ -37,20 +37,32 @@
 - 仓库 HEAD（采集时）：`708718d`（2026-08-11）
 - 真机上已安装该 APK，且能开 4 个会话（抽屉多会话）、长按选择复制/粘贴、触摸滚动
 
-## 运行步骤（真机，用户执行）
+## 运行步骤
+
+### 模式 A：手动（无需无线调试）
 
 1. 在 Fable 主终端任一会话运行：
    `bash /storage/emulated/0/Download/fable-baseline-23/start-run.sh`
-2. 在本会话运行：`bash /storage/emulated/0/Download/fable-baseline-23/run-session.sh s1 &`
+2. 在本会话运行：`bash /storage/emulated/0/Download/fable-baseline-23/run-session.sh s1`
+   （脚本自动转后台，输出仍显示；手动加 `&` 也兼容）
 3. 新建 3 个会话，分别运行：
-   `bash /storage/emulated/0/Download/fable-baseline-23/run-session.sh s2 &`（s3 / s4 同理）
+   `bash /storage/emulated/0/Download/fable-baseline-23/run-session.sh s2`（s3 / s4 同理）
 4. 按 `scenario-协议.md` 做 12 分钟切换/滚动/复制粘贴，按 3/6/9/12 分钟截图；
    异常（崩溃/ANR/卡顿）发生时记下时刻并截图。
 5. 4 个会话都出现 `DONE` 后（约 12 分钟），任一会话运行：
    `bash /storage/emulated/0/Download/fable-baseline-23/verify.sh`
    把输出原样复制出来（作为验收数据）。
 
-> 注意：`run-session.sh` 用 `&` 后台跑，会话保持可交互（粘贴直接生效）。运行期间不要
+### 模式 B：adb 全自动（用户只做一次无线调试配对，其余我来）
+
+1. 手机：设置 → 开发者选项 → 无线调试 → 开启；点「使用配对码配对设备」，把端口与配对码发给我。
+2. 我在旧 Termux（本环境）配对连接后，依次运行：
+   `bash .scratch/fable-v1/baseline/scripts/adb-drive.sh prep`（开 4 会话 + 起负载）
+   `bash .../adb-drive.sh stress`（12 分钟自动化切换/滚动/复制粘贴 + 截图）
+   `bash .../adb-drive.sh finish`（verify + logcat + meminfo + 拉结果）
+3. 我写回工单 Comments（含截图与 logcat 原始证据）。
+
+> 注意（模式 A）：`run-session.sh` 自动后台跑，会话保持可交互（粘贴直接生效）。运行期间不要
 > 关会话、不要重跑 `start-run.sh`、不要 `kill %1`。误操作导致某会话文件不完整时，
 > verify 会 FAIL，需要整轮重跑（旧 run 目录会被归档，不删除）。
 
