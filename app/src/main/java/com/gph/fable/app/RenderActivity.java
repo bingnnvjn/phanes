@@ -43,6 +43,9 @@ public class RenderActivity extends Activity {
     private static final int MAX_SESSIONS = 4;
     private static final int DEFAULT_COLS = 80;
     private static final int DEFAULT_ROWS = 24;
+    // 工单 22 真机反馈：探针固定 24px 字号导致 40×10 大格子下 emoji 小且糊。
+    // 加字号调节（12..192px），emoji 按目标字号光栅化，大字号清晰放大。
+    private static final float DEFAULT_FONT_PX = 24f;
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ArrayList<Session> sessions = new ArrayList<>();
@@ -60,6 +63,7 @@ public class RenderActivity extends Activity {
         volatile boolean alive = true;
         int cols = DEFAULT_COLS;
         int rows = DEFAULT_ROWS;
+        float fontSizePx = DEFAULT_FONT_PX;
         int width;
         int height;
         boolean renderShown;
@@ -166,6 +170,8 @@ public class RenderActivity extends Activity {
 
         LinearLayout row2 = new LinearLayout(this);
         row2.setOrientation(LinearLayout.HORIZONTAL);
+        addButton(row2, "font-", v -> fontDelta(0.8f));
+        addButton(row2, "font+", v -> fontDelta(1.25f));
         addButton(row2, "redraw", v -> redrawAll());
         addButton(row2, "info", v -> showInfo());
         addButton(row2, "view", v -> canvasRedAll());
@@ -217,8 +223,8 @@ public class RenderActivity extends Activity {
         }
         long renderer = 0;
         try {
-            debugLog("before rendererCreate");
-            renderer = RenderCore.rendererCreate(DEFAULT_COLS, DEFAULT_ROWS);
+        debugLog("before rendererCreate");
+        renderer = RenderCore.rendererCreate(DEFAULT_COLS, DEFAULT_ROWS);
             debugLog("after rendererCreate handle=" + renderer);
             if (renderer == 0) {
                 setStatus("rendererCreate FAILED（看调试日志）");
@@ -231,6 +237,7 @@ public class RenderActivity extends Activity {
             setStatus("rendererCreate THREW: " + t);
             return;
         }
+        RenderCore.rendererSetFontSize(renderer, DEFAULT_FONT_PX);
         long pty = 0;
         try {
             debugLog("before ptySpawn");
@@ -409,6 +416,21 @@ public class RenderActivity extends Activity {
             renderFrame(s);
         }
         setStatus("resize -> " + cols + "x" + rows);
+    }
+
+    /// 字号调节（工单 22 修复）：所有会话字号同步，emoji/正文按新字号
+    /// 重光栅化（Rust 侧 set_pixels_per_em 清图集），40×10 大格子下
+    /// emoji 清晰放大。
+    private void fontDelta(float factor) {
+        for (Session s : sessions) {
+            if (s.renderer == 0) {
+                continue;
+            }
+            s.fontSizePx = Math.max(12f, Math.min(192f, s.fontSizePx * factor));
+            RenderCore.rendererSetFontSize(s.renderer, s.fontSizePx);
+        }
+        setStatus("fontSize -> " + Math.round(sessions.isEmpty() ? DEFAULT_FONT_PX
+                : sessions.get(0).fontSizePx) + "px（emoji 按字号光栅化）");
     }
 
     private void scrollAll(int delta) {
