@@ -180,6 +180,26 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererSetFontSize(
 }
 
 #[no_mangle]
+pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererSetFontPaths(
+    mut env: EnvUnowned,
+    _class: JClass,
+    handle: jlong,
+    apple_path: JString,
+    noto_path: JString,
+) {
+    with_jni_env(env, |env| {
+        let apple_value = apple_path.mutf8_chars(env)?;
+        let apple = apple_value.to_str().to_owned();
+        let noto_value = noto_path.mutf8_chars(env)?;
+        let noto = noto_value.to_str().to_owned();
+        with_renderer(handle, |renderer| {
+            renderer.set_font_paths(&apple, &noto);
+        });
+        Ok(())
+    });
+}
+
+#[no_mangle]
 pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetCellSize(
     mut env: EnvUnowned,
     _class: JClass,

@@ -43,6 +43,8 @@ fn build_freetype(root: &PathBuf) {
 fn main() {
     println!("cargo:rerun-if-changed=src/tls_shim.c");
     println!("cargo:rerun-if-changed=src/pty_shim.c");
+    println!("cargo:rerun-if-changed=src/mmap_shim.c");
+    println!("cargo:rerun-if-changed=src/sha256_shim.c");
     let manifest = env::var("CARGO_MANIFEST_DIR").unwrap();
     let root = PathBuf::from(&manifest);
 
@@ -62,6 +64,15 @@ fn main() {
         .flag("-fPIC")
         .flag("-fno-emulated-tls")
         .compile("pty_shim");
+    cc::Build::new()
+        .file(root.join("src/mmap_shim.c"))
+        .flag("-fPIC")
+        .compile("mmap_shim");
+    cc::Build::new()
+        .file(root.join("src/sha256_shim.c"))
+        .flag("-fPIC")
+        .flag("-march=armv8-a+crypto")
+        .compile("sha256_shim");
 
     // 链接已验证的 expo 预编译 libghostty-vt（ghostty b0947378）。
     println!(

@@ -120,6 +120,7 @@ impl RgbaImage {
             width: self.width,
             height: self.height,
             pixels: self.pixels.clone(),
+            bbox: None,
         }
     }
 }

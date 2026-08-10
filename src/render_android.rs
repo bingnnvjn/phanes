@@ -698,7 +698,9 @@ fn hash_row(row: &[Cell]) -> u64 {
 // ---------- 字形图集 ----------
 
 const ATLAS_SIZE: u32 = 2048;
-// 彩色图集用更大的格子容纳 emoji 位图（NotoColorEmoji PNG 常见 24px 级）。
+// 彩色图集格子保持 64（评审确认：双图集通道结构不动、容量 1024 不被削；
+// Apple 160 档解码后按目标字号缩放，≤64px 字号图样为方形/格内放得下，
+// >64px 接受格内钳制，见工单 Comments）。
 const COLOR_ATLAS_CELL: u32 = 64;
 const COLOR_ATLAS_COLUMNS: u32 = ATLAS_SIZE / COLOR_ATLAS_CELL;
 const COLOR_ATLAS_CAPACITY: u32 = COLOR_ATLAS_COLUMNS * COLOR_ATLAS_COLUMNS;
@@ -731,6 +733,11 @@ pub struct ColorGlyphEntry {
     pub bitmap_h: u32,
     pub pad_x: u32,
     pub pad_y: u32,
+    /// 非透明包围盒（视觉居中用；坐标相对 bitmap 原点）。
+    pub bbox_x: u32,
+    pub bbox_y: u32,
+    pub bbox_w: u32,
+    pub bbox_h: u32,
 }
 
 pub struct GlyphAtlas {
@@ -740,7 +747,7 @@ pub struct GlyphAtlas {
     next_cell: u32,
     revision: u64,
     pixels_per_em: f32,
-    emoji_font: Option<crate::emoji::EmojiFont>,
+    emoji_fonts: Option<crate::emoji::EmojiFonts>,
     color_entries: HashMap<String, ColorGlyphEntry>,
     color_pixels: Vec<u8>,
     color_next_cell: u32,
@@ -808,7 +815,13 @@ impl GlyphAtlas {
             next_cell: 1,
             revision: 0,
             pixels_per_em: DEFAULT_FONT_SIZE_PX,
-            emoji_font: crate::emoji::load_emoji_font(),
+            emoji_fonts: {
+                let (apple, noto) = crate::emoji::default_font_paths();
+                Some(crate::emoji::EmojiFonts::load(
+                    Some(&std::path::PathBuf::from(&apple)),
+                    Some(&std::path::PathBuf::from(&noto)),
+                ))
+            },
             color_entries: HashMap::new(),
             color_pixels: vec![0u8; (ATLAS_SIZE * ATLAS_SIZE * 4) as usize],
             color_next_cell: 1,
@@ -949,7 +962,39 @@ impl GlyphAtlas {
     }
 
     pub fn emoji_ready(&self) -> bool {
-        self.emoji_font.is_some()
+        self.emoji_fonts
+            .as_ref()
+            .map(|fonts| fonts.is_available())
+            .unwrap_or(false)
+    }
+
+    pub fn emoji_diagnostics(&self) -> String {
+        self.emoji_fonts
+            .as_ref()
+            .map(|fonts| fonts.diagnostics())
+            .unwrap_or_else(|| "emoji_fonts=none".to_string())
+    }
+
+    /// 工单 22：JNI 传入 APK assets 字体路径（fd/路径），运行时重载；
+    /// 失败自动降级 Noto（决策 4），绝不崩溃。
+    pub fn set_font_paths(&mut self, apple: &str, noto: &str) {
+        self.emoji_fonts = Some(crate::emoji::EmojiFonts::load(
+            Some(std::path::Path::new(apple)),
+            Some(std::path::Path::new(noto)),
+        ));
+        self.color_entries.clear();
+        self.color_pixels.iter_mut().for_each(|p| *p = 0);
+        self.color_next_cell = 1;
+        self.color_revision = self.color_revision.wrapping_add(1);
+    }
+
+    /// 启动预热：后台解码前 50 个热门 emoji（2s 内达标）。
+    pub fn prewarm_emoji(&mut self) -> (usize, usize, f32) {
+        let Some(fonts) = self.emoji_fonts.as_mut() else {
+            return (0, 0, 0.0);
+        };
+        let (decoded, total, elapsed) = fonts.prewarm(&crate::emoji::POPULAR_EMOJI_50);
+        (decoded, total, elapsed.as_secs_f32() * 1000.0)
     }
 
     /// 取灰度字形（字体字形或程序化 sprite）；空格/控制符/缺字返回 None。
@@ -1075,8 +1120,8 @@ impl GlyphAtlas {
         if !crate::emoji::is_emoji_run(cluster) {
             return None;
         }
-        let font = self.emoji_font.as_ref()?;
-        let bitmap = font.rasterize_cluster(cluster, self.pixels_per_em as u16)?;
+        let fonts = self.emoji_fonts.as_mut()?;
+        let bitmap = fonts.rasterize_cluster(cluster, self.pixels_per_em as u16)?;
         if bitmap.width == 0 || bitmap.height == 0 || bitmap.pixels.is_empty() {
             return None;
         }
@@ -1085,19 +1130,29 @@ impl GlyphAtlas {
             return None;
         }
 
-        // 位图超过格子时最近邻缩小。
+        // 位图超过格子时双线性 + 线性空间缩小（工单 22 超采样语义）。
         let scale = (COLOR_ATLAS_CELL as f32 / bitmap.width.max(bitmap.height) as f32).min(1.0);
         let bitmap_w = (bitmap.width as f32 * scale).round().max(1.0) as u32;
         let bitmap_h = (bitmap.height as f32 * scale).round().max(1.0) as u32;
-        let mut scaled = Vec::with_capacity((bitmap_w * bitmap_h * 4) as usize);
-        for y in 0..bitmap_h {
-            let sy = ((y as f32 + 0.5) / scale).min(bitmap.height as f32 - 1.0) as usize;
-            for x in 0..bitmap_w {
-                let sx = ((x as f32 + 0.5) / scale).min(bitmap.width as f32 - 1.0) as usize;
-                let si = ((sy * bitmap.width as usize + sx) * 4) as usize;
-                scaled.extend_from_slice(&bitmap.pixels[si..si + 4]);
-            }
-        }
+        let scaled = crate::sbix::scale_rgba(
+            &bitmap.pixels,
+            bitmap.width,
+            bitmap.height,
+            bitmap_w,
+            bitmap_h,
+        )?;
+        // 包围盒随缩放等比换算（视觉居中用）。
+        let (bbox_x, bbox_y, bbox_w, bbox_h) = match bitmap.bbox {
+            Some((bx, by, bw, bh)) => (
+                ((bx as f32 * scale).round() as u32).min(bitmap_w),
+                ((by as f32 * scale).round() as u32).min(bitmap_h),
+                (((bx + bw) as f32 * scale).round() as u32 - (bx as f32 * scale).round() as u32)
+                    .max(1),
+                (((by + bh) as f32 * scale).round() as u32 - (by as f32 * scale).round() as u32)
+                    .max(1),
+            ),
+            None => (0, 0, bitmap_w, bitmap_h),
+        };
 
         let cell = self.color_next_cell;
         self.color_next_cell += 1;
@@ -1128,6 +1183,10 @@ impl GlyphAtlas {
             bitmap_h,
             pad_x,
             pad_y,
+            bbox_x,
+            bbox_y,
+            bbox_w,
+            bbox_h,
         };
         self.color_revision = self.color_revision.wrapping_add(1);
         self.color_entries.insert(cluster.to_string(), entry);
@@ -1437,6 +1496,26 @@ fn push_solid_rect(
     );
 }
 
+/// 主题适配方框（空心边框，前景色）——Apple/Noto 都缺图时兜底（决策 5）。
+fn push_box_outline(
+    vertices: &mut Vec<Vertex>,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    color: [f32; 4],
+    surface_w: f32,
+    surface_h: f32,
+) {
+    let t = (height * 0.06).clamp(1.0, 3.0);
+    let mut c = color;
+    c[3] = 1.0;
+    push_solid_rect(vertices, x, y, width, t, c, surface_w, surface_h);
+    push_solid_rect(vertices, x, y + height - t, width, t, c, surface_w, surface_h);
+    push_solid_rect(vertices, x, y, t, height, c, surface_w, surface_h);
+    push_solid_rect(vertices, x + width - t, y, t, height, c, surface_w, surface_h);
+}
+
 fn selection_components(color: Rgb) -> [f32; 4] {
     [
         color.r as f32 / 255.0,
@@ -1578,13 +1657,18 @@ pub fn build_row_vertices(
 
         // 彩色 emoji 优先走彩色图集（工单 13：整段 cluster 整形后入图集）。
         if let Some(color_entry) = atlas.ensure_color_glyph(&cell.text) {
-            let scale = ((target_cell_w * 0.92) / color_entry.bitmap_w.max(1) as f32)
-                .min((row_h * 0.92) / color_entry.bitmap_h.max(1) as f32)
+            // 工单 22：按非透明包围盒做视觉居中（原生比例，不压不拉）。
+            let bbox_w = color_entry.bbox_w.max(1) as f32;
+            let bbox_h = color_entry.bbox_h.max(1) as f32;
+            let scale = ((target_cell_w * 0.92) / bbox_w)
+                .min((row_h * 0.92) / bbox_h)
                 .max(0.01);
             let draw_w = color_entry.bitmap_w as f32 * scale;
             let draw_h = color_entry.bitmap_h as f32 * scale;
-            let draw_x = x + (target_cell_w - draw_w) / 2.0;
-            let draw_y = y + (row_h - draw_h) / 2.0;
+            let draw_x = x + (target_cell_w - bbox_w * scale) / 2.0
+                - color_entry.bbox_x as f32 * scale;
+            let draw_y =
+                y + (row_h - bbox_h * scale) / 2.0 - color_entry.bbox_y as f32 * scale;
             let col = color_entry.cell % COLOR_ATLAS_COLUMNS;
             let row = color_entry.cell / COLOR_ATLAS_COLUMNS;
             let uv_left = (col * COLOR_ATLAS_CELL + color_entry.pad_x) as f32 / color_w as f32;
@@ -1612,6 +1696,19 @@ pub fn build_row_vertices(
         }
 
         let Some(entry) = atlas.ensure_glyph(ch) else {
+            // 工单 22 决策 5：Apple → Noto 都无图时画主题适配方框（仅 emoji run）。
+            if crate::emoji::is_emoji_run(&cell.text) {
+                push_box_outline(
+                    &mut vertices,
+                    x,
+                    y,
+                    target_cell_w,
+                    row_h,
+                    fg,
+                    surface_w,
+                    surface_h,
+                );
+            }
             continue;
         };
         let (uv_left, uv_right, uv_top, uv_bottom) =
@@ -2679,6 +2776,8 @@ enum RenderCommand {
     Render(u32, u32),
     ForceRender(u32, u32),
     TestPattern(u32, u32),
+    SetFontPaths(String, String),
+    PrewarmEmoji,
     Quit,
 }
 
@@ -2693,7 +2792,7 @@ pub struct RenderStats {
     pub rows: u16,
     pub atlas_glyphs: usize,
     pub color_glyphs: usize,
-    pub emoji_ready: bool,
+    pub emoji_status: String,
     pub atlas_rev: u64,
     pub attaches: u64,
     pub presents: u64,
@@ -2867,6 +2966,20 @@ impl RendererCore {
         self.force_full = true;
         self.last_signature = None;
         self.last_meta = None;
+    }
+
+    fn set_font_paths(&mut self, apple: &str, noto: &str) {
+        self.atlas.set_font_paths(apple, noto);
+        self.force_full = true;
+        self.last_signature = None;
+        self.last_meta = None;
+        let (decoded, total, ms) = self.atlas.prewarm_emoji();
+        log_error(&format!("emoji fonts: {}", self.atlas.emoji_diagnostics()));
+        log_error(&format!("emoji prewarm: decoded={decoded}/total={total} ms={ms:.1}"));
+    }
+
+    fn prewarm_emoji(&mut self) -> (usize, usize, f32) {
+        self.atlas.prewarm_emoji()
     }
 
     fn cell_size(&self) -> (u32, u32) {
@@ -3098,6 +3211,15 @@ impl RendererCore {
                 RenderCommand::TestPattern(width, height) => {
                     self.test_pattern(width, height);
                 }
+                RenderCommand::SetFontPaths(apple, noto) => {
+                    self.set_font_paths(&apple, &noto);
+                }
+                RenderCommand::PrewarmEmoji => {
+                    let (decoded, total, ms) = self.prewarm_emoji();
+                    log_error(&format!(
+                        "emoji prewarm: decoded={decoded}/total={total} ms={ms:.1}"
+                    ));
+                }
                 RenderCommand::Quit => break,
             }
             self.sync_stats(&stats);
@@ -3133,7 +3255,7 @@ impl RendererCore {
         stats.rows = self.rows;
         stats.atlas_glyphs = self.atlas.entries.len();
         stats.color_glyphs = self.atlas.color_glyph_count();
-        stats.emoji_ready = self.atlas.emoji_ready();
+        stats.emoji_status = self.atlas.emoji_diagnostics();
         stats.atlas_rev = self.atlas.revision();
         stats.calls = self.render_calls;
         stats.builds = self.build_calls;
@@ -3443,6 +3565,8 @@ impl Renderer {
             .name("fable-render-thread".to_string())
             .spawn(move || core.run(rx, thread_stats))
             .ok()?;
+        // 启动预热（宿主/自检路径字体已就绪时立即解码热门 50）。
+        let _ = tx.send(RenderCommand::PrewarmEmoji);
         Some(Self {
             tx: Some(tx),
             join: Some(join),
@@ -3482,6 +3606,12 @@ impl Renderer {
 
     pub fn set_font_size(&self, size_px: f32) {
         self.send(RenderCommand::SetFontSize(size_px));
+    }
+
+    /// 工单 22：运行时设置 Apple/Noto 字体路径（APK assets 拷贝后的文件路径；
+    /// 宿主自检也可用）。失败自动降级 Noto。
+    pub fn set_font_paths(&self, apple: &str, noto: &str) {
+        self.send(RenderCommand::SetFontPaths(apple.to_string(), noto.to_string()));
     }
 
     pub fn set_palette(&self, palette: Palette) {
@@ -3552,7 +3682,7 @@ impl Renderer {
             Err(_) => return "stats lock failed".to_string(),
         };
         format!(
-            "backend={} adapter={} cols={} rows={} font_size={} palette={} atlas_glyphs={} color_glyphs={} emoji_font={} atlas_rev={} attaches={} presents={} terminal_frames={} acquire={}/{}/{}/{}/{} draw_attempts={} calls={} builds={} full={} incr={} dirty_rows={} build_us={} row_uploads={} upload_bytes={} vertices={} mailbox_writes={} thread_alive={} err={} wgpu_log={}",
+            "backend={} adapter={} cols={} rows={} font_size={} palette={} atlas_glyphs={} color_glyphs={} emoji=[{}] atlas_rev={} attaches={} presents={} terminal_frames={} acquire={}/{}/{}/{}/{} draw_attempts={} calls={} builds={} full={} incr={} dirty_rows={} build_us={} row_uploads={} upload_bytes={} vertices={} mailbox_writes={} thread_alive={} err={} wgpu_log={}",
             stats.backend,
             stats.adapter,
             stats.cols,
@@ -3561,7 +3691,7 @@ impl Renderer {
             stats.palette_active,
             stats.atlas_glyphs,
             stats.color_glyphs,
-            stats.emoji_ready,
+            stats.emoji_status,
             stats.atlas_rev,
             stats.attaches,
             stats.presents,

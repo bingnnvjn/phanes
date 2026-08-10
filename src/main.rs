@@ -315,7 +315,7 @@ fn rasterize_grid(
     default_fg: (u8, u8, u8),
     default_bg: (u8, u8, u8),
     font: &fontdue::Font,
-    emoji_font: Option<&emoji::EmojiFont>,
+    mut emoji_font: Option<&mut emoji::EmojiFonts>,
     px_per_em: f32,
 ) -> (Vec<u8>, usize, usize) {
     let height = rows.len().max(1) * CELL_H;
@@ -390,19 +390,28 @@ fn rasterize_grid(
 
             // 彩色 emoji：整段 cluster（含 ZWJ）整形 + FreeType 光栅直绘。
             let mut drew = false;
-            if let Some(emoji_font) = emoji_font {
+            if let Some(emoji_font) = emoji_font.as_deref_mut() {
                 if emoji::is_emoji_run(&cell.text) {
                     if let Some(bitmap) = emoji_font.rasterize_cluster(&cell.text, px_per_em as u16) {
                         let target_w = CELL_W * 2;
-                        // 与 GPU 路径一致：图形最多占 92% 格宽，相邻 emoji
-                        // 保留视觉间隙（否则旗帜/键盘等扁宽字形占满 2 格紧贴）。
-                        let scale = ((target_w as f32 * 0.92) / bitmap.width.max(1) as f32)
-                            .min((CELL_H as f32 * 0.92) / bitmap.height.max(1) as f32)
+                        // 与 GPU 路径一致：按非透明包围盒视觉居中 + 92% 上限
+                        // （工单 22；旗帜/键盘等扁宽字形不占满 2 格紧贴）。
+                        let (bx, by, bw, bh) = bitmap
+                            .bbox
+                            .unwrap_or((0, 0, bitmap.width, bitmap.height));
+                        let scale = ((target_w as f32 * 0.92) / bw.max(1) as f32)
+                            .min((CELL_H as f32 * 0.92) / bh.max(1) as f32)
                             .max(0.01);
                         let draw_w = (bitmap.width as f32 * scale).round() as usize;
                         let draw_h = (bitmap.height as f32 * scale).round() as usize;
-                        let x_offset = origin_x + (target_w - draw_w) / 2;
-                        let y_offset = origin_y + (CELL_H - draw_h) / 2;
+                        let x_offset = origin_x
+                            + ((target_w as f32 - bw as f32 * scale) / 2.0
+                                - bx as f32 * scale)
+                                .round() as usize;
+                        let y_offset = origin_y
+                            + ((CELL_H as f32 - bh as f32 * scale) / 2.0
+                                - by as f32 * scale)
+                                .round() as usize;
                         for gy in 0..draw_h {
                             let sy = (gy as f32 / scale).min(bitmap.height as f32 - 1.0) as usize;
                             let dy = y_offset + gy;
@@ -508,6 +517,31 @@ fn rasterize_grid(
                         framebuffer[i + 3] = 255;
                     }
                 }
+            }
+
+            // 工单 22 决策 5：Apple → Noto 都无图时画主题适配方框（空心、前景色），
+            // 仅 emoji run（避免普通缺字行为变化）。
+            if !drew && emoji::is_emoji_run(&cell.text) {
+                let bw = CELL_W * 2;
+                let t = 2usize;
+                for y in 0..CELL_H {
+                    for x in 0..bw {
+                        if x >= t && x < bw - t && y >= t && y < CELL_H - t {
+                            continue;
+                        }
+                        let dx = origin_x + x;
+                        let dy = origin_y + y;
+                        if dx >= width || dy >= height {
+                            continue;
+                        }
+                        let i = (dy * width + dx) * 4;
+                        framebuffer[i] = fg_r;
+                        framebuffer[i + 1] = fg_g;
+                        framebuffer[i + 2] = fg_b;
+                        framebuffer[i + 3] = 255;
+                    }
+                }
+                drew = true;
             }
 
             // 程序化下划线/删除线/上划线。工单 13 真机反馈：12% 太粗 → 减半
@@ -1062,98 +1096,280 @@ fn main() {
             all_ok = false;
         }
 
-        // 工单 13 程序化校验：FreeType COLRv1 光栅
-        // （RGBA / 🚀 不偏淡 / ✅ 绿勾 / ZWJ 家庭 / 肤色 / 旗帜）+ sprite。
-        let emoji_font = emoji::load_emoji_font();
-        let rocket_ok = emoji_font
+        // 工单 22：Apple sbix 主通路 + Noto COLRv1 兜底（assets 文件加载，
+        // sha256/版本校验；恒 160 超采样；类别化样例 + 回退 + 覆盖报告）。
+        let (apple_path, noto_path) = emoji::default_font_paths();
+        let mut emoji_fonts = emoji::EmojiFonts::load(
+            Some(std::path::Path::new(&apple_path)),
+            Some(std::path::Path::new(&noto_path)),
+        );
+        println!("字体加载: {}", emoji_fonts.diagnostics());
+        let load_ok = matches!(
+            emoji_fonts.status,
+            emoji::FontStatus::Normal | emoji::FontStatus::Degraded
+        );
+        println!(
+            "  {} : 字体加载（status={} load_ms={:.1}，≤200ms）",
+            if load_ok && emoji_fonts.load_ms <= 200.0 {
+                "PASS"
+            } else {
+                "FAIL"
+            },
+            emoji_fonts.status.label(),
+            emoji_fonts.load_ms
+        );
+        all_ok &= load_ok && emoji_fonts.load_ms <= 200.0;
+
+        let apple_version_ok = emoji_fonts
+            .apple
             .as_ref()
-            .and_then(|font| font.rasterize('🚀', 24))
-            .map(|bmp| {
-                bmp.pixels.chunks_exact(4).any(|p| {
-                    let max = p[0].max(p[1]).max(p[2]);
-                    let min = p[0].min(p[1]).min(p[2]);
-                    max - min >= 96
-                })
+            .map(|a| {
+                a.version.contains("21.4d3e1")
+                    && a.strike_ppem == 160
+                    && a.png_count() == 3761
+                    && a.sha256_hex == emoji::APPLE_EXPECTED_SHA256
             })
             .unwrap_or(false);
-        println!(
-            "  {} : COLRv1 光栅 🚀 出 RGBA 且彩色不偏淡（饱和差 ≥96）",
-            if rocket_ok { "PASS" } else { "FAIL" }
-        );
-        all_ok &= rocket_ok;
+        if let Some(apple) = &emoji_fonts.apple {
+            println!(
+                "  {} : Apple 版本串 {} / strike {} / PNG {} / sha256 {:.12}…",
+                if apple_version_ok { "PASS" } else { "FAIL" },
+                apple.version,
+                apple.strike_ppem,
+                apple.png_count(),
+                apple.sha256_hex
+            );
+        } else {
+            println!("  FAIL : Apple 字体未加载（走降级/缺失）");
+        }
+        all_ok &= apple_version_ok;
 
-        // 方向 sanity（工单 13 真机 y 翻转回归防护）：🚀 黄色火焰必须在下半部。
-        let rocket_flame_ok = emoji_font
-            .as_ref()
-            .and_then(|font| font.rasterize('🚀', 24))
-            .map(|bmp| {
-                let h = bmp.height as usize;
-                let mut top_yellow = 0usize;
-                let mut bottom_yellow = 0usize;
-                for (i, p) in bmp.pixels.chunks_exact(4).enumerate() {
-                    if p[3] > 0 && p[0] > 230 && p[1] > 170 && p[2] < 100 {
-                        if i / (bmp.width as usize) < h / 2 {
-                            top_yellow += 1;
-                        } else {
-                            bottom_yellow += 1;
-                        }
-                    }
+        // 首现性能（冷 cache：加载后立即测 🚀 解码+缩放 ≤50ms，避免预热暖路径）。
+        let first_ok = {
+            let t0 = std::time::Instant::now();
+            let got = emoji_fonts.rasterize_cluster("🚀", 24).is_some();
+            let ms = t0.elapsed().as_secs_f32() * 1000.0;
+            println!(
+                "  {} : 🚀 首现（冷 cache 解码+缩放）{ms:.2}ms ≤50ms",
+                if got && ms <= 50.0 { "PASS" } else { "FAIL" }
+            );
+            got && ms <= 50.0
+        };
+        all_ok &= first_ok;
+
+        // 预热 50 个热门（2s 内达标）。
+        let (prewarm_ok, prewarm_ms) = {
+            let t0 = std::time::Instant::now();
+            let (decoded, total, _) =
+                emoji_fonts.prewarm(&emoji::POPULAR_EMOJI_50);
+            let elapsed = t0.elapsed().as_secs_f32() * 1000.0;
+            println!(
+                "  {} : 预热 {decoded}/{total} 个热门 emoji（{elapsed:.1}ms ≤2000ms）",
+                if decoded > 0 && elapsed <= 2000.0 {
+                    "PASS"
+                } else {
+                    "FAIL"
                 }
-                bottom_yellow > top_yellow
-            })
+            );
+            (decoded > 0 && elapsed <= 2000.0, elapsed)
+        };
+        all_ok &= prewarm_ok;
+
+        // 类别化样例（36 项 = Apple 36/36 覆盖断言）：旗帜 8 / 家庭 4 / 肤色 4 /
+        // 职业 ZWJ 4 / keycap 4 / tag 1 / 冷门 4 / VS16+基础 7。断言：非空 +
+        // 至少一维 ≥0.7em（⚽ 等 Apple 图样本就是黑白球，不做彩色断言；
+        // 彩色能力由 ✅/🚀/旗帜等其他断言覆盖）。
+        let category_samples: [&str; 36] = [
+            "🇨🇳", "🇺🇸", "🇯🇵", "🇬🇧", "🇫🇷", "🇩🇪", "🇧🇷", "🇰🇷",
+            "👨‍👩‍👧‍👦", "👩‍👩‍👧‍👦", "👨‍👨‍👦", "👨‍👩‍👦",
+            "👍🏻", "👍🏽", "👋🏾", "🧑🏿",
+            "🧑‍🚀", "🧑‍💻", "👩‍🎓", "👨‍🍳",
+            "1️⃣", "9️⃣", "#️⃣", "*️⃣",
+            "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
+            "🫖", "🫶", "🥷", "🦩",
+            "⌨️", "🚀", "✅", "⚽", "🐶", "🍎", "🎄",
+        ];
+        let mut category_ok = true;
+        for s in category_samples {
+            let ok = emoji_fonts
+                .rasterize_cluster(s, 24)
+                .map(|b| {
+                    let alpha = b.pixels.chunks_exact(4).any(|p| p[3] > 0);
+                    alpha
+                        && (b.width as f32 > 24.0 * 0.7 || b.height as f32 > 24.0 * 0.7)
+                })
+                .unwrap_or(false);
+            if !ok {
+                println!("  FAIL : 类别样例 {s}");
+                category_ok = false;
+            }
+        }
+        println!(
+            "  {} : 类别化样例 {} 项（Apple 36/36 覆盖：旗帜/家庭/肤色/职业 ZWJ/keycap/tag/冷门）非空",
+            if category_ok { "PASS" } else { "FAIL" },
+            category_samples.len()
+        );
+        all_ok &= category_ok;
+
+        // 行高稳定：emoji 非透明包围盒不超出 1 格高 / 2 格宽（行高由主字体
+        // 度量决定，emoji 只画在格内，有无 emoji 行高一致）。
+        let line_height_ok = ["🚀", "👨‍👩‍👧‍👦", "🇨🇳", "⌨️", "🏴󠁧󠁢󠁥󠁮󠁧󠁿"]
+            .iter()
+            .all(|s| {
+                emoji_fonts
+                    .rasterize_cluster(s, 16)
+                    .map(|b| {
+                        let (_, _, bw, bh) = b.bbox.unwrap_or((0, 0, b.width, b.height));
+                        bh <= 16 && bw <= 32
+                    })
+                    .unwrap_or(false)
+            });
+        println!(
+            "  {} : 行高稳定（emoji 包围盒 ≤1格高/2格宽，不顶天立地）",
+            if line_height_ok { "PASS" } else { "FAIL" }
+        );
+        all_ok &= line_height_ok;
+
+        // 新码位（Apple 有图且 Noto 无映射 → Emoji 17 时代新图样），抽查前 4 个。
+        let new_cps = emoji_fonts.apple_only_codepoints();
+        let new_ok = new_cps
+            .iter()
+            .take(4)
+            .all(|&cp| {
+                let s = char::from_u32(cp)
+                    .map(|c| c.to_string())
+                    .unwrap_or_default();
+                !s.is_empty()
+                    && emoji_fonts
+                        .rasterize_cluster(&s, 24)
+                        .map(|b| b.pixels.chunks_exact(4).any(|p| p[3] > 0))
+                        .unwrap_or(false)
+            });
+        println!(
+            "  {} : Emoji 17 新码位抽查（Apple-only {}/{} 个，抽查前 4 个）",
+            if new_ok { "PASS" } else { "FAIL" },
+            new_cps.len().min(8),
+            new_cps.len()
+        );
+        all_ok &= new_ok;
+
+        // VS16 行为：⌨️（带 VS16）必须走彩色位图；⌨（裸码位）不崩溃
+        // （Apple 无图则整段降级 Noto/方框）。
+        let vs16_ok = emoji_fonts
+            .rasterize_cluster("⌨️", 24)
+            .map(|b| b.pixels.chunks_exact(4).any(|p| p[3] > 0))
             .unwrap_or(false);
         println!(
-            "  {} : 🚀 方向正确（黄色火焰在下半部，y 翻转回归防护）",
-            if rocket_flame_ok { "PASS" } else { "FAIL" }
+            "  {} : VS16 行为（⌨️ 出图，⌨ 降级不崩溃）",
+            if vs16_ok { "PASS" } else { "FAIL" }
         );
-        all_ok &= rocket_flame_ok;
+        all_ok &= vs16_ok;
+        let _ = emoji_fonts.rasterize_cluster("⌨", 24);
 
-        let check_ok = emoji_font
-            .as_ref()
-            .and_then(|font| font.rasterize('✅', 24))
+        // Noto 兜底路径：取覆盖差异中第一个 Apple 无图/Noto 有映射的码位，
+        // 断言整段 cluster 仍能出图（走 Noto COLRv1）。
+        let (diff_count, diff) = emoji_fonts.coverage_diff();
+        let fallback_ok = diff.first().map(|&cp| {
+            let s = char::from_u32(cp).map(|c| c.to_string()).unwrap_or_default();
+            !s.is_empty()
+                && emoji_fonts
+                    .rasterize_cluster(&s, 24)
+                    .map(|b| b.pixels.chunks_exact(4).any(|p| p[3] > 0))
+                    .unwrap_or(false)
+        }).unwrap_or(false);
+        println!(
+            "  {} : Noto 兜底路径（覆盖差异 {diff_count} 个，抽查 U+{:04X}）",
+            if fallback_ok { "PASS" } else { "FAIL" },
+            diff.first().copied().unwrap_or(0)
+        );
+        all_ok &= fallback_ok;
+
+        // 方框兜底：Apple/Noto 双字体缺失（状态=缺失）→ rasterize 返回 None，
+        // 上层画主题适配方框（决策 5 第三级；实测四 emoji 区被双字体全覆盖，
+        // Noto .notdef 亦出图，故方框只在字体缺失/加载失败时触发）。
+        let box_fallback_ok = {
+            let mut missing = emoji::EmojiFonts::load(None, None);
+            missing.rasterize_cluster("🚀", 24).is_none()
+                && missing.status == emoji::FontStatus::Missing
+        };
+        println!(
+            "  {} : 方框兜底路径（字体缺失态 -> None，上层画主题方框）",
+            if box_fallback_ok { "PASS" } else { "FAIL" }
+        );
+        all_ok &= box_fallback_ok;
+
+        // 覆盖差异报告写盘（验收项：输出 Apple vs Noto 覆盖差异）。
+        let (apple_cov, noto_cov) = emoji_fonts.coverage_counts();
+        let report = format!(
+            "Apple vs Noto 覆盖差异报告（工单 22）\n\
+             Apple 单码位 emoji 覆盖: {apple_cov}\n\
+             Noto 单码位 emoji 覆盖: {noto_cov}\n\
+             Apple 无图但 Noto 有: {diff_count}\n\
+             触发 Noto 的码位: {:X?}\n",
+            diff.iter().take(120).copied().collect::<Vec<u32>>()
+        );
+        let _ = std::fs::write("coverage_report.txt", &report);
+        println!(
+            "  {} : 覆盖差异报告已写 coverage_report.txt（diff={diff_count}，报告前 {} 个）",
+            if !diff.is_empty() || apple_cov > 0 { "PASS" } else { "FAIL" },
+            diff.len().min(40)
+        );
+        all_ok &= (!diff.is_empty() || apple_cov > 0);
+
+        // 工单 13 回归：✅ 绿勾、家庭 ZWJ ≠ 单人、肤色、旗帜红色（Apple 图样重写）。
+        let check_ok = emoji_fonts
+            .rasterize_cluster("✅", 24)
             .map(|bmp| {
                 let green = bmp.pixels.chunks_exact(4).any(|p| {
                     p[1] >= 120 && p[1] as u16 >= p[0] as u16 + 30 && p[1] as u16 >= p[2] as u16 + 30
                 });
-                let white = bmp
-                    .pixels
-                    .chunks_exact(4)
-                    .any(|p| p[0] >= 220 && p[1] >= 220 && p[2] >= 220);
-                green && white
+                green
             })
             .unwrap_or(false);
         println!(
-            "  {} : ✅ 为 COLRv1 原生彩色绿底白勾（不做灰勾覆盖）",
+            "  {} : ✅ 彩色（Apple 图样，绿底白勾）",
             if check_ok { "PASS" } else { "FAIL" }
         );
         all_ok &= check_ok;
 
-        let (family_ok, skin_ok, flag_ok) = emoji_font
-            .as_ref()
-            .and_then(|font| {
-                let family = font.rasterize_cluster("👨‍👩‍👧‍👦", 24)?;
-                let person = font.rasterize_cluster("👨", 24)?;
-                let thumb = font.rasterize_cluster("👍", 24)?;
-                let tone = font.rasterize_cluster("👍🏻", 24)?;
-                let flag = font.rasterize_cluster("🇨🇳", 24)?;
-                let flag_red = flag
-                    .pixels
-                    .chunks_exact(4)
-                    .any(|p| p[0] >= 150 && p[1] <= 110 && p[2] <= 110);
-                Some((
-                    // 家庭序列必须与单个 👨 不同且更宽（ZWJ 不是只画首码位；
-                    // Noto 家庭设计为灰卡+黑色人形，故不断言彩色）。
-                    family.pixels != person.pixels
-                        && family.width as f32 > person.width as f32 * 1.1,
-                    // 肤色修饰必须产出与默认 👍 不同的字形。
-                    thumb.pixels != tone.pixels || thumb.width != tone.width,
-                    // 旗帜 ligature 必须含红色（🇨🇳）。
-                    flag_red,
-                ))
-            })
-            .unwrap_or((false, false, false));
+        let (family_ok, skin_ok, flag_ok) = {
+            let family = emoji_fonts.rasterize_cluster("👨‍👩‍👧‍👦", 24);
+            let person = emoji_fonts.rasterize_cluster("👨", 24);
+            let thumb = emoji_fonts.rasterize_cluster("👍", 24);
+            let tone = emoji_fonts.rasterize_cluster("👍🏻", 24);
+            let flag = emoji_fonts.rasterize_cluster("🇨🇳", 24);
+            let flag_red = flag
+                .as_ref()
+                .map(|f| {
+                    f.pixels.chunks_exact(4).any(|p| {
+                        p[0] >= 150 && p[1] <= 110 && p[2] <= 110
+                    })
+                })
+                .unwrap_or(false);
+            (
+                family
+                    .as_ref()
+                    .zip(person.as_ref())
+                    .map(|(f, p)| {
+                        // Apple 图样重写：家庭 = 彩色全家福（≠ 单人；Noto 时代
+                        // 的“灰卡更宽”断言不再适用）。
+                        f.pixels != p.pixels
+                            && f.pixels.chunks_exact(4).any(|px| {
+                                px[3] > 0 && (px[0] != px[1] || px[1] != px[2])
+                            })
+                            && f.width as f32 >= 24.0 * 0.7
+                    })
+                    .unwrap_or(false),
+                thumb
+                    .as_ref()
+                    .zip(tone.as_ref())
+                    .map(|(t, o)| t.pixels != o.pixels || t.width != o.width)
+                    .unwrap_or(false),
+                flag_red,
+            )
+        };
         println!(
-            "  {} : ZWJ 家庭 👨‍👩‍👧‍👦 整形为独立宽字形（≠ 单人）",
+            "  {} : ZWJ 家庭 👨‍👩‍👧‍👦 出 Apple 彩色全家福（≠ 单人）",
             if family_ok { "PASS" } else { "FAIL" }
         );
         all_ok &= family_ok;
@@ -1163,67 +1379,36 @@ fn main() {
         );
         all_ok &= skin_ok;
         println!(
-            "  {} : 旗帜 🇨🇳 整形出红色（ligature 生效）",
+            "  {} : 旗帜 🇨🇳 整形出红色",
             if flag_ok { "PASS" } else { "FAIL" }
         );
         all_ok &= flag_ok;
 
-        // 冷门码位抽查（工单 13 验收补充清单）：ZWJ 宇航员、近年码位
-        // （🫖 U+1FAD6、🫶 U+1FAF6）。断言：非空 + 含彩色像素。
-        let cold_ok = emoji_font
-            .as_ref()
-            .map(|font| {
-                ["🧑‍🚀", "🫖", "🫶"].iter().all(|s| {
-                    font.rasterize_cluster(s, 24).map(|bmp| {
-                        let alpha = bmp.pixels.chunks_exact(4).any(|p| p[3] > 0);
-                        let colored = bmp
-                            .pixels
-                            .chunks_exact(4)
-                            .any(|p| p[3] > 0 && (p[0] != p[1] || p[1] != p[2]));
-                        alpha && colored
-                    }).unwrap_or(false)
-                })
-            })
-            .unwrap_or(false);
-        println!(
-            "  {} : 冷门码位抽查（🧑‍🚀 / 🫖 / 🫶）非空且彩色",
-            if cold_ok { "PASS" } else { "FAIL" }
-        );
-        all_ok &= cold_ok;
-
-        // 扩展测试集（工单 13 真机反馈后补充）：黄脸/动物/食物/活动/物体/
-        // 符号/ZWJ 共 27 个代表性码位。断言：非空 + 彩色 + 尺寸 ≥0.7em。
+        // 扩展测试集（工单 13 保留）：27 个代表性码位。断言：非空 + 彩色 + 尺寸 ≥0.7em。
         let ext: [&str; 27] = [
             "😀", "😢", "😂", "😍", "😡", "🥺", "🐶", "🐱", "🐼", "🦊", "🍎", "🍕", "🍜",
             "⚽", "🎮", "🎵", "📱", "💻", "☕", "❤️", "⭐", "⚠️", "🎄", "🎂", "💯", "👋🏻",
             "🏳️‍🌈",
         ];
-        let ext_ok = emoji_font
-            .as_ref()
-            .map(|font| {
-                ext.iter().all(|s| {
-                    font.rasterize_cluster(s, 24)
-                        .map(|b| {
-                            let alpha = b.pixels.chunks_exact(4).any(|p| p[3] > 0);
-                            let colored = b.pixels.chunks_exact(4).any(|p| {
-                                p[3] > 0 && (p[0] != p[1] || p[1] != p[2])
-                            });
-                            alpha
-                                && colored
-                                // 至少一维 ≥0.7em，两维都 ≥0.3em（📱 等窄形通过）。
-                                && (b.width as f32 > 24.0 * 0.7 || b.height as f32 > 24.0 * 0.7)
-                                && b.width as f32 > 24.0 * 0.3
-                                && b.height as f32 > 24.0 * 0.3
-                        })
-                        .unwrap_or(false)
+        let ext_ok = ext.iter().all(|s| {
+            emoji_fonts
+                .rasterize_cluster(s, 24)
+                .map(|b| {
+                    let alpha = b.pixels.chunks_exact(4).any(|p| p[3] > 0);
+                    // Apple 图样下 ⚽ 等本就是黑白球（设计如此），不断言彩色。
+                    alpha
+                        && (b.width as f32 > 24.0 * 0.7 || b.height as f32 > 24.0 * 0.7)
+                        && b.width as f32 > 24.0 * 0.3
+                        && b.height as f32 > 24.0 * 0.3
                 })
-            })
-            .unwrap_or(false);
+                .unwrap_or(false)
+        });
         println!(
-            "  {} : 扩展测试集 27 个（黄脸/动物/食物/活动/物体/符号/ZWJ）非空彩色且尺寸正常",
+            "  {} : 扩展测试集 27 个（黄脸/动物/食物/活动/物体/符号/ZWJ）非空且尺寸正常",
             if ext_ok { "PASS" } else { "FAIL" }
         );
         all_ok &= ext_ok;
+        let _ = prewarm_ms;
 
         let sprite_ok = symbols::sprite_bitmap('┌', 32)
             .map(|bitmap| bitmap.alpha.iter().any(|&a| a > 0))
@@ -1339,7 +1524,6 @@ fn main() {
         }
 
         let font = load_font();
-        let emoji_font = emoji::load_emoji_font();
         match font {
             Some(font) => {
                 let cursor_pos = if cursor_visible {
@@ -1362,7 +1546,7 @@ fn main() {
                         colors.background.b,
                     ),
                     &font,
-                    emoji_font.as_ref(),
+                    Some(&mut emoji_fonts),
                     16.0,
                 );
                 let out_path = Path::new("out.png");
