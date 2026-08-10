@@ -26,6 +26,8 @@ Fable（寓言）= 私人 Android 终端 App：**Kotlin 壳 + Rust 底层 + libg
 | CoreAdapter | 换引擎的缝（喂字节 / 拉网格 / 脏行事件 / 能力清单）；v1 UI 只对着它写 |
 | Fable 包仓库（fable-repo） | 以 `com.gph.fable` 前缀构建、供 Fable 环境 `apt` 安装的包源（ADR-0005）；区别于官方 termux-main |
 | bootstrap 归档 | Fable App 启动所需的预构建最小系统（bootstrap zip + 全量 .deb 归档，工单 06 产物） |
+| sbix | Apple 彩色 emoji 位图格式：每个字形一张固定尺寸 PNG，分档存放（40/64/96/160px）；本仓库用 160px 单档 |
+| 超采样 | 解码 160px 档再缩放到目标格子尺寸，保证小字号下最清晰 |
 
 ## 决策指针
 
@@ -35,3 +37,4 @@ Fable（寓言）= 私人 Android 终端 App：**Kotlin 壳 + Rust 底层 + libg
 - ADR-0004：渲染器 = Rust + wgpu（安卓 Vulkan），以 Shellow 为骨架、按官方架构补齐
 - ADR-0005：Fable 包仓库（自建 fable 前缀扁平 apt 仓库，GitHub Releases 托管 + GPG 签名）
 - ADR-0006：彩色字形通路 = FreeType + 内嵌 NotoColorEmoji COLRv1（ZWJ 经 rustybuzz 整形一并解决；灰度正文保持 fontdue）
+- ADR-0007：emoji 字体 = Apple Color Emoji 21.4d3e1（sbix 160px 单档）+ Rust 自解析 sbix + Noto 兜底（2026-08-10 定案）

@@ -54,6 +54,7 @@ Fable v1 是一个纯终端 Android App：包名 `com.gph.fable`、正式签名�
 10. **主终端渲染路径（2026-08-07 集成定案）**：会话层 Termux Java（PTY/进程/环境/生命周期）保持不动；字节经 CoreAdapter 缝从会话层喂给 fable-render 核心（libghostty-vt）；每会话一个渲染器 + 一个 SurfaceView；渲染驱动 = 独立渲染线程 + mailbox（工单 12 产物）；选中文本读取、字号、配色板等集成所需能力经渲染器 JNI API 补齐（工单 14），主终端接线与真机验收见工单 15。
 11. **包安装源（2026-08-09 决策窗口 5）**：Fable 环境不消费官方 termux-main（com.termux 前缀包路径硬编码）；自建 Fable 包仓库（fable-repo，ADR-0005）——扁平 apt 仓库托管于 fable-bootstrap GitHub Releases（`latest/download` 稳定 URL），GPG 签名，CI 按需构建指定包；迁移期先本地 dpkg 装归档内 debs（工单 02 现状），自举 + 日常缺口（git/nodejs/openjdk/rust/clang/runit 等）经仓库按需补齐。
 12. **彩色字形通路（2026-08-09 决策窗口 6 / 工单 13，ADR-0006）**：彩色 emoji 字形 = FreeType 光栅 COLRv1 + 内嵌 NotoColorEmoji（COLRv1 完整版，Unicode 17.0，替换 2017 CBDT）；ZWJ 家庭/肤色/旗帜经 rustybuzz 整形一并解决；✅ 接受原生彩色绿勾；灰度正文保持 fontdue（FreeType 只接彩色字形）；下划线专项并入工单 13；图集增量上传与灰度统一为独立 backlog。
+13. **emoji 字体（2026-08-10 决策窗口 7 / 工单 22，ADR-0007）**：彩色 emoji 主字体切换为 Apple Color Emoji `21.4d3e1`（sbix，只保留 160px 档，恒 160 超采样缩放，Rust 自解析 sbix + png crate，不加 C 依赖）；Noto COLRv1 保留为兜底（回退以完整 cluster 为单位）；Apple 与 Noto 均改为 fable-app APK assets（noCompress）运行时加载（sha256 校验、失败自动降级）；布局保持原生比例（2 格、垂直居中、非透明包围盒视觉居中、行高稳定）；性能指标（新 emoji 首现 ≤50ms、加载 ≤200ms、预热 50 个热门、缓存 512 张 LRU）；更新机制含溯源文件 + 上游自动检查（每周比对，Emoji 18.0 发布后按流程换字体）。
 
 ## Testing Decisions
 
@@ -61,6 +62,7 @@ Fable v1 是一个纯终端 Android App：包名 `com.gph.fable`、正式签名�
 - **缝 1（主缝 · Activity 行为缝）**：instrumentation 测试驱动真实 App——launch → 终端可见 → 输入命令 → 输出返回；覆盖启动路径、会话存活、基本交互验收。先例：termux-shared 现有占位 instrumented test（需扩展为真实用例）；辅以真机手动验收（安装、启动、shell 可交互、迁移验证）。
 - **缝 2（复用缝 · 核心逻辑 JVM 单元测试）**：仿真核心行为沿用 terminal-emulator 既有 JUnit 测试族（TerminalTest、CursorAndScreenTest、HistoryTest 等为先例）；新增纯逻辑（迁移规划、会话清单、包名相关常量）沿用 app 模块 plain JUnit 模式（TermuxActivityTest 为先例）。
 - **缝 3（产物缝）**：构建产物校验——包名/版本用 aapt2 badging、签名用 apksigner verify、原生库存在性用 APK 内容清单检查；先例为交接文档中的验证命令。
+- **emoji 验收（工单 22）**：离屏自动化覆盖类别化样例（旗帜/家庭/肤色/职业 ZWJ/keycap/tag/Emoji 17 新码位/冷门码位）、VS16 行为、Noto 兜底路径与 Apple 36/36 覆盖；性能指标（首现 ≤50ms、加载 ≤200ms、预热时限、缓存上限）进程序化断言；真机主观验收含两档终端尺寸、字号 12–48、深浅主题、对比图、RTL 与选中/滚动无残影。
 - **模块测试范围**：app（启动/会话/迁移）、terminal-emulator（行为回归）、termux-shared（常量/工具逻辑）、terminal-view（渲染集成）。
 
 ## Out of Scope
