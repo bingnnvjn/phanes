@@ -809,8 +809,8 @@ fn color_atlas_cell(bitmap_max_edge: u32) -> u32 {
     cell
 }
 
-fn color_atlas_capacity(cell: u32) -> u32 {
-    let columns = (COLOR_ATLAS_SIZE / cell.max(1)).max(1);
+fn color_atlas_capacity(cell: u32, size: u32) -> u32 {
+    let columns = (size / cell.max(1)).max(1);
     columns * columns
 }
 const EMBEDDED_MONO_FONT: &[u8] = include_bytes!("../assets/JetBrainsMono-Regular.ttf");
@@ -862,6 +862,9 @@ pub struct GlyphAtlas {
     color_pixels: Vec<u8>,
     color_next_cell: u32,
     color_revision: u64,
+    /// 彩色图集边长（默认 4096；设备 max_texture_dimension_2d 不足时由
+    /// upload_atlas 降级，容量随格子动态换算，见工单 22 修复记录）。
+    color_size: u32,
 }
 
 fn load_font_face(bytes: &[u8], collection_index: u32) -> Option<fontdue::Font> {
@@ -936,6 +939,7 @@ impl GlyphAtlas {
             color_pixels: vec![0u8; (COLOR_ATLAS_SIZE * COLOR_ATLAS_SIZE * 4) as usize],
             color_next_cell: 1,
             color_revision: 0,
+            color_size: COLOR_ATLAS_SIZE,
         })
     }
 
@@ -1060,7 +1064,21 @@ impl GlyphAtlas {
     }
 
     pub fn color_extent(&self) -> (u32, u32) {
-        (COLOR_ATLAS_SIZE, COLOR_ATLAS_SIZE)
+        (self.color_size, self.color_size)
+    }
+
+    /// 设备纹理上限不足时降级彩色图集尺寸（重建像素缓冲 + 清空条目；
+    /// 下一帧按新尺寸重新光栅化入图集）。
+    pub fn set_color_size(&mut self, size: u32) {
+        let size = size.clamp(1024, COLOR_ATLAS_SIZE);
+        if size == self.color_size {
+            return;
+        }
+        self.color_size = size;
+        self.color_entries.clear();
+        self.color_pixels = vec![0u8; (size * size * 4) as usize];
+        self.color_next_cell = 1;
+        self.color_revision = self.color_revision.wrapping_add(1);
     }
 
     pub fn color_glyph_count(&self) -> usize {
@@ -1240,7 +1258,7 @@ impl GlyphAtlas {
         // 已按目标 em 光栅化；格子按画布最大边取下一档 2 的幂（≥64），
         // 画布直接入格，不再钳制缩小 —— 大字号/大格子下清晰显示。
         let cell_px = color_atlas_cell(bitmap.width.max(bitmap.height));
-        if self.color_next_cell >= color_atlas_capacity(cell_px) {
+        if self.color_next_cell >= color_atlas_capacity(cell_px, self.color_size) {
             log_error("color glyph atlas full");
             return None;
         }
@@ -1253,7 +1271,7 @@ impl GlyphAtlas {
         self.color_next_cell += 1;
         let pad_x = (cell_px - bitmap_w) / 2;
         let pad_y = (cell_px - bitmap_h) / 2;
-        let columns = COLOR_ATLAS_SIZE / cell_px;
+        let columns = self.color_size / cell_px;
         let col = cell % columns;
         let row = cell / columns;
         for gy in 0..bitmap_h {
@@ -1770,7 +1788,7 @@ pub fn build_row_vertices(
             let draw_h = color_entry.bitmap_h as f32 * scale;
             let draw_x = x + (target_cell_w - draw_w) / 2.0;
             let draw_y = y + (row_h - draw_h) / 2.0;
-            let columns = (COLOR_ATLAS_SIZE / color_entry.cell_px.max(1)).max(1);
+            let columns = (atlas.color_extent().0 / color_entry.cell_px.max(1)).max(1);
             let col = color_entry.cell % columns;
             let row = color_entry.cell / columns;
             let uv_left = (col * color_entry.cell_px + color_entry.pad_x) as f32 / color_w as f32;
@@ -2437,9 +2455,26 @@ impl GpuRuntime {
         Ok(true)
     }
 
-    fn upload_atlas(&mut self, atlas: &GlyphAtlas) -> Result<(), String> {
+    fn upload_atlas(&mut self, atlas: &mut GlyphAtlas) -> Result<(), String> {
         let combined_revision = atlas.revision().wrapping_add(atlas.color_revision());
         if self.atlas_texture.is_some() && self.atlas_uploaded_revision == combined_revision {
+            return Ok(());
+        }
+        // 设备纹理上限不足 4096 时降级彩色图集（工单 22 修复：避免
+        // create_texture 失败导致整帧黑屏；格子动态，容量按尺寸换算）。
+        let max_tex = self.device.limits().max_texture_dimension_2d;
+        if atlas.color_extent().0 > max_tex {
+            let mut size = 1024u32;
+            while size * 2 <= max_tex && size * 2 <= COLOR_ATLAS_SIZE {
+                size *= 2;
+            }
+            log_error(&format!(
+                "color atlas downgrade: {} -> {} (device max_texture={})",
+                atlas.color_extent().0,
+                size,
+                max_tex
+            ));
+            atlas.set_color_size(size);
             return Ok(());
         }
         // 灰度图集 2048 + 彩色图集 4096 独立纹理（工单 22：彩色格子动态
@@ -2861,7 +2896,7 @@ impl Drop for GpuRuntime {
     }
 }
 
-const SURFACE_SHADER: &str = r#"
+pub const SURFACE_SHADER: &str = r#"
 struct VertexInput {
     @location(0) position: vec2<f32>,
     @location(1) tex_coord: vec2<f32>,
@@ -2876,7 +2911,7 @@ struct VertexOutput {
     @location(2) mode: f32,
 };
 
-@group(0) @binding(0) var glyph_atlas: texture_2d_array<f32>;
+@group(0) @binding(0) var glyph_atlas: texture_2d<f32>;
 @group(0) @binding(1) var glyph_sampler: sampler;
 @group(0) @binding(2) var color_atlas: texture_2d<f32>;
 
@@ -2897,7 +2932,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     }
     let is_color = input.mode >= 1.5;
     let sample = select(
-        textureSample(glyph_atlas, glyph_sampler, input.tex_coord, 0u),
+        textureSample(glyph_atlas, glyph_sampler, input.tex_coord),
         textureSample(color_atlas, glyph_sampler, input.tex_coord),
         is_color
     );
@@ -3238,7 +3273,7 @@ impl RendererCore {
             self.last_error = "no native surface attached".to_string();
             return false;
         }
-        if let Err(error) = gpu.upload_atlas(&self.atlas) {
+        if let Err(error) = gpu.upload_atlas(&mut self.atlas) {
             self.last_error = format!("atlas upload failed: {error}");
             return false;
         }
@@ -3594,7 +3629,7 @@ impl RendererCore {
         } else {
             self.incr_builds = self.incr_builds.saturating_add(1);
         }
-        if let Err(error) = gpu.upload_atlas(&self.atlas) {
+        if let Err(error) = gpu.upload_atlas(&mut self.atlas) {
             log_error(&format!("atlas upload failed: {error}"));
             self.last_error = format!("atlas upload failed: {error}");
             return false;
