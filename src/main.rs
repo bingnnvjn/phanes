@@ -209,93 +209,9 @@ fn ansi_fg(c: GhosttyColorRgb) -> String {
     format!("\x1b[38;2;{};{};{}m", c.r, c.g, c.b)
 }
 
-/// 工单 13：核心把 ZWJ/肤色/旗帜拆成片段、⌨️ 等按 1 格宽；
-/// 软件光栅与 GPU 同款重组（见 render_android::merge_emoji_runs）。
-fn merge_emoji_runs_main(cells: &mut Vec<Cell>) {
-    let mut out: Vec<Cell> = Vec::with_capacity(cells.len());
-    let mut i = 0usize;
-    while i < cells.len() {
-        let mut cell = cells[i].clone();
-        if cell.text.is_empty() {
-            i += 1;
-            continue;
-        }
-        let mut span = 1usize;
-        if fable_render::emoji::is_emoji_run(&cell.text) {
-            span = 2;
-        }
-        let mut j = i + 1;
-        loop {
-            while j < cells.len() && cells[j].text.is_empty() {
-                j += 1;
-            }
-            if j >= cells.len() {
-                break;
-            }
-            let next = &cells[j].text;
-            let next_only_skin = !next.is_empty()
-                && next
-                    .chars()
-                    .all(|c| (0x1F3FB..=0x1F3FF).contains(&(c as u32)));
-            let cell_all_ri =
-                cell.text.chars().all(|c| (0x1F1E6..=0x1F1FF).contains(&(c as u32)));
-            let next_all_ri = next.chars().all(|c| (0x1F1E6..=0x1F1FF).contains(&(c as u32)));
-            // 与 render_android::merge_emoji_runs 同款（工单 22 真机反馈修复）。
-            let ri_count = |s: &str| {
-                s.chars()
-                    .filter(|c| (0x1F1E6..=0x1F1FF).contains(&(*c as u32)))
-                    .count()
-            };
-            let need_merge = cell.text.ends_with('\u{200d}')
-                || next.starts_with('\u{200d}')
-                || next_only_skin
-                || (cell_all_ri && next_all_ri && ri_count(&cell.text) < 2);
-            if !need_merge {
-                break;
-            }
-            cell.text.push_str(next);
-            if fable_render::emoji::is_emoji_run(&cell.text) {
-                span = 2;
-            }
-            j += 1;
-        }
-        cell.col_span = span;
-        out.push(cell);
-        i = j;
-    }
-    *cells = out;
-}
-
 fn ansi_bg(c: GhosttyColorRgb) -> String {
     format!("\x1b[48;2;{};{};{}m", c.r, c.g, c.b)
 }
-
-/// 软件路径的格子渲染宽度（与 render_android::cell_render_span 同语义）：
-/// merge 后 emoji cluster 宽 2，中文/宽字符按码位判 2，取大。
-fn cell_render_span_main(cell: &Cell) -> usize {
-    let first = cell.text.chars().next();
-    let w = first
-        .map(|c| {
-            let cp = c as u32;
-            if (0x1100..=0x115f).contains(&cp)
-                || (0x2e80..=0xa4cf).contains(&cp)
-                || (0xac00..=0xd7a3).contains(&cp)
-                || (0xf900..=0xfaff).contains(&cp)
-                || (0xff00..=0xff60).contains(&cp)
-                || (0x1f000..=0x1faff).contains(&cp)
-                || (0x2300..=0x23ff).contains(&cp)
-                || (0x2600..=0x27bf).contains(&cp)
-                || (0x2b00..=0x2bff).contains(&cp)
-            {
-                2
-            } else {
-                1
-            }
-        })
-        .unwrap_or(1);
-    cell.col_span.max(1).max(w)
-}
-
 // ---------- 阶段 B：软件光栅 ----------
 
 const CELL_W: usize = 10;
@@ -383,9 +299,10 @@ fn rasterize_grid(
         };
 
     for (row_index, row) in rows.iter().enumerate() {
-        let mut col_pos = 0usize;
-        for cell in row {
-            let origin_x = col_pos * CELL_W;
+        // 工单 22 全局重构：与 GPU 同款核心列模型 —— 行 cells 含空占位格，
+        // 列定位 = cell 下标（核心列），宽度看「下一格是否空占位格」。
+        for (col_idx, cell) in row.iter().enumerate() {
+            let origin_x = col_idx * CELL_W;
             let origin_y = row_index * CELL_H;
 
             // 背景色
@@ -404,12 +321,8 @@ fn rasterize_grid(
                 }
             }
 
-            // 工单 22 修复：按渲染宽度累加（中文渲染 2 格，col_span=1；
-            // 用 col_span 会让下一个字重叠进上一字第二格）。
-            col_pos += cell_render_span_main(cell);
             // 光标（块状）：光标格画反色底
-            let is_cursor =
-                cursor == Some((col_pos - cell_render_span_main(cell), row_index));
+            let is_cursor = cursor == Some((col_idx, row_index));
             if is_cursor {
                 for y in 0..CELL_H {
                     for x in 0..CELL_W {
@@ -885,6 +798,10 @@ fn main() {
             ghostty_terminal_new(std::ptr::null(), &mut terminal, opts),
             "terminal_new",
         );
+        // 工单 22 全局重构：与真机一致开启 DECSET 2027（grapheme clustering），
+        // 软件自检覆盖核心占位格列模型（宽字符 1 cell + 1 空占位 = 2 列）。
+        let enable_2027 = b"\x1b[?2027h";
+        ghostty_terminal_vt_write(terminal, enable_2027.as_ptr(), enable_2027.len());
 
         // 2. 喂测试字节：纯文本 / SGR 颜色 / 粗斜体+RGB 前后景 / 中文宽字符 /
         //    下划线 / sprite 边框 / 彩色 emoji / 光标
@@ -1614,7 +1531,6 @@ fn main() {
                     col_span: 1,
                 });
             }
-            merge_emoji_runs_main(&mut row_cells);
             grid.push(row_cells);
         }
         ghostty_render_state_row_iterator_free(row_it3);

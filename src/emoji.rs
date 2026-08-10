@@ -296,6 +296,9 @@ impl EmojiFont {
             if placed.is_empty() {
                 return None;
             }
+            // Noto 兜底保持内容范围画布（Noto 字形 ascent 大于 1em，em 盒
+            // 画布会把内容裁掉；显示统一由布局层 fit 2 格宽/行高保证，
+            // 内部画布语义不强制与 Apple 相同）。
             composite(&placed)
         }
     }
@@ -343,7 +346,7 @@ fn blit_src_over(
     }
 }
 
-/// 位图并集合成（straight alpha src-over），返回裁剪后的 RGBA + 非透明包围盒。
+/// 位图并集合成（straight alpha src-over），返回内容范围 RGBA + 包围盒。
 fn composite(placed: &[(i32, i32, RgbaBitmap)]) -> Option<RgbaBitmap> {
     let mut min_x = i32::MAX;
     let mut min_y = i32::MAX;

@@ -444,10 +444,6 @@ pub unsafe fn collect_snapshot(
                 col_span: 1,
             });
         }
-        // 工单 13：核心把 ZWJ/肤色/旗帜拆成片段、⌨️ 等按 1 格宽；
-        // 渲染前重组完整 cluster 并归一 emoji 为 2 格（否则相邻 emoji
-        // 位图重叠、旗帜被拆成 C N）。
-        merge_emoji_runs(&mut row_cells);
         lines.push(row_cells);
     }
 
@@ -502,89 +498,16 @@ fn apply_ansi_override(
     fallback
 }
 
-/// 工单 13：核心（libghostty-vt 预编译 b0947378）把 ZWJ 家庭/肤色/旗帜
-/// 拆成多个 cell，且 ⌨️ 等带 VS16 字符按 1 格宽。渲染前把片段重组成完整
-/// emoji cluster，并把宽度归一为 2 格（累计列布局由 build_row_vertices 用
-/// `col_span` 实现），否则相邻 emoji 位图重叠、旗帜被画成 C N 两个字符。
-pub fn merge_emoji_runs(cells: &mut Vec<Cell>) {
-    if cells.is_empty() {
-        return;
-    }
-    let mut out: Vec<Cell> = Vec::with_capacity(cells.len());
-    let mut i = 0usize;
-    while i < cells.len() {
-        let mut cell = cells[i].clone();
-        if cell.text.is_empty() {
-            i += 1;
-            continue;
-        }
-        let mut span = 1u32;
-        if crate::emoji::is_emoji_run(&cell.text) {
-            span = 2;
-        }
-        let mut j = i + 1;
-        loop {
-            // 跳过 emoji 的伴随空格 cell（核心按 2 格拆出的第二格）。
-            while j < cells.len() && cells[j].text.is_empty() {
-                j += 1;
-            }
-            if j >= cells.len() {
-                break;
-            }
-            let next = &cells[j].text;
-            // 工单 22 修复：肤色合并只在「下一格是纯肤色修饰符」（无 2027
-            // 模式下核心把 👍 / 🏻 拆成两格）时触发；2027 模式下核心已把
-            // 👍🏻 合成一格（含 base），next="👍🏽" 含 base 不再合并，
-            // 否则连续肤色会全部挤成一个 cluster。
-            let next_only_skin = !next.is_empty()
-                && next
-                    .chars()
-                    .all(|c| (0x1F3FB..=0x1F3FF).contains(&(c as u32)));
-            let cell_all_ri =
-                cell.text.chars().all(|c| (0x1F1E6..=0x1F1FF).contains(&(c as u32)));
-            let next_all_ri = next.chars().all(|c| (0x1F1E6..=0x1F1FF).contains(&(c as u32)));
-            // 旗帜 = 恰好 2 个区域指示符；连续 4 面旗（8 个 RI）必须拆成
-            // 4 个 cluster，否则 4 面旗挤进 2 格宽（工单 22 真机反馈）。
-            let ri_count = |s: &str| {
-                s.chars()
-                    .filter(|c| (0x1F1E6..=0x1F1FF).contains(&(*c as u32)))
-                    .count()
-            };
-            let need_merge = cell.text.ends_with('\u{200d}')
-                // 防御：核心拆格若把 ZWJ 留在下一格开头（🧑|ZWJ 拆成
-                // 「🧑」「ZWJ🎓」时），同样合并。
-                || next.starts_with('\u{200d}')
-                || next_only_skin
-                || (cell_all_ri && next_all_ri && ri_count(&cell.text) < 2);
-            if !need_merge {
-                break;
-            }
-            cell.text.push_str(next);
-            if crate::emoji::is_emoji_run(&cell.text) {
-                span = 2;
-            }
-            j += 1;
-        }
-        cell.col_span = span;
-        out.push(cell);
-        i = j;
-    }
-    *cells = out;
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn emoji_layout_not_overlapping() {
-        // 工单 13 真机修复回归：build_row_vertices 的 col_pos 必须在
-        // continue 前累加，否则所有 emoji 叠在同一列。
-        let mut atlas = GlyphAtlas::new().expect("atlas");
-        let texts = ["🚀", "✅", "👨\u{200d}👩\u{200d}👧\u{200d}👦", "👍🏻", "🇨🇳", "⌨\u{fe0f}", "🔋", "🧑\u{200d}🚀", "🫖", "🫶"];
-        let row: Vec<Cell> = texts
-            .iter()
-            .map(|t| Cell {
+    /// 模拟核心（DECSET 2027）行 cells：每个宽字符/cluster 后跟一个空
+    /// 占位格（2 列）；列定位 = cell 下标。col_span 恒 1（merge 已废除）。
+    fn core_row(texts: &[&str]) -> Vec<Cell> {
+        let mut out = Vec::new();
+        for t in texts {
+            out.push(Cell {
                 text: t.to_string(),
                 fg: None,
                 bg: None,
@@ -593,9 +516,32 @@ mod tests {
                 underline_color: None,
                 strikethrough: false,
                 overline: false,
-                col_span: 2,
-            })
-            .collect();
+                col_span: 1,
+            });
+            if !t.is_empty() {
+                out.push(Cell {
+                    text: String::new(),
+                    fg: None,
+                    bg: None,
+                    selected: false,
+                    underline: false,
+                    underline_color: None,
+                    strikethrough: false,
+                    overline: false,
+                    col_span: 1,
+                });
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn emoji_layout_not_overlapping() {
+        // 工单 22 全局重构回归：列定位 = cell 下标（核心占位格模型），
+        // 相邻 emoji 不得重叠、顺序保持。
+        let mut atlas = GlyphAtlas::new().expect("atlas");
+        let texts = ["🚀", "✅", "👨\u{200d}👩\u{200d}👧\u{200d}👦", "👍🏻", "🇨🇳", "⌨\u{fe0f}", "🔋", "🧑\u{200d}🚀", "🫖", "🫶"];
+        let row = core_row(&texts);
         let snapshot = Snapshot {
             cols: 40,
             rows: 1,
@@ -639,20 +585,7 @@ mod tests {
         // 画布 ≤ 2 格宽防溢出；ZWJ 多 glyph 画布按 2 格宽等比压缩。
         let mut atlas = GlyphAtlas::new().expect("atlas");
         let texts = ["🇨🇳", "🔋", "⌨\u{fe0f}", "👩\u{200d}❤\u{fe0f}\u{200d}👨"];
-        let row: Vec<Cell> = texts
-            .iter()
-            .map(|t| Cell {
-                text: t.to_string(),
-                fg: None,
-                bg: None,
-                selected: false,
-                underline: false,
-                underline_color: None,
-                strikethrough: false,
-                overline: false,
-                col_span: 2,
-            })
-            .collect();
+        let row = core_row(&texts);
         let snapshot = Snapshot {
             cols: 40,
             rows: 10,
@@ -728,142 +661,10 @@ mod tests {
     }
 
     #[test]
-    fn merge_emoji_runs_ticket22_regressions() {
-        // 模拟 libghostty-vt 核心拆分（每格文本 + 宽字符第二格空 cell）：
-        // 连续旗帜（8 个 RI）必须拆成 4 个独立旗帜 cluster，不得挤成一个。
-        let cells = |texts: &[&str]| -> Vec<Cell> {
-            texts
-                .iter()
-                .map(|t| Cell {
-                    text: t.to_string(),
-                    fg: None,
-                    bg: None,
-                    selected: false,
-                    underline: false,
-                    underline_color: None,
-                    strikethrough: false,
-                    overline: false,
-                    col_span: 1,
-                })
-                .collect()
-        };
-
-        // 1. 🇨🇳🇺🇸🇯🇵🇬🇧（4 面旗 = 8 个 RI + 空第二格）
-        let mut row = cells(&["🇨", "", "🇳", "", "🇺", "", "🇸", "", "🇯", "", "🇵", "", "🇬", "", "🇧", ""]);
-        merge_emoji_runs(&mut row);
-        let merged: Vec<&str> = row.iter().map(|c| c.text.as_str()).collect();
-        println!("flags merged: {merged:?}");
-        assert_eq!(
-            merged,
-            vec!["🇨🇳", "🇺🇸", "🇯🇵", "🇬🇧"],
-            "连续旗帜应拆成 4 个独立 cluster: {merged:?}"
-        );
-        assert!(row.iter().all(|c| c.col_span == 2), "每面旗占 2 格");
-
-        // 2. keycap：核心合成单格 "1+KEYCAP"，必须判为 emoji run（span=2）。
-        let mut row = cells(&["1\u{20e3}", "9\u{20e3}", "#\u{20e3}", "*\u{20e3}"]);
-        merge_emoji_runs(&mut row);
-        assert_eq!(row.len(), 4);
-        assert!(
-            row.iter().all(|c| c.col_span == 2),
-            "keycap 应占 2 格（彩色 keycap 按钮）: {:?}",
-            row.iter().map(|c| (c.text.as_str(), c.col_span)).collect::<Vec<_>>()
-        );
-
-        // 3. ZWJ 在下一格开头（防御形态 🧑 + ZWJ🎓）也应合并。
-        let mut row = cells(&["🧑", "\u{200d}🎓"]);
-        merge_emoji_runs(&mut row);
-        assert_eq!(row.len(), 1);
-        assert_eq!(row[0].text, "🧑\u{200d}🎓");
-        assert_eq!(row[0].col_span, 2);
-
-        // 4. 家庭序列（核心拆：👨|ZWJ / 空 / 👩|ZWJ / 空 / 👧|ZWJ / 空 / 👦 / 空）
-        //    应合并成完整家庭，且不吞并下一个家庭。
-        let mut row = cells(&[
-            "👨\u{200d}", "", "👩\u{200d}", "", "👧\u{200d}", "", "👦", "",
-            "👩\u{200d}", "", "👩\u{200d}", "", "👧\u{200d}", "", "👦", "",
-        ]);
-        merge_emoji_runs(&mut row);
-        let merged: Vec<&str> = row.iter().map(|c| c.text.as_str()).collect();
-        assert_eq!(merged, vec!["👨‍👩‍👧‍👦", "👩‍👩‍👧‍👦"]);
-        assert!(row.iter().all(|c| c.col_span == 2));
-
-        // 5. 英格兰 tag 旗（核心合成单格）保持独立 cluster（span=2）。
-        let mut row = cells(&["🏴\u{e0067}\u{e0062}\u{e0065}\u{e006e}\u{e0067}\u{e007f}"]);
-        merge_emoji_runs(&mut row);
-        assert_eq!(row.len(), 1);
-        assert_eq!(row[0].col_span, 2);
-    }
-
-    #[test]
-    fn merge_2027_mode_does_not_over_merge_skin_or_family() {
-        // 2027（grapheme clustering）模式下核心已把每个 cluster 合成一格：
-        // 肤色 = 👍🏻 / 空 / 👍🏽 / 空（含 base），家庭 = 完整 ZWJ 序列一格。
-        // merge 不得再把相邻完整 cluster 合并（旧 next_is_skin 会把连续
-        // 肤色全部并成一个；工单 22 修复为「下一格纯修饰符才合并」）。
-        let cells = |texts: &[&str]| -> Vec<Cell> {
-            texts
-                .iter()
-                .map(|t| Cell {
-                    text: t.to_string(),
-                    fg: None,
-                    bg: None,
-                    selected: false,
-                    underline: false,
-                    underline_color: None,
-                    strikethrough: false,
-                    overline: false,
-                    col_span: 1,
-                })
-                .collect()
-        };
-        // 肤色段：4 个完整 cluster + 空第二格，应保持 4 个独立 cluster。
-        let mut row = cells(&["👍🏻", "", "👍🏽", "", "👋🏾", "", "🧑🏿", ""]);
-        merge_emoji_runs(&mut row);
-        let merged: Vec<&str> = row.iter().map(|c| c.text.as_str()).collect();
-        assert_eq!(
-            merged,
-            vec!["👍🏻", "👍🏽", "👋🏾", "🧑🏿"],
-            "2027 模式连续肤色不得合并: {merged:?}"
-        );
-        assert!(row.iter().all(|c| c.col_span == 2));
-
-        // 家庭段：3 个完整家庭 cluster，保持独立。
-        let mut row = cells(&[
-            "👨\u{200d}👩\u{200d}👧\u{200d}👦",
-            "",
-            "👨\u{200d}👩\u{200d}👦",
-            "",
-            "👨\u{200d}👩\u{200d}👧",
-            "",
-        ]);
-        merge_emoji_runs(&mut row);
-        let merged: Vec<&str> = row.iter().map(|c| c.text.as_str()).collect();
-        assert_eq!(
-            merged,
-            vec!["👨‍👩‍👧‍👦", "👨‍👩‍👦", "👨‍👩‍👧"],
-            "2027 模式家庭不得互相合并: {merged:?}"
-        );
-        assert!(row.iter().all(|c| c.col_span == 2));
-    }
-
-    #[test]
     fn wide_glyph_column_position_no_overlap_ticket22() {
-        // 工单 22 中文重叠修复：列定位按渲染宽度累加（中文/emoji 2 格），
-        // 中文行「你好吗」三个字渲染列应为 0/2/4，不得重叠。
-        let cell = |text: &str, span: u32| Cell {
-            text: text.to_string(),
-            fg: None,
-            bg: None,
-            selected: false,
-            underline: false,
-            underline_color: None,
-            strikethrough: false,
-            overline: false,
-            col_span: span,
-        };
-        // 模拟核心 2027 cells（merge 后：中文 col_span=1 但渲染宽 2）。
-        let row = vec![cell("你", 1), cell("好", 1), cell("吗", 1)];
+        // 工单 22 中文重叠修复：核心占位格模型 —— 列定位 = cell 下标，
+        // 中文行「你好吗」= 你/␣/好/␣/吗/␣，三个字渲染列 0/2/4 不重叠。
+        let row = core_row(&["你", "好", "吗"]);
         let snapshot = Snapshot {
             cols: 6,
             rows: 1,
@@ -911,10 +712,39 @@ mod tests {
     }
 
     #[test]
+    fn color_atlas_unified_cell_upgrade_ticket22() {
+        // 工单 22 审查修复：图集格子尺寸统一（64px 格 → 遇到 96px 画布升级
+        // 128px 格并清空重建），不同尺寸条目不得映射同一像素区互相覆盖。
+        let mut atlas = GlyphAtlas::new().expect("atlas");
+        assert_eq!(atlas.color_cell, COLOR_ATLAS_CELL_BASE);
+        // 小 emoji（画布 51 -> 格子 64）。
+        let e1 = atlas.ensure_color_glyph("🚀", 51).expect("small emoji");
+        assert_eq!(e1.cell_px, 64);
+        assert_eq!(atlas.color_entries.len(), 1);
+        // 大画布（96 -> 格子 128）：升级并清空旧条目，新条目 cell 重新从 1。
+        let e2 = atlas.ensure_color_glyph("🧑\u{200d}🎓", 96).expect("large cluster");
+        assert_eq!(atlas.color_cell, 128);
+        assert_eq!(e2.cell_px, 128);
+        assert_eq!(atlas.color_entries.len(), 1, "升级后旧条目清空");
+        assert_eq!(e2.cell, 1, "升级后编号从 1 重新开始");
+        // 再插入小 emoji：统一用 128 格，不再回到 64（避免网格混排）。
+        let e3 = atlas.ensure_color_glyph("🔋", 51).expect("small after upgrade");
+        assert_eq!(e3.cell_px, 128);
+        assert!(e3.cell > e2.cell);
+        // 128px 格坐标区（columns=32）：cell=1 -> 像素偏移 128px，cell=2 -> 256px，
+        // 与 64px 格（cell=1 -> 64px）不重叠。
+        let columns = atlas.color_size / 128;
+        assert_eq!(e2.cell % columns, 1);
+        assert_eq!(e3.cell % columns, 2);
+    }
+
+    #[test]
     fn overlay_cursor_wide_span_ticket22() {
-        // 工单 22 光标修复：宽字符（中文/emoji/ZWJ cluster）上光标画 2 格宽。
-        // 渲染列：中=2、🚀=2、🧑🎓=2、A=1 -> 共 7 列；cell_w=10px。
-        let cell = |text: &str, span: u32| Cell {
+        // 工单 22 光标修复：核心占位格模型 —— 列 = cell 下标，宽字符
+        // （中文/emoji/ZWJ cluster）上光标画 2 格宽。
+        // cells: 中/␣/🚀/␣/🧑🎓/␣/A（宽字符带占位格，A 窄字符无占位，
+        // 共 7 列）；cell_w=10px。
+        let cell = |text: &str| Cell {
             text: text.to_string(),
             fg: None,
             bg: None,
@@ -923,13 +753,16 @@ mod tests {
             underline_color: None,
             strikethrough: false,
             overline: false,
-            col_span: span,
+            col_span: 1,
         };
         let row = vec![
-            cell("中", 1),
-            cell("🚀", 2),
-            cell("🧑\u{200d}🎓", 2),
-            cell("A", 1),
+            cell("中"),
+            cell(""),
+            cell("🚀"),
+            cell(""),
+            cell("🧑\u{200d}🎓"),
+            cell(""),
+            cell("A"),
         ];
         let base = Snapshot {
             cols: 7,
@@ -1127,6 +960,10 @@ pub struct GlyphAtlas {
     color_entries: HashMap<String, ColorGlyphEntry>,
     color_pixels: Vec<u8>,
     color_next_cell: u32,
+    /// 彩色图集统一格子尺寸（工单 22 审查修复：同一纹理内混合 64/128px
+    /// 格子必然互相覆盖；改为图集级统一格子，遇到更大画布时升级格子并
+    /// 清空重建，容量 64px 格 4096 / 128px 格 1024，仍 ≥512 LRU）。
+    color_cell: u32,
     color_revision: u64,
     /// 彩色图集边长（默认 4096；设备 max_texture_dimension_2d 不足时由
     /// upload_atlas 降级，容量随格子动态换算，见工单 22 修复记录）。
@@ -1204,6 +1041,7 @@ impl GlyphAtlas {
             color_entries: HashMap::new(),
             color_pixels: vec![0u8; (COLOR_ATLAS_SIZE * COLOR_ATLAS_SIZE * 4) as usize],
             color_next_cell: 1,
+            color_cell: COLOR_ATLAS_CELL_BASE,
             color_revision: 0,
             color_size: COLOR_ATLAS_SIZE,
         })
@@ -1523,7 +1361,17 @@ impl GlyphAtlas {
         // 工单 22 修复：位图即"画布 = em 盒"（含透明边，Apple sbix 语义），
         // 已按目标 em 光栅化；格子按画布最大边取下一档 2 的幂（≥64），
         // 画布直接入格，不再钳制缩小 —— 大字号/大格子下清晰显示。
-        let cell_px = color_atlas_cell(bitmap.width.max(bitmap.height));
+        // 工单 22 审查修复：格子尺寸图集级统一（避免 64/128px 格混排
+        // 映射同一像素区互相覆盖）；遇到更大画布时升级格子并清空重建。
+        let need = color_atlas_cell(bitmap.width.max(bitmap.height));
+        if need > self.color_cell {
+            self.color_cell = need;
+            self.color_entries.clear();
+            self.color_pixels.iter_mut().for_each(|p| *p = 0);
+            self.color_next_cell = 1;
+            self.color_revision = self.color_revision.wrapping_add(1);
+        }
+        let cell_px = self.color_cell;
         if self.color_next_cell >= color_atlas_capacity(cell_px, self.color_size) {
             log_error("color glyph atlas full");
             return None;
@@ -1548,7 +1396,9 @@ impl GlyphAtlas {
                 }
                 let px = col * cell_px + pad_x + gx;
                 let py = row * cell_px + pad_y + gy;
-                let i = ((py * COLOR_ATLAS_SIZE + px) * 4) as usize;
+                // 工单 22 审查修复：行跨步用实际图集边长（self.color_size），
+                // 设备 max_texture<4096 降级后避免越界写。
+                let i = ((py * self.color_size + px) * 4) as usize;
                 let si = ((gy * bitmap_w + gx) * 4) as usize;
                 self.color_pixels[i] = scaled[si];
                 self.color_pixels[i + 1] = scaled[si + 1];
@@ -1753,53 +1603,6 @@ fn push_rect(
     ]);
 }
 
-fn terminal_cell_width(ch: char) -> u32 {
-    if ch == '\t' {
-        return 4;
-    }
-    if ch.is_control() {
-        return 0;
-    }
-    let codepoint = ch as u32;
-    if (0x0300..=0x036f).contains(&codepoint)
-        || (0x1ab0..=0x1aff).contains(&codepoint)
-        || (0x1dc0..=0x1dff).contains(&codepoint)
-        || (0x20d0..=0x20ff).contains(&codepoint)
-        || (0xfe20..=0xfe2f).contains(&codepoint)
-    {
-        return 0;
-    }
-    if (0x1100..=0x115f).contains(&codepoint)
-        || (0x2329..=0x232a).contains(&codepoint)
-        || (0x2e80..=0xa4cf).contains(&codepoint)
-        || (0xac00..=0xd7a3).contains(&codepoint)
-        || (0xf900..=0xfaff).contains(&codepoint)
-        || (0xfe10..=0xfe19).contains(&codepoint)
-        || (0xfe30..=0xfe6f).contains(&codepoint)
-        || (0xff00..=0xff60).contains(&codepoint)
-        || (0xffe0..=0xffe6).contains(&codepoint)
-        || (0x1f300..=0x1faff).contains(&codepoint)
-        || (0x2300..=0x23ff).contains(&codepoint)
-        || (0x2600..=0x27bf).contains(&codepoint)
-        || (0x2b00..=0x2bff).contains(&codepoint)
-    {
-        return 2;
-    }
-    1
-}
-
-/// 一个格子在渲染时实际占几列（工单 22 光标修复）：merge 后 emoji cluster
-/// 的 col_span=2，中文/宽字符由 terminal_cell_width 判 2；两者取大。
-fn cell_render_span(cell: &Cell) -> u32 {
-    let first = cell
-        .text
-        .chars()
-        .next()
-        .map(terminal_cell_width)
-        .unwrap_or(1);
-    cell.col_span.max(1).max(first)
-}
-
 fn push_glyph_rect(
     vertices: &mut Vec<Vertex>,
     x: f32,
@@ -1997,17 +1800,19 @@ pub fn build_row_vertices(
     let (color_w, color_h) = atlas.color_extent();
     let row_y = row_index as f32 * row_h;
 
-    // 工单 13：按累计列定位（col_span 由 merge_emoji_runs 归一；核心拆分的
-    // ZWJ/旗帜/⌨️ 片段不再各自占位，避免位图重叠/被拆成两字）。
-    let mut col_pos = 0u32;
-    for cell in row {
-        let x = col_pos as f32 * cell_w;
-        // 工单 13 真机修复：col_pos 必须在任何 continue 之前累加，
-        // 否则 emoji 分支 continue 跳过累加，所有 emoji 叠在同一列。
-        // 工单 22 修复：列定位按「渲染宽度」累加（中文/emoji 渲染 2 格，
-        // col_span 对中文是 1；用 col_span 会让下一个字从第 1 列开始，
-        // 与上一字第二格重叠）。
-        col_pos += cell_render_span(cell);
+    // 工单 22 全局重构：以核心网格为唯一列宽权威。
+    // libghostty-vt（DECSET 2027 下）每行 cells 数 = cols，宽字符/cluster
+    // 输出「1 非空格 + 1 空占位格」共 2 列；列定位 = cell 下标（核心列）。
+    // 渲染层不再做任何启发式 merge/宽度自算（废除 merge_emoji_runs 与
+    // 手写宽度表），宽度只看「下一格是否空占位格」。
+    for (col_idx, cell) in row.iter().enumerate() {
+        let x = col_idx as f32 * cell_w;
+        // 宽字符判定：非空格且下一格是空占位格 -> 占 2 列。
+        let is_wide = !cell.text.is_empty()
+            && row
+                .get(col_idx + 1)
+                .map(|next| next.text.is_empty())
+                .unwrap_or(false);
         let y = row_y;
 
         // 清屏色 = push 配色板背景（否则维持现状深灰）；
@@ -2042,18 +1847,10 @@ pub fn build_row_vertices(
         }
 
         let Some(ch) = cell.text.chars().next() else {
+            // 空占位格：背景/选择已画，无字形。
             continue;
         };
-        let raw_width = terminal_cell_width(ch);
-        if raw_width == 0 {
-            continue;
-        }
-        // 工单 22 修复：宽度基准用 merge_emoji_runs 归一后的 col_span
-        // （emoji=2 格），不再按首个码位判宽 —— 区域指示符（🇨）等
-        // 单码位判宽=1 会把国旗画成 1 格宽，与电池(2 格)两极分化。
-        // tab 等核心未展开的特殊宽度仍按终端宽度（4 格）。
-        let width_cells = cell.col_span.max(1).max(raw_width);
-        let target_cell_w = cell_w * width_cells as f32;
+        let target_cell_w = if is_wide { cell_w * 2.0 } else { cell_w };
         let fg = rgb_components(fg_for_cell(cell, snapshot));
 
         // 彩色 emoji 优先走彩色图集（工单 13：整段 cluster 整形后入图集）。
@@ -2134,7 +1931,7 @@ pub fn build_row_vertices(
         } else {
             // 宽字符从双格盒左缘绘制（半格偏移会把字形右推并溢出到下一列）；
             // 半角宽度为 1，该偏移量本身为 0，两分支共用此式。
-            let glyph_x = x + if width_cells >= 2 {
+            let glyph_x = x + if is_wide {
                 0.0
             } else {
                 ((target_cell_w - cell_w) / 2.0).max(0.0)
@@ -2142,7 +1939,7 @@ pub fn build_row_vertices(
             let metrics = entry.metrics;
             let line_height_px =
                 (entry.ascent - entry.descent + entry.line_gap).max(entry.pixels_per_em);
-            let scale = if width_cells >= 2 {
+            let scale = if is_wide {
                 // 宽字符（CJK/全角标点）按位图尺寸约束适度放大填双格（上限 1.15，
                 // 标点这类小位图不会被撑爆），收窄与 ASCII 并排时的观感间距
                 // （fable-v1/15 真机"中文间距特别宽"）。
@@ -2281,22 +2078,35 @@ pub fn build_overlay_vertices(
             }
             let mut color = rgb_components(cursor_rgb);
             color[3] = 0.9;
-            // 工单 22 光标修复：宽字符（中文/emoji/ZWJ cluster 占 2 列）上
-            // 光标画 2 格宽（BLOCK/UNDERLINE/描边覆盖整个字），不再只盖一半。
-            // 核心 2027 模式下 cluster 存 1 cell+1 空列，cursor 可能停在起始
-            // 列或第二列：统一归到该字起始列并取渲染宽度。
-            let mut cursor_col = cursor_x as u32;
+            // 工单 22 全局重构：光标列 = 核心列 = 行 cells 下标（2027 下
+            // 每 cell 一列）。宽字符 = 非空格 + 下一格空占位：光标画 2 格宽
+            // 覆盖整个字；光标停在占位格（第二列）时归到该字起始列。
+            let mut cursor_col = cursor_x;
             let mut cursor_span = 1u32;
             if let Some(line) = snapshot.lines.get(cursor_y as usize) {
-                let mut col = 0u32;
-                for cell in line {
-                    let span = cell_render_span(cell);
-                    if (cursor_x as u32) >= col && (cursor_x as u32) < col + span {
-                        cursor_col = col;
-                        cursor_span = span;
-                        break;
+                let idx = cursor_x as usize;
+                let on_wide = line
+                    .get(idx)
+                    .map(|c| !c.text.is_empty())
+                    .unwrap_or(false)
+                    && line
+                        .get(idx + 1)
+                        .map(|n| n.text.is_empty())
+                        .unwrap_or(false);
+                let on_spacer = line.get(idx).map(|c| c.text.is_empty()).unwrap_or(false);
+                if on_wide {
+                    cursor_span = 2;
+                } else if on_spacer && idx > 0 {
+                    // 占位格：归到前一格宽字符。
+                    let prev_wide = line
+                        .get(idx - 1)
+                        .map(|c| !c.text.is_empty())
+                        .unwrap_or(false)
+                        && line.get(idx).map(|c| c.text.is_empty()).unwrap_or(false);
+                    if prev_wide {
+                        cursor_col = (idx - 1) as u16;
+                        cursor_span = 2;
                     }
-                    col += span;
                 }
             }
             let x = cursor_col as f32 * cell_w;
@@ -2784,7 +2594,6 @@ impl GpuRuntime {
                 max_tex
             ));
             atlas.set_color_size(size);
-            return Ok(());
         }
         // 灰度图集 2048 + 彩色图集 4096 独立纹理（工单 22：彩色格子动态
         // 放大到 128/256 时仍保持容量，大字号 emoji 清晰）。
@@ -3492,8 +3301,8 @@ impl RendererCore {
     }
 
     /// 选中区域文本：所有 overlay 按行序拼接（跨行 '\n'）。
-    /// 宽字符/emoji 以"占用列区间与选区相交"判定，右半边选中也取整个字符，
-    /// 与核心格数据一致。
+    /// 列 = 行 cells 下标（核心 2027 每 cell 一列）；宽字符占 2 列
+    /// （非空格 + 空占位格），选区与任一列相交都取整个 cluster 文本。
     fn selection_text(&self) -> String {
         // 渲染状态需先 update 才能反映已写入字节（渲染循环里 update 在渲染前）。
         unsafe {
@@ -3515,7 +3324,16 @@ impl RendererCore {
             first = false;
             let line = &snapshot.lines[overlay.row as usize];
             for (col, cell) in line.iter().enumerate() {
-                let width = terminal_cell_width(cell.text.chars().next().unwrap_or(' ')).max(1);
+                let width = if !cell.text.is_empty()
+                    && line
+                        .get(col + 1)
+                        .map(|n| n.text.is_empty())
+                        .unwrap_or(false)
+                {
+                    2
+                } else {
+                    1
+                };
                 let start = col as u32;
                 let end = start + width;
                 if end <= overlay.start_col || start >= overlay.end_col {
