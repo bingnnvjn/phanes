@@ -190,6 +190,17 @@ public class TermuxAppSharedPreferences extends AppSharedPreferences {
         SharedPreferenceUtils.setString(mSharedPreferences, TERMUX_APP.KEY_FABLE_THEME_MODE, value, false);
     }
 
+    /** 会话层引擎开关（工单 26）：true=Rust（构建期默认），false=Java；只影响新建会话。 */
+    public boolean isFableSessionRustEnabled() {
+        return SharedPreferenceUtils.getBoolean(mSharedPreferences,
+            TERMUX_APP.KEY_FABLE_SESSION_RUST_ENABLED, TERMUX_APP.DEFAULT_VALUE_FABLE_SESSION_RUST_ENABLED);
+    }
+
+    /** 持久化会话层引擎开关（工单 26，设置页 debug 项写入）。 */
+    public void setFableSessionRustEnabled(Context context, boolean value) {
+        SharedPreferenceUtils.setBoolean(mSharedPreferences, TERMUX_APP.KEY_FABLE_SESSION_RUST_ENABLED, value, false);
+    }
+
     /** 字号（dp 视角，供设置页滑块显示；存量值按 px/density 换算保持兼容）。 */
     public int getFontSizeDp(Context context) {
         float density = context.getResources().getDisplayMetrics().density;

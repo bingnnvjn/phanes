@@ -145,6 +145,14 @@ public final class TermuxPreferenceConstants {
 
 
         /**
+         * 会话层实现开关（工单 26，ADR-0008 决策 5）：构建期默认 Rust，
+         * 设置页 debug 项可切回 Java；只影响新建会话。
+         */
+        public static final String KEY_FABLE_SESSION_RUST_ENABLED = "fable_session_rust_enabled";
+        public static final boolean DEFAULT_VALUE_FABLE_SESSION_RUST_ENABLED = true;
+
+
+        /**
          * Defines the key for current log level.
          */
         public static final String KEY_LOG_LEVEL = "log_level";

@@ -129,6 +129,9 @@ class DebuggingPreferencesDataStore extends PreferenceDataStore {
             case "crash_report_notifications_enabled":
                 mPreferences.setCrashReportNotificationsEnabled(value);
                 break;
+            case "fable_session_rust_enabled":
+                mPreferences.setFableSessionRustEnabled(mContext, value);
+                break;
             default:
                 break;
         }
@@ -142,6 +145,8 @@ class DebuggingPreferencesDataStore extends PreferenceDataStore {
                 return mPreferences.isTerminalViewKeyLoggingEnabled();
             case "crash_report_notifications_enabled":
                 return mPreferences.areCrashReportNotificationsEnabled(false);
+            case "fable_session_rust_enabled":
+                return mPreferences.isFableSessionRustEnabled();
             default:
                 return false;
         }

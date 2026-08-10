@@ -186,6 +186,11 @@
                 <string name="termux_terminal_view_key_logging_enabled_on">Logcat logs will have entries for terminal view keys.
                     These are very verbose and should be disabled under normal circumstances or will cause performance issues.</string>
 
+                <!-- Session Layer (ticket 26: Rust/Java session engine switch) -->
+                <string name="fable_session_layer_header">Session Layer</string>
+                <string name="fable_session_rust_enabled_title">Rust Session Engine (Experimental)</string>
+                <string name="fable_session_rust_enabled_summary">New sessions use the Rust session layer (default). Disable to fall back to the Java session layer; takes effect for new sessions.</string>
+
                 <!-- Plugin Error Notifications -->
                 <string name="termux_plugin_error_notifications_enabled_title">Plugin Error Notifications</string>
                 <string name="termux_plugin_error_notifications_enabled_off">Disable flashes and notifications for plugin errors.</string>

@@ -2,8 +2,9 @@ package com.gph.fable.terminal;
 
 /**
  * Native methods for creating and managing pseudoterminal subprocesses. C code is in jni/termux.c.
+ * 工单 26：JavaFableSession（会话层抽象缝的 Java 实现，.session 包）调用。
  */
-final class JNI {
+public final class JNI {
 
     static {
         System.loadLibrary("termux");

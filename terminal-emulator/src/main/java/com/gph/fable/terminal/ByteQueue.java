@@ -1,7 +1,11 @@
 package com.gph.fable.terminal;
 
-/** A circular byte buffer allowing one producer and one consumer thread. */
-final class ByteQueue {
+/**
+ * A circular byte buffer allowing one producer and one consumer thread.
+ * 工单 26：JavaFableSession（会话层抽象缝的 Java 实现，.session 包）跨包使用，
+ * 由包私有改为 public（内部工具类，仅缝内使用）。
+ */
+public final class ByteQueue {
 
     private final byte[] mBuffer;
     private int mHead;

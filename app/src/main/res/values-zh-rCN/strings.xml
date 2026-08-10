@@ -135,6 +135,11 @@
                 <string name="termux_terminal_view_key_logging_enabled_off">日志中不包含终端视图按键条目。（默认）</string>
                 <string name="termux_terminal_view_key_logging_enabled_on">Logcat 日志将包含终端视图按键条目。这些日志非常冗长，正常使用时应关闭，否则会造成性能问题。</string>
 
+                <!-- 会话层（工单 26：Rust/Java 会话引擎切换） -->
+                <string name="fable_session_layer_header">会话层</string>
+                <string name="fable_session_rust_enabled_title">Rust 会话层（实验）</string>
+                <string name="fable_session_rust_enabled_summary">新会话使用 Rust 会话层（默认）。关闭可回退 Java 会话层；对新建会话生效。</string>
+
                 <!-- 插件错误通知 -->
                 <string name="termux_plugin_error_notifications_enabled_title">插件错误通知</string>
                 <string name="termux_plugin_error_notifications_enabled_off">不显示插件错误的提示与通知。</string>

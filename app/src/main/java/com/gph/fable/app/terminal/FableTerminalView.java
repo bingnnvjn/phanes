@@ -25,7 +25,7 @@ import java.util.Map;
  * 渲染器生命周期挂在会话上（{@code TerminalSession#setCoreAdapter}）：
  * - 旋转/Activity 重建：容器只释放视图与 Surface，适配器留在会话，字节不丢；
  * - 会话关闭：onSessionRemoved 解除缝引用并销毁适配器；
- * - 会话进程退出：TerminalSession.cleanupResources 销毁适配器并解除缝引用。
+ * - 会话进程退出：TerminalSession 退出回调销毁适配器并解除缝引用（工单 15/26）。
  */
 public final class FableTerminalView extends FrameLayout {
 

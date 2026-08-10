@@ -18,6 +18,7 @@ import com.gph.fable.shared.shell.command.environment.IShellEnvironment;
 import com.gph.fable.shared.shell.ShellUtils;
 import com.gph.fable.terminal.TerminalSession;
 import com.gph.fable.terminal.TerminalSessionClient;
+import com.gph.fable.terminal.session.FableSessionFactory;
 
 import java.io.File;
 import java.util.Collections;
@@ -72,13 +73,16 @@ public class TermuxSession {
      *                        anything sent to the the pseudo terminal /dev/pts, including PS1 prefixes.
      *                        Set this to {@code true} only if the session transcript is required,
      *                        since this requires extra processing to get it.
+     * @param sessionFactory 会话层抽象缝工厂（工单 26）：null = Java 默认实现；
+     *                       切换开关（Rust/Java）由调用方（TermuxService）解析后传入。
      * @return Returns the {@link TermuxSession}. This will be {@code null} if failed to start the execution command.
      */
     public static TermuxSession execute(@NonNull final Context currentPackageContext, @NonNull ExecutionCommand executionCommand,
                                         @NonNull final TerminalSessionClient terminalSessionClient, final TermuxSessionClient termuxSessionClient,
                                         @NonNull final IShellEnvironment shellEnvironmentClient,
                                         @Nullable HashMap<String, String> additionalEnvironment,
-                                        final boolean setStdoutOnExit) {
+                                        final boolean setStdoutOnExit,
+                                        @Nullable final FableSessionFactory sessionFactory) {
         if (executionCommand.executable != null && executionCommand.executable.isEmpty())
             executionCommand.executable = null;
         if (executionCommand.workingDirectory == null || executionCommand.workingDirectory.isEmpty())
@@ -155,7 +159,7 @@ public class TermuxSession {
         Logger.logDebug(LOG_TAG, "Running \"" + executionCommand.getCommandIdAndLabelLogString() + "\" TermuxSession");
         TerminalSession terminalSession = new TerminalSession(executionCommand.executable,
             executionCommand.workingDirectory, executionCommand.arguments, environmentArray,
-            executionCommand.terminalTranscriptRows, terminalSessionClient);
+            executionCommand.terminalTranscriptRows, terminalSessionClient, sessionFactory);
 
         if (executionCommand.shellName != null) {
             terminalSession.mSessionName = executionCommand.shellName;
