@@ -36,6 +36,7 @@ Status: 待验收
 - 坑 D（离屏自检断言）：PTY 默认 ONLCR（\r\n）+ bracketed paste（ESC 序列）+ 键入回显 → 标记判断会误中回显。解法：`stty -echo` 后断言 + 剥 ANSI + 按行核对。
 - 坑 E（spawn 错误路径泄漏）：dup/take_writer/注册表锁失败时先 `child.kill()` 再 bail，避免子进程残留。
 - 坑 F（探针自检线程）：Kotlin 自检会话的 reader 线程忘启动会导致全超时——`spawnForTest()` 内统一启动，手动 spawn 复用同一路径。
+- 坑 G（真机 PATH 断言过严）：首次真机自检 11/12 PASS，唯一 FAIL = "env PATH 含 prefix/bin"。根因：登录 shell 的启动文件（`~/.profile` 等，用户数据迁移遗留可前置目录）会调整 PATH；**注入本身有效**——PREFIX/HOME/TERM/TMPDIR 精确匹配，stty/seq 均能经 PATH 解析执行。探针原断言要求 PATH 行**以** `prefix/bin` 开头，与登录 shell 语义不符；改为断言有效 PATH 含 `prefix/bin` 并把实际 PATH 行打进报告。Rust 离屏测试补 PATH 注入断言（`--noprofile --norc` 下与注入值精确匹配，PASS）。
 
 **3. 结论写回**
 
@@ -43,4 +44,5 @@ Status: 待验收
 - 构建参数：`cargo build --release`（lib name `fable_session` → `libfable-session.so`）；`[profile.dev] opt-level=1`；依赖 `portable-pty 0.9.0` + `jni 0.22.4` + `anyhow` + `libc`；NEEDED 仅 libc/libdl，无 TLS 段要求（区别于 ghostty 静态库线）。
 - **NDK/CI 风险（照调研记录，未解决）**：若未来启用 GitHub Actions / cargo-ndk 构建线，必须显式 `-p 24`（min API ≥ 23），否则复现 distant PR #270 的 `openpty` 链接失败（bionic 自 API 23 提供）。本机 Termux 线无此检查，风险只影响 CI 备用线。
 - 对 fable-v1/25 的输入：① JNI 桥 API 形态已验证（env 由 Kotlin 构造 `"KEY=VALUE"` 数组 + cwd 传入，`CommandBuilder::env/cwd` 生效，`--login` + controlling tty 默认开）；② 会话注册表句柄 + close 先解阻塞读的语义可直接沿用；③ `.so` 极轻（无 ghostty 静态依赖），后续 25 加事件流 JNI 时 NEEDED 不会膨胀；④ 4 会话并行与 seq 200 在 portable-pty 下无卡死，性能基线可作 27 对比的 Rust 侧口径。
+- 对 fable-v1/25 的补充输入（真机自检后）：env 注入机制确认有效；但登录 shell 启动文件会调整 PATH（真实 Termux 会话同样如此）——生产实现沿用"login shell + profile"语义即可，有效 PATH 含 bootstrap bin 即为正确，不必与注入值逐字符一致。
 - 真机验收步骤（装机后出现 "Fable Session Probe" 图标）：打开 → 自动 spawn 1 会话 → 手动 `echo $PREFIX`/`pwd`/resize/seq200 → 点 [自检] 跑 PASS/FAIL 全量断言；验收数据回报后改 Status。
