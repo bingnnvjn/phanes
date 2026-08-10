@@ -392,26 +392,22 @@ fn rasterize_grid(
             let mut drew = false;
             if let Some(emoji_font) = emoji_font.as_deref_mut() {
                 if emoji::is_emoji_run(&cell.text) {
-                    if let Some(bitmap) = emoji_font.rasterize_cluster(&cell.text, px_per_em as u16) {
-                        let target_w = CELL_W * 2;
-                        // 与 GPU 路径一致：按非透明包围盒视觉居中 + 92% 上限
-                        // （工单 22；旗帜/键盘等扁宽字形不占满 2 格紧贴）。
-                        let (bx, by, bw, bh) = bitmap
-                            .bbox
-                            .unwrap_or((0, 0, bitmap.width, bitmap.height));
-                        let scale = ((target_w as f32 * 0.92) / bw.max(1) as f32)
-                            .min((CELL_H as f32 * 0.92) / bh.max(1) as f32)
-                            .max(0.01);
+                    let target_w = CELL_W * 2;
+                    // 与 GPU 路径一致（工单 22 修复）：目标 em 边长，画布=em 盒
+                    // 缩放到 2 格宽内、垂直居中于行；不再用内容 bbox fit。
+                    let em_px = (CELL_H as f32 * 0.9)
+                        .min((px_per_em as f32).max(target_w as f32 * 0.95))
+                        .clamp(8.0, 512.0);
+                    if let Some(bitmap) =
+                        emoji_font.rasterize_cluster(&cell.text, em_px as u16)
+                    {
+                        let scale = (target_w as f32 / bitmap.width.max(1) as f32).min(1.0);
                         let draw_w = (bitmap.width as f32 * scale).round() as usize;
                         let draw_h = (bitmap.height as f32 * scale).round() as usize;
-                        let x_offset = origin_x
-                            + ((target_w as f32 - bw as f32 * scale) / 2.0
-                                - bx as f32 * scale)
-                                .round() as usize;
-                        let y_offset = origin_y
-                            + ((CELL_H as f32 - bh as f32 * scale) / 2.0
-                                - by as f32 * scale)
-                                .round() as usize;
+                        let x_offset =
+                            origin_x + ((target_w as f32 - draw_w as f32) / 2.0).round() as usize;
+                        let y_offset =
+                            origin_y + ((CELL_H as f32 - draw_h as f32) / 2.0).round() as usize;
                         for gy in 0..draw_h {
                             let sy = (gy as f32 / scale).min(bitmap.height as f32 - 1.0) as usize;
                             let dy = y_offset + gy;
@@ -1196,7 +1192,10 @@ fn main() {
                 .map(|b| {
                     let alpha = b.pixels.chunks_exact(4).any(|p| p[3] > 0);
                     alpha
-                        && (b.width as f32 > 24.0 * 0.7 || b.height as f32 > 24.0 * 0.7)
+                        // 工单 22 修复：画布 = em 盒（1em 高），内容在画布内
+                        // 保持字体原生位置；画布至少 0.7em 高（ZWJ 多 glyph
+                        // 画布更宽，高度仍 = 1em）。
+                        && b.height as f32 >= 24.0 * 0.7
                 })
                 .unwrap_or(false);
             if !ok {
@@ -1211,21 +1210,20 @@ fn main() {
         );
         all_ok &= category_ok;
 
-        // 行高稳定：emoji 非透明包围盒不超出 1 格高 / 2 格宽（行高由主字体
-        // 度量决定，emoji 只画在格内，有无 emoji 行高一致）。
+        // 行高稳定（工单 22 修复）：emoji 画布（em 盒）不超出 1 格高 / 2 格宽；
+        // 行高由主字体度量决定，emoji 只画在格内，有无 emoji 行高一致。
         let line_height_ok = ["🚀", "👨‍👩‍👧‍👦", "🇨🇳", "⌨️", "🏴󠁧󠁢󠁥󠁮󠁧󠁿"]
             .iter()
             .all(|s| {
                 emoji_fonts
                     .rasterize_cluster(s, 16)
                     .map(|b| {
-                        let (_, _, bw, bh) = b.bbox.unwrap_or((0, 0, b.width, b.height));
-                        bh <= 16 && bw <= 32
+                        b.height <= 16 && b.width <= 32
                     })
                     .unwrap_or(false)
             });
         println!(
-            "  {} : 行高稳定（emoji 包围盒 ≤1格高/2格宽，不顶天立地）",
+            "  {} : 行高稳定（emoji 画布=em 盒 ≤1格高/2格宽，不顶天立地）",
             if line_height_ok { "PASS" } else { "FAIL" }
         );
         all_ok &= line_height_ok;
@@ -1265,6 +1263,84 @@ fn main() {
         );
         all_ok &= vs16_ok;
         let _ = emoji_fonts.rasterize_cluster("⌨", 24);
+
+        // 工单 22 修复回归（画布=em 盒语义，全类一劳永逸）：
+        // 旗帜（26 个单 RI + 组合）/ 竖条横条硬件 / ZWJ 序列 / 冷门，
+        // 断言画布高度统一 = em、内容 bbox 在画布内不裁剪（不再 bbox fit）。
+        let mut canvas_samples: Vec<String> = Vec::new();
+        for cp in 0x1F1E6u32..=0x1F1FF {
+            if let Some(c) = char::from_u32(cp) {
+                canvas_samples.push(c.to_string());
+            }
+        }
+        canvas_samples.extend([
+            "🇨🇳".to_string(),
+            "🇺🇸".to_string(),
+            "🇬🇧".to_string(),
+            "🇧🇷".to_string(),
+            "🇯🇵".to_string(),
+            "🏳️‍🌈".to_string(),
+            "🏴󠁧󠁢󠁥󠁮󠁧󠁿".to_string(),
+            "🚩".to_string(),
+            "🎌".to_string(),
+            "🔋".to_string(),
+            "⚡".to_string(),
+            "🔌".to_string(),
+            "📱".to_string(),
+            "⌨️".to_string(),
+            "🖥️".to_string(),
+            "🖱️".to_string(),
+            "🖨️".to_string(),
+            "👨‍👩‍👧‍👦".to_string(),
+            "👩‍❤️‍👨".to_string(),
+            "🧑‍💻".to_string(),
+            "👍🏻".to_string(),
+            "☠️".to_string(),
+            "⚙️".to_string(),
+            "♻️".to_string(),
+            "🀄".to_string(),
+            "🕐".to_string(),
+            "1️⃣".to_string(),
+            "㊗️".to_string(),
+            "🈲".to_string(),
+            "🥷".to_string(),
+            "🦩".to_string(),
+            "🫖".to_string(),
+            "🫶".to_string(),
+        ]);
+        let mut canvas_fails: Vec<&str> = Vec::new();
+        for s in &canvas_samples {
+            let Some(b) = emoji_fonts.rasterize_cluster(s, 24) else {
+                canvas_fails.push(s);
+                continue;
+            };
+            // 画布高 ≈ em（0.7..1.25em：Apple 位图画布=1em，Noto 兜底按内容
+            // 裁剪可能 1.08em；布局端统一 fit 2 格宽不溢出）。
+            let h_em = b.height as f32 / 24.0;
+            if !(0.7..=1.25).contains(&h_em) {
+                canvas_fails.push(s);
+                continue;
+            }
+            // 内容 bbox 必须在画布内（画布含透明边，内容不越界不裁剪）。
+            if let Some((bx, by, bw, bh)) = b.bbox {
+                if bx + bw > b.width || by + bh > b.height || bh == 0 {
+                    canvas_fails.push(s);
+                    continue;
+                }
+            }
+        }
+        let canvas_ok = canvas_fails.is_empty();
+        println!(
+            "  {} : 画布语义全类回归（{} 项：旗帜/硬件/ZWJ/冷门画布=em 盒、内容不越界）{}",
+            if canvas_ok { "PASS" } else { "FAIL" },
+            canvas_samples.len(),
+            if canvas_fails.is_empty() {
+                String::new()
+            } else {
+                format!(" 失败: {:?}", canvas_fails)
+            }
+        );
+        all_ok &= canvas_ok;
 
         // Noto 兜底路径：取覆盖差异中第一个 Apple 无图/Noto 有映射的码位，
         // 断言整段 cluster 仍能出图（走 Noto COLRv1）。

@@ -615,6 +615,101 @@ mod tests {
     }
 
     #[test]
+    fn emoji_canvas_em_box_uniform_after_ticket22() {
+        // 工单 22 修复回归：布局以"画布 = em 盒"为基准，国旗/电池/键盘画布
+        // 尺寸一致（内容差异是字体原生设计，不再被 bbox fit 放大两极分化）；
+        // 画布 ≤ 2 格宽防溢出；ZWJ 多 glyph 画布按 2 格宽等比压缩。
+        let mut atlas = GlyphAtlas::new().expect("atlas");
+        let texts = ["🇨🇳", "🔋", "⌨\u{fe0f}", "👩\u{200d}❤\u{fe0f}\u{200d}👨"];
+        let row: Vec<Cell> = texts
+            .iter()
+            .map(|t| Cell {
+                text: t.to_string(),
+                fg: None,
+                bg: None,
+                selected: false,
+                underline: false,
+                underline_color: None,
+                strikethrough: false,
+                overline: false,
+                col_span: 2,
+            })
+            .collect();
+        let snapshot = Snapshot {
+            cols: 40,
+            rows: 10,
+            lines: vec![row.clone()],
+            cursor: None,
+            cursor_style: 0,
+            default_fg: Rgb { r: 255, g: 255, b: 255 },
+            default_bg: Rgb { r: 0, g: 0, b: 0 },
+            cursor_color: Rgb { r: 255, g: 255, b: 255 },
+            dirty: 1,
+            dirty_rows: vec![0],
+            selection_color: Rgb { r: 0, g: 0, b: 255 },
+            palette: None,
+            ansi_override: None,
+        };
+        // 探针 40×10（surface 1080×1920）：cell_w=27、row_h=192。
+        let verts = build_row_vertices(0, &row, &snapshot, &mut atlas, 1080, 1920);
+        // 每个 emoji 一个彩色字形（6 顶点矩形），提取 NDC -> 像素画布尺寸。
+        let mut rects: Vec<(f32, f32)> = Vec::new();
+        for g in verts.chunks_exact(6) {
+            if g[0].mode > 1.5 {
+                let x0 = (g[0].position[0] + 1.0) / 2.0 * 1080.0;
+                let x1 = (g[1].position[0] + 1.0) / 2.0 * 1080.0;
+                let y0 = (1.0 - g[0].position[1]) / 2.0 * 1920.0;
+                let y1 = (1.0 - g[2].position[1]) / 2.0 * 1920.0;
+                rects.push(((x1 - x0).abs(), (y1 - y0).abs()));
+            }
+        }
+        assert_eq!(rects.len(), texts.len(), "每个 emoji 一个彩色字形");
+        let (flag_w, flag_h) = rects[0];
+        let (battery_w, battery_h) = rects[1];
+        let (keyboard_w, keyboard_h) = rects[2];
+        let (couple_w, couple_h) = rects[3];
+        // 单 emoji 画布 = em 盒：统一尺寸（国旗/电池/键盘一致）。
+        assert!(
+            (flag_w - battery_w).abs() < 0.01 && (flag_h - battery_h).abs() < 0.01,
+            "国旗/电池画布应一致: flag={flag_w}x{flag_h} battery={battery_w}x{battery_h}"
+        );
+        assert!(
+            (flag_w - keyboard_w).abs() < 0.01 && (flag_h - keyboard_h).abs() < 0.01,
+            "国旗/键盘画布应一致: flag={flag_w}x{flag_h} keyboard={keyboard_w}x{keyboard_h}"
+        );
+        // 画布 ≤ 2 格宽（54px），且不小于 0.8 倍（emoji 视觉占满 2 格）。
+        assert!(flag_w <= 54.0 + 0.01 && flag_h <= 54.0 + 0.01);
+        assert!(flag_w >= 40.0, "探针 40×10 下画布应明显大于 40px: {flag_w}");
+        // ZWJ 双 glyph 画布 2em 宽：按 2 格宽等比压缩，高 = 宽/2。
+        // Apple 字体 shaping 后情侣总 advance = 1em（两个 glyph 位图按
+        // x_offset 回退拼合），画布同为 1em 方块。
+        assert!(couple_w <= 54.0 + 0.01 && couple_h <= 54.0 + 0.01);
+        assert!((couple_w - flag_w).abs() < 0.01, "ZWJ 画布同 em 盒: {couple_w}");
+        // 内容 bbox：国旗（字体原生 0.64em）内容高度明显小于电池（全满），
+        // 但这是字体设计，画布尺寸已统一 —— 不再 bbox fit。
+        let flag_entry = atlas
+            .color_entries
+            .iter()
+            .find(|(k, _)| k.starts_with("🇨🇳"))
+            .map(|(_, e)| *e)
+            .expect("flag entry");
+        let battery_entry = atlas
+            .color_entries
+            .iter()
+            .find(|(k, _)| k.starts_with("🔋"))
+            .map(|(_, e)| *e)
+            .expect("battery entry");
+        assert!(
+            flag_entry.bbox_h < battery_entry.bbox_h,
+            "国旗内容应小于电池（原生 0.64em vs 1em）"
+        );
+        assert!(
+            flag_entry.bbox_h as f32 >= flag_h * 0.55,
+            "国旗内容至少 0.55em（原生 0.64em）"
+        );
+    }
+
+    #[test]
     fn ansi_override_maps_palette_indexed_cells() {
         let mut ansi = DEFAULT_ANSI_16;
         ansi[1] = Rgb { r: 1, g: 2, b: 3 };
@@ -698,12 +793,26 @@ fn hash_row(row: &[Cell]) -> u64 {
 // ---------- 字形图集 ----------
 
 const ATLAS_SIZE: u32 = 2048;
-// 彩色图集格子保持 64（评审确认：双图集通道结构不动、容量 1024 不被削；
-// Apple 160 档解码后按目标字号缩放，≤64px 字号图样为方形/格内放得下，
-// >64px 接受格内钳制，见工单 Comments）。
-const COLOR_ATLAS_CELL: u32 = 64;
-const COLOR_ATLAS_COLUMNS: u32 = ATLAS_SIZE / COLOR_ATLAS_CELL;
-const COLOR_ATLAS_CAPACITY: u32 = COLOR_ATLAS_COLUMNS * COLOR_ATLAS_COLUMNS;
+// 彩色图集独立纹理 4096 + 动态格子（工单 22 修复：emoji 按目标尺寸光栅化，
+// 格子 = max(64, 2^ceil(log2(目标画布最大边)))；64px 格时容量 4096 格，
+// 128px 格时 1024 格，容量不削，大字号清晰显示）。灰度图集保持 2048。
+const COLOR_ATLAS_SIZE: u32 = 4096;
+const COLOR_ATLAS_CELL_BASE: u32 = 64;
+
+/// 彩色图集格子像素尺寸：至少 64，按目标画布最大边取下一个 2 的幂。
+fn color_atlas_cell(bitmap_max_edge: u32) -> u32 {
+    let need = bitmap_max_edge.max(COLOR_ATLAS_CELL_BASE);
+    let mut cell = COLOR_ATLAS_CELL_BASE;
+    while cell < need && cell < COLOR_ATLAS_SIZE {
+        cell *= 2;
+    }
+    cell
+}
+
+fn color_atlas_capacity(cell: u32) -> u32 {
+    let columns = (COLOR_ATLAS_SIZE / cell.max(1)).max(1);
+    columns * columns
+}
 const EMBEDDED_MONO_FONT: &[u8] = include_bytes!("../assets/JetBrainsMono-Regular.ttf");
 
 struct FontFace {
@@ -729,6 +838,7 @@ pub struct GlyphEntry {
 #[derive(Debug, Clone, Copy)]
 pub struct ColorGlyphEntry {
     pub cell: u32,
+    pub cell_px: u32,
     pub bitmap_w: u32,
     pub bitmap_h: u32,
     pub pad_x: u32,
@@ -823,7 +933,7 @@ impl GlyphAtlas {
                 ))
             },
             color_entries: HashMap::new(),
-            color_pixels: vec![0u8; (ATLAS_SIZE * ATLAS_SIZE * 4) as usize],
+            color_pixels: vec![0u8; (COLOR_ATLAS_SIZE * COLOR_ATLAS_SIZE * 4) as usize],
             color_next_cell: 1,
             color_revision: 0,
         })
@@ -950,7 +1060,7 @@ impl GlyphAtlas {
     }
 
     pub fn color_extent(&self) -> (u32, u32) {
-        (ATLAS_SIZE, ATLAS_SIZE)
+        (COLOR_ATLAS_SIZE, COLOR_ATLAS_SIZE)
     }
 
     pub fn color_glyph_count(&self) -> usize {
@@ -1111,64 +1221,50 @@ impl GlyphAtlas {
         Some(entry)
     }
 
-    /// 取彩色 emoji 字形（cluster 键：ZWJ 序列整段进图集）；
+    /// 取彩色 emoji 字形（cluster+目标 em 键：ZWJ 序列整段进图集）；
     /// 非 emoji run / 无彩色字体 / 光栅失败返回 None。
-    pub fn ensure_color_glyph(&mut self, cluster: &str) -> Option<ColorGlyphEntry> {
-        if let Some(entry) = self.color_entries.get(cluster) {
+    pub fn ensure_color_glyph(&mut self, cluster: &str, target_em_px: u16) -> Option<ColorGlyphEntry> {
+        let key = format!("{}@{}", cluster, target_em_px);
+        if let Some(entry) = self.color_entries.get(&key) {
             return Some(*entry);
         }
         if !crate::emoji::is_emoji_run(cluster) {
             return None;
         }
         let fonts = self.emoji_fonts.as_mut()?;
-        let bitmap = fonts.rasterize_cluster(cluster, self.pixels_per_em as u16)?;
+        let bitmap = fonts.rasterize_cluster(cluster, target_em_px.max(1))?;
         if bitmap.width == 0 || bitmap.height == 0 || bitmap.pixels.is_empty() {
             return None;
         }
-        if self.color_next_cell >= COLOR_ATLAS_CAPACITY {
+        // 工单 22 修复：位图即"画布 = em 盒"（含透明边，Apple sbix 语义），
+        // 已按目标 em 光栅化；格子按画布最大边取下一档 2 的幂（≥64），
+        // 画布直接入格，不再钳制缩小 —— 大字号/大格子下清晰显示。
+        let cell_px = color_atlas_cell(bitmap.width.max(bitmap.height));
+        if self.color_next_cell >= color_atlas_capacity(cell_px) {
             log_error("color glyph atlas full");
             return None;
         }
-
-        // 位图超过格子时双线性 + 线性空间缩小（工单 22 超采样语义）。
-        let scale = (COLOR_ATLAS_CELL as f32 / bitmap.width.max(bitmap.height) as f32).min(1.0);
-        let bitmap_w = (bitmap.width as f32 * scale).round().max(1.0) as u32;
-        let bitmap_h = (bitmap.height as f32 * scale).round().max(1.0) as u32;
-        let scaled = crate::sbix::scale_rgba(
-            &bitmap.pixels,
-            bitmap.width,
-            bitmap.height,
-            bitmap_w,
-            bitmap_h,
-        )?;
-        // 包围盒随缩放等比换算（视觉居中用）。
-        let (bbox_x, bbox_y, bbox_w, bbox_h) = match bitmap.bbox {
-            Some((bx, by, bw, bh)) => (
-                ((bx as f32 * scale).round() as u32).min(bitmap_w),
-                ((by as f32 * scale).round() as u32).min(bitmap_h),
-                (((bx + bw) as f32 * scale).round() as u32 - (bx as f32 * scale).round() as u32)
-                    .max(1),
-                (((by + bh) as f32 * scale).round() as u32 - (by as f32 * scale).round() as u32)
-                    .max(1),
-            ),
-            None => (0, 0, bitmap_w, bitmap_h),
-        };
-
+        let bitmap_w = bitmap.width;
+        let bitmap_h = bitmap.height;
+        let scaled = bitmap.pixels;
+        let (bbox_x, bbox_y, bbox_w, bbox_h) =
+            bitmap.bbox.unwrap_or((0, 0, bitmap_w, bitmap_h));
         let cell = self.color_next_cell;
         self.color_next_cell += 1;
-        let pad_x = (COLOR_ATLAS_CELL - bitmap_w) / 2;
-        let pad_y = (COLOR_ATLAS_CELL - bitmap_h) / 2;
-        let col = cell % COLOR_ATLAS_COLUMNS;
-        let row = cell / COLOR_ATLAS_COLUMNS;
+        let pad_x = (cell_px - bitmap_w) / 2;
+        let pad_y = (cell_px - bitmap_h) / 2;
+        let columns = COLOR_ATLAS_SIZE / cell_px;
+        let col = cell % columns;
+        let row = cell / columns;
         for gy in 0..bitmap_h {
             for gx in 0..bitmap_w {
                 let alpha = scaled[((gy * bitmap_w + gx) * 4 + 3) as usize];
                 if alpha == 0 {
                     continue;
                 }
-                let px = col * COLOR_ATLAS_CELL + pad_x + gx;
-                let py = row * COLOR_ATLAS_CELL + pad_y + gy;
-                let i = ((py * ATLAS_SIZE + px) * 4) as usize;
+                let px = col * cell_px + pad_x + gx;
+                let py = row * cell_px + pad_y + gy;
+                let i = ((py * COLOR_ATLAS_SIZE + px) * 4) as usize;
                 let si = ((gy * bitmap_w + gx) * 4) as usize;
                 self.color_pixels[i] = scaled[si];
                 self.color_pixels[i + 1] = scaled[si + 1];
@@ -1179,6 +1275,7 @@ impl GlyphAtlas {
 
         let entry = ColorGlyphEntry {
             cell,
+            cell_px,
             bitmap_w,
             bitmap_h,
             pad_x,
@@ -1189,7 +1286,7 @@ impl GlyphAtlas {
             bbox_h,
         };
         self.color_revision = self.color_revision.wrapping_add(1);
-        self.color_entries.insert(cluster.to_string(), entry);
+        self.color_entries.insert(key, entry);
         Some(entry)
     }
 
@@ -1648,36 +1745,41 @@ pub fn build_row_vertices(
         let Some(ch) = cell.text.chars().next() else {
             continue;
         };
-        let width_cells = terminal_cell_width(ch);
-        if width_cells == 0 {
+        let raw_width = terminal_cell_width(ch);
+        if raw_width == 0 {
             continue;
         }
+        // 工单 22 修复：宽度基准用 merge_emoji_runs 归一后的 col_span
+        // （emoji=2 格），不再按首个码位判宽 —— 区域指示符（🇨）等
+        // 单码位判宽=1 会把国旗画成 1 格宽，与电池(2 格)两极分化。
+        // tab 等核心未展开的特殊宽度仍按终端宽度（4 格）。
+        let width_cells = cell.col_span.max(1).max(raw_width);
         let target_cell_w = cell_w * width_cells as f32;
         let fg = rgb_components(fg_for_cell(cell, snapshot));
 
         // 彩色 emoji 优先走彩色图集（工单 13：整段 cluster 整形后入图集）。
-        if let Some(color_entry) = atlas.ensure_color_glyph(&cell.text) {
-            // 工单 22：按非透明包围盒做视觉居中（原生比例，不压不拉）。
-            let bbox_w = color_entry.bbox_w.max(1) as f32;
-            let bbox_h = color_entry.bbox_h.max(1) as f32;
-            let scale = ((target_cell_w * 0.92) / bbox_w)
-                .min((row_h * 0.92) / bbox_h)
-                .max(0.01);
+        // 工单 22 修复：以"画布 = em 盒"为布局基准（Apple sbix 语义），
+        // 画布整体缩放到目标 em 边长（≤2 格宽防溢出），垂直居中于行；
+        // 不再用内容 bbox fit —— 国旗/电池/键盘等大小差异回归字体原生设计。
+        let em_px = (row_h * 0.9)
+            .min(atlas.pixels_per_em().max(target_cell_w * 0.95))
+            .clamp(8.0, 512.0) as u16;
+        if let Some(color_entry) = atlas.ensure_color_glyph(&cell.text, em_px) {
+            let scale = (target_cell_w / color_entry.bitmap_w.max(1) as f32).min(1.0);
             let draw_w = color_entry.bitmap_w as f32 * scale;
             let draw_h = color_entry.bitmap_h as f32 * scale;
-            let draw_x = x + (target_cell_w - bbox_w * scale) / 2.0
-                - color_entry.bbox_x as f32 * scale;
-            let draw_y =
-                y + (row_h - bbox_h * scale) / 2.0 - color_entry.bbox_y as f32 * scale;
-            let col = color_entry.cell % COLOR_ATLAS_COLUMNS;
-            let row = color_entry.cell / COLOR_ATLAS_COLUMNS;
-            let uv_left = (col * COLOR_ATLAS_CELL + color_entry.pad_x) as f32 / color_w as f32;
+            let draw_x = x + (target_cell_w - draw_w) / 2.0;
+            let draw_y = y + (row_h - draw_h) / 2.0;
+            let columns = (COLOR_ATLAS_SIZE / color_entry.cell_px.max(1)).max(1);
+            let col = color_entry.cell % columns;
+            let row = color_entry.cell / columns;
+            let uv_left = (col * color_entry.cell_px + color_entry.pad_x) as f32 / color_w as f32;
             let uv_right =
-                (col * COLOR_ATLAS_CELL + color_entry.pad_x + color_entry.bitmap_w) as f32
+                (col * color_entry.cell_px + color_entry.pad_x + color_entry.bitmap_w) as f32
                     / color_w as f32;
-            let uv_top = (row * COLOR_ATLAS_CELL + color_entry.pad_y) as f32 / color_h as f32;
+            let uv_top = (row * color_entry.cell_px + color_entry.pad_y) as f32 / color_h as f32;
             let uv_bottom =
-                (row * COLOR_ATLAS_CELL + color_entry.pad_y + color_entry.bitmap_h) as f32
+                (row * color_entry.cell_px + color_entry.pad_y + color_entry.bitmap_h) as f32
                     / color_h as f32;
             push_color_glyph_rect(
                 &mut vertices,
@@ -2144,6 +2246,7 @@ struct GpuRuntime {
     bind_group_layout: Option<wgpu::BindGroupLayout>,
     sampler: Option<wgpu::Sampler>,
     atlas_texture: Option<wgpu::Texture>,
+    color_texture: Option<wgpu::Texture>,
     atlas_bind_group: Option<wgpu::BindGroup>,
     atlas_uploaded_revision: u64,
     atlas_bind_group_revision: u64,
@@ -2192,6 +2295,7 @@ impl GpuRuntime {
             bind_group_layout: None,
             sampler: None,
             atlas_texture: None,
+            color_texture: None,
             atlas_bind_group: None,
             atlas_uploaded_revision: 0,
             atlas_bind_group_revision: 0,
@@ -2338,13 +2442,15 @@ impl GpuRuntime {
         if self.atlas_texture.is_some() && self.atlas_uploaded_revision == combined_revision {
             return Ok(());
         }
-        let (width, height) = atlas.extent();
-        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+        // 灰度图集 2048 + 彩色图集 4096 独立纹理（工单 22：彩色格子动态
+        // 放大到 128/256 时仍保持容量，大字号 emoji 清晰）。
+        let (gray_w, gray_h) = atlas.extent();
+        let gray_texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("fable-glyph-atlas"),
             size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 2,
+                width: gray_w,
+                height: gray_h,
+                depth_or_array_layers: 1,
             },
             mip_level_count: 1,
             sample_count: 1,
@@ -2353,29 +2459,61 @@ impl GpuRuntime {
             usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
-        let mut layers = Vec::with_capacity((width * height * 4 * 2) as usize);
-        layers.extend_from_slice(atlas.pixels());
-        layers.extend_from_slice(atlas.color_pixels());
         self.queue.write_texture(
             wgpu::TexelCopyTextureInfo {
-                texture: &texture,
+                texture: &gray_texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            &layers,
+            atlas.pixels(),
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(width * 4),
-                rows_per_image: Some(height),
+                bytes_per_row: Some(gray_w * 4),
+                rows_per_image: Some(gray_h),
             },
             wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 2,
+                width: gray_w,
+                height: gray_h,
+                depth_or_array_layers: 1,
             },
         );
-        self.atlas_texture = Some(texture);
+        let (color_w, color_h) = atlas.color_extent();
+        let color_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("fable-color-glyph-atlas"),
+            size: wgpu::Extent3d {
+                width: color_w,
+                height: color_h,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.format,
+            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &color_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            atlas.color_pixels(),
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(color_w * 4),
+                rows_per_image: Some(color_h),
+            },
+            wgpu::Extent3d {
+                width: color_w,
+                height: color_h,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.atlas_texture = Some(gray_texture);
+        self.color_texture = Some(color_texture);
         self.atlas_uploaded_revision = combined_revision;
         self.atlas_bind_group = None;
         self.atlas_bind_group_revision = 0;
@@ -2407,7 +2545,7 @@ impl GpuRuntime {
                             visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Texture {
                                 sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                                view_dimension: wgpu::TextureViewDimension::D2Array,
+                                view_dimension: wgpu::TextureViewDimension::D2,
                                 multisampled: false,
                             },
                             count: None,
@@ -2416,6 +2554,16 @@ impl GpuRuntime {
                             binding: 1,
                             visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 2,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                multisampled: false,
+                            },
                             count: None,
                         },
                     ],
@@ -2516,11 +2664,13 @@ impl GpuRuntime {
             .atlas_texture
             .as_ref()
             .ok_or_else(|| "atlas texture missing".to_string())?;
-        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor {
-            dimension: Some(wgpu::TextureViewDimension::D2Array),
-            array_layer_count: Some(2),
-            ..Default::default()
-        });
+        let color_texture = self
+            .color_texture
+            .as_ref()
+            .ok_or_else(|| "color atlas texture missing".to_string())?;
+        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let color_texture_view =
+            color_texture.create_view(&wgpu::TextureViewDescriptor::default());
         self.atlas_bind_group = Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("fable-atlas-bind-group"),
             layout,
@@ -2532,6 +2682,10 @@ impl GpuRuntime {
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::Sampler(sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&color_texture_view),
                 },
             ],
         }));
@@ -2724,6 +2878,7 @@ struct VertexOutput {
 
 @group(0) @binding(0) var glyph_atlas: texture_2d_array<f32>;
 @group(0) @binding(1) var glyph_sampler: sampler;
+@group(0) @binding(2) var color_atlas: texture_2d<f32>;
 
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
@@ -2740,14 +2895,13 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     if (input.mode < 0.5) {
         return input.color;
     }
-    var layer: u32;
-    if (input.mode < 1.5) {
-        layer = 0u;
-    } else {
-        layer = 1u;
-    }
-    let sample = textureSample(glyph_atlas, glyph_sampler, input.tex_coord, layer);
-    if (input.mode >= 1.5) {
+    let is_color = input.mode >= 1.5;
+    let sample = select(
+        textureSample(glyph_atlas, glyph_sampler, input.tex_coord, 0u),
+        textureSample(color_atlas, glyph_sampler, input.tex_coord),
+        is_color
+    );
+    if (is_color) {
         // 彩色层：图集存 sRGB 值，先转线性，sRGB 帧缓冲再编码回去，
         // 避免中间色被提亮发灰（工单 12 真机 emoji 寡淡根因）。
         let linear = pow(sample.rgb, vec3<f32>(2.2));

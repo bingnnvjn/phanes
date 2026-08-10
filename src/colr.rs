@@ -121,6 +121,8 @@ impl RgbaImage {
             height: self.height,
             pixels: self.pixels.clone(),
             bbox: None,
+            canvas_origin_x: 0,
+            canvas_origin_y: 0,
         }
     }
 }

@@ -18,6 +18,11 @@ pub struct RgbaBitmap {
     pub pixels: Vec<u8>,
     /// 非透明包围盒 (x, y, w, h)，用于视觉居中。
     pub bbox: Option<(u32, u32, u32, u32)>,
+    /// 画布左上角相对 160 档 em 盒原点（pen 起点/基线）的偏移，单位与
+    /// width/height 一致（工单 22 修复：布局以画布=em 盒为基准，内容保持
+    /// 字体原生位置；不做内容 bbox fit）。
+    pub canvas_origin_x: i32,
+    pub canvas_origin_y: i32,
 }
 
 /// 是否为彩色 emoji 字符（宽 2 格）。
@@ -278,6 +283,8 @@ impl EmojiFont {
                         height: h as u32,
                         pixels,
                         bbox: None,
+                        canvas_origin_x: 0,
+                        canvas_origin_y: 0,
                     },
                 ));
                 pen_x += pos.x_advance as f32 * scale;
@@ -367,6 +374,8 @@ fn composite(placed: &[(i32, i32, RgbaBitmap)]) -> Option<RgbaBitmap> {
         height: chh as u32,
         pixels: canvas,
         bbox: Some(bbox),
+        canvas_origin_x: min_x,
+        canvas_origin_y: min_y,
     })
 }
 
@@ -665,8 +674,17 @@ fn apple_rasterize_cluster(
         max_x = max_x.max(p.x + p.w as i32 - 1);
         max_y = max_y.max(p.y + p.h as i32 - 1);
     }
-    let cw = (max_x - min_x + 1) as usize;
-    let chh = (max_y - min_y + 1) as usize;
+    // 工单 22 修复：合成画布 = em 盒（advance × 1em，160 档），位图按
+    // origin 摆进画布，保留字体原生的透明边/位置语义（国旗在 1em 画布内
+    // 内容只占 0.64em 高是苹果原生设计）。画布取 [内容 ∪ em 盒] 的并集，
+    // 避免 origin 为负或 advance 异常的 glyph 被裁剪。
+    let advance_px = pen_x.max(160.0);
+    let canvas_x0 = min_x.min(0);
+    let canvas_y0 = min_y.min(0);
+    let canvas_x1 = max_x.max(advance_px.round() as i32 - 1).max(159);
+    let canvas_y1 = max_y.max(159);
+    let cw = (canvas_x1 - canvas_x0 + 1) as usize;
+    let chh = (canvas_y1 - canvas_y0 + 1) as usize;
     if cw == 0 || chh == 0 {
         return None;
     }
@@ -674,8 +692,8 @@ fn apple_rasterize_cluster(
     // 第二遍：直接按放置矩形 blit（LRU 命中，无克隆）。
     for p in &places {
         let d = apple.decode(p.gid)?;
-        let ox = (p.x - min_x) as usize;
-        let oy = (p.y - min_y) as usize;
+        let ox = (p.x - canvas_x0) as usize;
+        let oy = (p.y - canvas_y0) as usize;
         blit_src_over(
             &mut canvas,
             cw,
@@ -702,6 +720,8 @@ fn apple_rasterize_cluster(
         height: th,
         pixels,
         bbox: Some(bbox),
+        canvas_origin_x: (canvas_x0 as f32 * factor).round() as i32,
+        canvas_origin_y: (canvas_y0 as f32 * factor).round() as i32,
     })
 }
 
