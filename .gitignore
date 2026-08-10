@@ -1,6 +1,7 @@
 # 独立仓库（各自维护历史）
 /fable-app/
 /spike-render/
+/spike-session/
 
 # 第三方预编译资产（.a/头文件/字体，校验和见其 README）
 /spike-libghostty/*
