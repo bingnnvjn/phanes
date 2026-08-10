@@ -4,7 +4,7 @@
 
 **Blocked by:** None（工单 12 的双图集通道已可用；本单只换彩色字形来源/光栅，不动通道结构与灰度通路）
 
-Status: 待验收
+Status: 已完成
 
 ## 已定方向（2026-08-09 决策窗口，ADR-0006；禁止重新调研/讨论）
 
@@ -22,7 +22,7 @@ Status: 待验收
 - [x] 字体替换：`assets/` 为 COLRv1 完整版（Comments 记录版本/sha256/许可），旧 CBDT 保留可回退，真机验收通过后移除
 - [x] 离屏自检（`cargo run --release` 软件光栅 + 断言）：COLRv1 字形光栅出 RGBA；🚀 彩色不偏淡；✅ 为彩色绿底白勾；ZWJ 家庭/肤色/旗帜离屏断言 PASS
 - [x] 灰度正文回归：既有软件光栅 ALL PASS 样本全保持（fontdue 通路未动）
-- [ ] 真机验收：🚀（彩色不偏淡）、✅（绿勾）、👨👩👧👦（家庭 ZWJ）、👍🏻（肤色）、🇨🇳（旗帜）、⌨️🔋（杂项）、SGR 4 下划线可见；冷门码位抽查（实施时补充清单）
+- [x] 真机验收：🚀（彩色不偏淡）、✅（绿勾）、👨👩👧👦（家庭 ZWJ）、👍🏻（肤色）、🇨🇳（旗帜）、⌨️🔋（杂项）、SGR 4 下划线可见；冷门码位抽查（实施时补充清单）
 - [x] 结论写回 Comments（每项实现方式、性能数据、坑、对后续影响），更新 Status（待验收）
 
 ## Comments
@@ -144,3 +144,16 @@ Status: 待验收
 - ADR-0006 需补事实修正（10.7MB → `Noto-COLRv1.ttf` 5.0MB；"FreeType 光栅 COLRv1"实为调用方遍历 paint graph），见 `docs/adr/0006` 注记。
 - 后续换字体/灰度迁 FreeType 时 `colr.rs` 合成器可直接复用。
 - 真机验收项：RenderActivity 新增 `[emoji13]` 按钮输出 `🚀✅👨‍👩‍👧‍👦👍🏻🇨🇳⌨️🔋🧑‍🚀🫖🫶`（覆盖彩色/绿勾/ZWJ 家庭/肤色/旗帜/杂项/冷门码位），`[u-line]` 验下划线。
+
+2026-08-10 真机验收通过（用户确认），工单收尾：
+
+**验收记录**
+
+- 用户确认真机验收通过：emoji（🚀 彩色不偏淡 / ✅ 绿勾 / 👨👩👧👦 家庭 ZWJ / 👍🏻 肤色 / 🇨🇳 旗帜 / ⌨️🔋 杂项 / 🧑🚀🫖🫶 冷门码位）全部正常，SGR 4 下划线可见且粗细/位置符合要求 → `Status: 待验收 → 已完成`。
+- 按已定方向执行收尾动作：移除 `spike-render/assets/NotoColorEmoji-CBDT-2017.ttf`（2017 CBDT 5.3MB；无代码引用，可自 googlefonts noto-emoji v2017 重新获取；本次删除已在 spike-render 提交）。
+- 移除后 `spike-render/assets/` 保留：`NotoColorEmoji.ttf`（COLRv1 完整版，当前内嵌主字体）、`NOTO-EMOJI-LICENSE.txt`、`JetBrainsMono-Regular.ttf`。
+
+**结论写回（补充）**
+
+- 彩色字形通路（FreeType + colr.rs COLRv1）随本单定稿；工单 22（Apple Color Emoji sbix 切换，ADR-0007）已在其上完成：主字体 = Apple 21.4d3e1（sbix 160 单档），Noto COLRv1 保留为兜底，`colr.rs` 直接复用；工单 13 的验收基线（下划线/布局/双图集/灰度正文）已在工单 22 回归通过。
+- 下划线（6% 行高、贴基线下方 1px）与 emoji 布局（2 格、非重叠、中心对齐）为既有验收基线，后续工单回归时须保持。
