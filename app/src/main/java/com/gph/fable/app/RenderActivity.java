@@ -181,6 +181,9 @@ public class RenderActivity extends Activity {
         // 工单 13 扩展测试集：黄脸/动物/食物/活动/物体/符号/ZWJ 27 个。
         addButton(row3, "emoji27", v -> sendToAll(
             "echo 😀😢😂😍😡🥺🐶🐱🐼🦊🍎🍕🍜⚽🎮🎵📱💻☕❤️⭐⚠️🎄🎂💯👋🏻🏳️‍🌈\n"));
+        // 工单 22：Apple sbix 类别化样例（旗帜/家庭/肤色/职业 ZWJ/keycap/tag/冷门/VS16）。
+        addButton(row3, "emoji22", v -> sendToAll(
+            "echo 🇨🇳🇺🇸🇯🇵🇬🇧👨‍👩‍👧‍👦👩‍👩‍👧‍👦👨‍👨‍👦👨‍👩‍👦👍🏻👍🏽👋🏾🧑🏿🧑‍🚀🧑‍💻👩‍🎓👨‍🍳1️⃣9️⃣#️⃣*️⃣🏴󠁧󠁢󠁥󠁮󠁧󠁿🫖🫶⌨️\n"));
         addButton(row3, "emoji", v -> sendToAll("echo 🚀✅\n"));
         // 工单 13：按钮命令必须带末尾真换行（\n），否则 bash 一直等回车不执行。
         addButton(row3, "box", v -> sendToAll("printf '┌───┐\\n│ x │\\n└───┘\\n'\n"));
@@ -221,6 +224,8 @@ public class RenderActivity extends Activity {
                 setStatus("rendererCreate FAILED（看调试日志）");
                 return;
             }
+            // 工单 22：assets 字体拷贝 + JNI 传路径（Rust 侧 mmap + 校验）。
+            FontAssets.install(this, renderer);
         } catch (Throwable t) {
             debugLog("rendererCreate THREW: " + t);
             setStatus("rendererCreate THREW: " + t);

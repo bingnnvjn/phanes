@@ -1,7 +1,9 @@
 package com.gph.fable.app.terminal.adapter;
 
+import android.content.Context;
 import android.view.Surface;
 
+import com.gph.fable.app.FontAssets;
 import com.gph.fable.app.RenderCore;
 import com.gph.fable.app.terminal.FableDiagnostics;
 import com.gph.fable.terminal.adapter.CoreAdapter;
@@ -34,11 +36,19 @@ public final class FableRenderCoreAdapter implements CoreAdapter {
     private int mSelectionArgb;
     private int mCursorArgb;
     private int[] mAnsiArgb;
+    private Context mContext;
 
     public FableRenderCoreAdapter(int cols, int rows) {
+        this(null, cols, rows);
+    }
+
+    public FableRenderCoreAdapter(Context context, int cols, int rows) {
+        mContext = context;
         mCols = Math.max(1, cols);
         mRows = Math.max(1, rows);
         mHandle = RenderCore.rendererCreate(mCols, mRows);
+        // 工单 22：assets 字体拷贝 + JNI 传路径（Rust 侧 mmap + sha256 校验）。
+        FontAssets.install(context, mHandle);
     }
 
     public boolean isValid() {
@@ -275,6 +285,7 @@ public final class FableRenderCoreAdapter implements CoreAdapter {
         // 再恢复字号/配色板/Surface 附着。
         long newHandle = RenderCore.rendererCreate(cols, rows);
         if (newHandle == 0) return;
+        FontAssets.install(mContext, newHandle);
         if (fontSizePx > 0f) RenderCore.rendererSetFontSize(newHandle, fontSizePx);
         if (paletteActive) {
             RenderCore.rendererSetPalette16(newHandle, fgArgb, bgArgb, selectionArgb, cursorArgb, ansiArgb);

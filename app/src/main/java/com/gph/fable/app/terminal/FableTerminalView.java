@@ -93,7 +93,7 @@ public final class FableTerminalView extends FrameLayout {
         if (render == null) {
             CoreAdapter adapter = session.getCoreAdapter();
             if (adapter == null) {
-                FableRenderCoreAdapter fresh = new FableRenderCoreAdapter(80, 24);
+                FableRenderCoreAdapter fresh = new FableRenderCoreAdapter(getContext(), 80, 24);
                 if (fresh.isValid()) {
                     session.setCoreAdapter(fresh);
                     adapter = fresh;

@@ -28,6 +28,10 @@ android {
     buildFeatures {
         buildConfig = true
     }
+    // 工单 22：字体 assets 不压缩（noCompress），运行时 mmap 直接读。
+    aaptOptions {
+        noCompress += "ttf"
+    }
     def appVersionName = System.getenv("TERMUX_APP_VERSION_NAME") ?: ""
     def splitAPKsForDebugBuilds = System.getenv("TERMUX_SPLIT_APKS_FOR_DEBUG_BUILDS") ?: "1"
     def splitAPKsForReleaseBuilds = System.getenv("TERMUX_SPLIT_APKS_FOR_RELEASE_BUILDS") ?: "0" // F-Droid does not support split APKs #1904
@@ -180,6 +184,17 @@ androidComponents {
             output.outputFileName.set("fable-app_" + (project.ext.apkVersionTag ? project.ext.apkVersionTag : project.ext.packageVariant + "-" + buildType) + "_" + abi + ".apk")
         }
     }
+}
+
+// 工单 22：preBuild 前确保字体 assets 就绪（脚本幂等：sha256 匹配即跳过；
+// 下载/剥离失败即构建失败，见 scripts/fetch-emoji-fonts.sh）。
+tasks.register("fetchEmojiFonts", Exec) {
+    def fableRoot = rootProject.rootDir.parentFile
+    workingDir fableRoot
+    commandLine "bash", new File(fableRoot, "scripts/fetch-emoji-fonts.sh").absolutePath
+}
+tasks.named("preBuild") {
+    dependsOn "fetchEmojiFonts"
 }
 
 dependencies {

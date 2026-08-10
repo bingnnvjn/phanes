@@ -14,6 +14,10 @@ release/
 # Local configuration file (sdk path, etc)
 local.properties
 
+# 工单 22：字体资产由 scripts/fetch-emoji-fonts.sh 下载/剥离生成（sha256 固化），
+# 不进 git 正文；构建前 preBuild 强制校验。
+app/src/main/assets/fonts/
+
 # Build logs
 *.log
 .ndk-build.log

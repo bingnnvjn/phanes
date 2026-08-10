@@ -32,6 +32,10 @@ public final class RenderCore {
     /** 工单 14：设置字号（px/em，4..128），触发字形图集重建。 */
     public static native void rendererSetFontSize(long handle, float sizePx);
 
+    /** 工单 22：设置 Apple/Noto 字体文件路径（APK assets 拷贝后的 filesDir 路径；
+     * Rust 侧 mmap + sha256 校验，失败自动降级 Noto）。 */
+    public static native void rendererSetFontPaths(long handle, String applePath, String notoPath);
+
     /** 工单 14：当前字号的单元格像素尺寸，写入 out[0]=宽 out[1]=高。 */
     public static native void rendererGetCellSize(long handle, int[] out);
 
