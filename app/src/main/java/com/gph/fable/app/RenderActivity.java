@@ -183,17 +183,20 @@ public class RenderActivity extends Activity {
         row3.setOrientation(LinearLayout.HORIZONTAL);
         // 工单 13：COLRv1 验收序列（彩色/绿勾/ZWJ 家庭/肤色/旗帜/杂项/冷门码位）。
         // 工单 22 真机反馈：bash readline 交互输入会吞掉 ZWJ（U+200D），
-        // 家庭/职业 emoji 被拆开；按钮改用 bracketed paste 发送（\x1b[200~
-        // ... \x1b[201~），readline 按粘贴文本处理、保留 ZWJ。
+        // 家庭/职业 emoji 被拆开；bracketed paste 在部分 readline 上不可靠
+        // （命令不执行）。改用 printf 的 \u200d 转义：ZWJ 以 ASCII 文本
+        // 传入，readline 不吞，bash printf 展开成真 ZWJ；2027 模式按
+        // grapheme cluster 存 2 列。实测仅 ZWJ 被吞，VS16/20E3/tag/肤色
+        // 均保留，直接发送即可。
         addButton(row3, "emoji13", v -> sendToAll(
-            "echo 🚀✅👨‍👩‍👧‍👦👍🏻🇨🇳⌨️🔋🧑‍🚀🫖🫶\n"));
+            "printf '🚀✅👨\\u200d👩\\u200d👧\\u200d👦👍🏻🇨🇳⌨️🔋🧑\\u200d🚀🫖🫶\\n'\n"));
         // 工单 13 扩展测试集：黄脸/动物/食物/活动/物体/符号/ZWJ 27 个。
         addButton(row3, "emoji27", v -> sendToAll(
             "echo 😀😢😂😍😡🥺🐶🐱🐼🦊🍎🍕🍜⚽🎮🎵📱💻☕❤️⭐⚠️🎄🎂💯👋🏻🏳️‍🌈\n"));
         // 工单 22：Apple sbix 类别化样例（旗帜/标准家庭/肤色/职业 ZWJ/
         // keycap/tag/冷门/VS16；家庭只放异性恋标准组合）。
         addButton(row3, "emoji22", v -> sendToAll(
-            "echo 🇨🇳🇺🇸🇯🇵🇬🇧🏴󠁧󠁢󠁥󠁮󠁧󠁿👨‍👩‍👧‍👦👨‍👩‍👦👨‍👩‍👧👍🏻👍🏽👋🏾🧑🏿🧑‍🚀🧑‍💻👩‍🎓👨‍🍳1️⃣9️⃣#️⃣*️⃣🫖🫶⌨️\n"));
+            "printf '🇨🇳🇺🇸🇯🇵🇬🇧🏴󠁧󠁢󠁥󠁮󠁧󠁿👨\\u200d👩\\u200d👧\\u200d👦👨\\u200d👩\\u200d👦👨\\u200d👩\\u200d👧👍🏻👍🏽👋🏾🧑🏿🧑\\u200d🚀🧑\\u200d💻👩\\u200d🎓👨\\u200d🍳1️⃣9️⃣#️⃣*️⃣🫖🫶⌨️\\n'\n"));
         addButton(row3, "emoji", v -> sendToAll("echo 🚀✅\n"));
         // 工单 13：按钮命令必须带末尾真换行（\n），否则 bash 一直等回车不执行。
         addButton(row3, "box", v -> sendToAll("printf '┌───┐\\n│ x │\\n└───┘\\n'\n"));
@@ -399,12 +402,9 @@ public class RenderActivity extends Activity {
     }
 
     private void sendToAll(String cmd) {
-        // 工单 22 真机反馈：bash readline 交互输入吞掉 ZWJ（U+200D），
-        // 家庭/职业 emoji 被拆开。统一用 bracketed paste 发送
-        // （\x1b[200~ ... \x1b[201~）：readline 按粘贴文本处理，保留 ZWJ，
-        // 命令照常执行（已验证真实 bash 回显/输出 ZWJ 完整）。
-        String wrapped = "\u001b[200~" + cmd + "\u001b[201~";
-        byte[] bytes = wrapped.getBytes(StandardCharsets.UTF_8);
+        // 工单 22 修复：直接发送命令（可靠执行回车）。含 ZWJ 的 emoji 由
+        // 按钮命令用 printf \u200d 转义传递（readline 不吞 ASCII 转义文本）。
+        byte[] bytes = cmd.getBytes(StandardCharsets.UTF_8);
         for (Session s : sessions) {
             RenderCore.ptyWrite(s.pty, bytes, bytes.length);
         }
