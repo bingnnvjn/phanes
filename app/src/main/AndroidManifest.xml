@@ -132,6 +132,26 @@
             </intent-filter>
         </activity-alias>
 
+        <!-- 工单 24 验证切片：portable-pty 会话层探针（独立图标，不干扰主终端） -->
+        <activity
+            android:name=".app.SessionProbeActivity"
+            android:exported="true"
+            android:label="Fable Session Probe"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.TermuxActivity.DayNight.NoActionBar" />
+
+        <activity-alias
+            android:name=".SessionProbeActivityLauncher"
+            android:exported="true"
+            android:targetActivity=".app.SessionProbeActivity"
+            android:label="Fable Session Probe">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
         <activity
             android:name=".app.activities.HelpActivity"
             android:exported="false"
