@@ -9,6 +9,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 anyhow = "1"
+crossbeam-channel = "0.5"
 jni = "0.22.4"
 libc = "0.2"
 portable-pty = "0.9.0"
