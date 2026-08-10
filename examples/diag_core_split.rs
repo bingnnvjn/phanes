@@ -44,8 +44,13 @@ fn main() {
         let mut terminal: GhosttyTerminal = std::ptr::null_mut();
         ghostty_terminal_new(std::ptr::null(), &mut terminal, opts);
 
-        let text = "echo 🇨🇳🇺🇸🇯🇵🇬🇧🏴󠁧󠁢󠁥󠁮󠁧󠁿👨‍👩‍👧‍👦👩‍👩‍👧‍👦👨‍👨‍👦👨‍👩‍👦👍🏻👍🏽👋🏾🧑🏿🧑‍🚀🧑‍💻👩‍🎓👨‍🍳1️⃣9️⃣#️⃣*️⃣🫖🫶⌨️\r\n";
-        ghostty_terminal_vt_write(terminal, text.as_ptr(), text.len());
+        // 读真实 bash PTY 字节流（.font-check/bash_echo.bin），整段喂给核心，
+        // 复现探针「命令行回显 + echo 输出」两行的核心 cell 拆分。
+        let bytes = std::fs::read("../.font-check/bash_echo2.bin")
+            .or_else(|_| std::fs::read(".font-check/bash_echo2.bin"))
+            .expect("bash_echo2.bin (bracketed paste 真实 bash 捕获)");
+        println!("bytes={} first={:02x?}", bytes.len(), &bytes[..16.min(bytes.len())]);
+        ghostty_terminal_vt_write(terminal, bytes.as_ptr(), bytes.len());
 
         let mut state: GhosttyRenderState = std::ptr::null_mut();
         ghostty_render_state_new(std::ptr::null(), &mut state);
@@ -58,7 +63,9 @@ fn main() {
         let mut cells: GhosttyRenderStateRowCells = std::ptr::null_mut();
         ghostty_render_state_row_cells_new(std::ptr::null(), &mut cells);
         let mut row_index = 0usize;
+        let mut iterated = 0usize;
         while ghostty_render_state_row_iterator_next(row_it) {
+            iterated += 1;
             ghostty_render_state_row_get(row_it, ROW_DATA_CELLS, &mut cells as *mut _ as *mut c_void);
             let mut texts: Vec<String> = Vec::new();
             while ghostty_render_state_row_cells_next(cells) {

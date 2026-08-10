@@ -789,6 +789,71 @@ mod tests {
     }
 
     #[test]
+    fn overlay_cursor_wide_span_ticket22() {
+        // 工单 22 光标修复：宽字符（中文/emoji/ZWJ cluster）上光标画 2 格宽。
+        // 渲染列：中=2、🚀=2、🧑🎓=2、A=1 -> 共 7 列；cell_w=10px。
+        let cell = |text: &str, span: u32| Cell {
+            text: text.to_string(),
+            fg: None,
+            bg: None,
+            selected: false,
+            underline: false,
+            underline_color: None,
+            strikethrough: false,
+            overline: false,
+            col_span: span,
+        };
+        let row = vec![
+            cell("中", 1),
+            cell("🚀", 2),
+            cell("🧑\u{200d}🎓", 2),
+            cell("A", 1),
+        ];
+        let base = Snapshot {
+            cols: 7,
+            rows: 1,
+            lines: vec![row],
+            cursor: None,
+            cursor_style: 1,
+            default_fg: Rgb { r: 255, g: 255, b: 255 },
+            default_bg: Rgb { r: 0, g: 0, b: 0 },
+            cursor_color: Rgb { r: 255, g: 255, b: 255 },
+            dirty: 1,
+            dirty_rows: vec![0],
+            selection_color: Rgb { r: 0, g: 0, b: 255 },
+            palette: None,
+            ansi_override: None,
+        };
+        // BLOCK 光标矩形：取第一个 MODE_SOLID 矩形的左右 x（NDC -> px）。
+        let block_rect = |snap: &Snapshot| -> (f32, f32) {
+            let verts = build_overlay_vertices(snap, &[], 70, 10);
+            for g in verts.chunks_exact(6) {
+                if g[0].mode < 0.5 {
+                    let x0 = (g[0].position[0] + 1.0) / 2.0 * 70.0;
+                    let x1 = (g[1].position[0] + 1.0) / 2.0 * 70.0;
+                    return (x0.min(x1), x0.max(x1));
+                }
+            }
+            (0.0, 0.0)
+        };
+        // 光标在中第一列（列 0）：覆盖 2 格（0..20）。
+        let (x0, x1) = block_rect(&Snapshot { cursor: Some((0, 0)), ..base.clone() });
+        assert!((x0 - 0.0).abs() < 0.01 && (x1 - 20.0).abs() < 0.01, "中第一列: {x0}..{x1}");
+        // 光标在中第二列（列 1）：归到起始列，仍 2 格。
+        let (x0, x1) = block_rect(&Snapshot { cursor: Some((1, 0)), ..base.clone() });
+        assert!((x0 - 0.0).abs() < 0.01 && (x1 - 20.0).abs() < 0.01, "中第二列: {x0}..{x1}");
+        // 光标在 🚀 起始列（列 2）：2 格（20..40）。
+        let (x0, x1) = block_rect(&Snapshot { cursor: Some((2, 0)), ..base.clone() });
+        assert!((x0 - 20.0).abs() < 0.01 && (x1 - 40.0).abs() < 0.01, "🚀: {x0}..{x1}");
+        // 光标在 ZWJ cluster 起始列（列 4）：2 格（40..60）。
+        let (x0, x1) = block_rect(&Snapshot { cursor: Some((4, 0)), ..base.clone() });
+        assert!((x0 - 40.0).abs() < 0.01 && (x1 - 60.0).abs() < 0.01, "学生: {x0}..{x1}");
+        // 光标在普通字符 A（列 6）：1 格（60..70）。
+        let (x0, x1) = block_rect(&Snapshot { cursor: Some((6, 0)), ..base.clone() });
+        assert!((x0 - 60.0).abs() < 0.01 && (x1 - 70.0).abs() < 0.01, "A: {x0}..{x1}");
+    }
+
+    #[test]
     fn ansi_override_maps_palette_indexed_cells() {
         let mut ansi = DEFAULT_ANSI_16;
         ansi[1] = Rgb { r: 1, g: 2, b: 3 };
@@ -1601,6 +1666,18 @@ fn terminal_cell_width(ch: char) -> u32 {
     1
 }
 
+/// 一个格子在渲染时实际占几列（工单 22 光标修复）：merge 后 emoji cluster
+/// 的 col_span=2，中文/宽字符由 terminal_cell_width 判 2；两者取大。
+fn cell_render_span(cell: &Cell) -> u32 {
+    let first = cell
+        .text
+        .chars()
+        .next()
+        .map(terminal_cell_width)
+        .unwrap_or(1);
+    cell.col_span.max(1).max(first)
+}
+
 fn push_glyph_rect(
     vertices: &mut Vec<Vertex>,
     x: f32,
@@ -2079,8 +2156,27 @@ pub fn build_overlay_vertices(
             }
             let mut color = rgb_components(cursor_rgb);
             color[3] = 0.9;
-            let x = cursor_x as f32 * cell_w;
+            // 工单 22 光标修复：宽字符（中文/emoji/ZWJ cluster 占 2 列）上
+            // 光标画 2 格宽（BLOCK/UNDERLINE/描边覆盖整个字），不再只盖一半。
+            // 核心 2027 模式下 cluster 存 1 cell+1 空列，cursor 可能停在起始
+            // 列或第二列：统一归到该字起始列并取渲染宽度。
+            let mut cursor_col = cursor_x as u32;
+            let mut cursor_span = 1u32;
+            if let Some(line) = snapshot.lines.get(cursor_y as usize) {
+                let mut col = 0u32;
+                for cell in line {
+                    let span = cell_render_span(cell);
+                    if (cursor_x as u32) >= col && (cursor_x as u32) < col + span {
+                        cursor_col = col;
+                        cursor_span = span;
+                        break;
+                    }
+                    col += span;
+                }
+            }
+            let x = cursor_col as f32 * cell_w;
             let y = cursor_y as f32 * row_h;
+            let cursor_w = cursor_span as f32 * cell_w;
             match snapshot.cursor_style {
                 0 => {
                     // BAR：左侧竖条
@@ -2101,7 +2197,7 @@ pub fn build_overlay_vertices(
                         &mut vertices,
                         x,
                         y + 2.0,
-                        cell_w,
+                        cursor_w,
                         (row_h - 4.0).max(1.0),
                         color,
                         surface_w,
@@ -2115,7 +2211,7 @@ pub fn build_overlay_vertices(
                         &mut vertices,
                         x,
                         y + row_h - thickness,
-                        cell_w,
+                        cursor_w,
                         thickness,
                         color,
                         surface_w,
@@ -2125,12 +2221,21 @@ pub fn build_overlay_vertices(
                 _ => {
                     // BLOCK_HOLLOW / 未知：描边矩形
                     let t = (row_h * 0.08).max(2.0);
-                    push_solid_rect(&mut vertices, x, y, cell_w, t, color, surface_w, surface_h);
+                    push_solid_rect(
+                        &mut vertices,
+                        x,
+                        y,
+                        cursor_w,
+                        t,
+                        color,
+                        surface_w,
+                        surface_h,
+                    );
                     push_solid_rect(
                         &mut vertices,
                         x,
                         y + row_h - t,
-                        cell_w,
+                        cursor_w,
                         t,
                         color,
                         surface_w,
@@ -2148,7 +2253,7 @@ pub fn build_overlay_vertices(
                     );
                     push_solid_rect(
                         &mut vertices,
-                        x + cell_w - t,
+                        x + cursor_w - t,
                         y,
                         t,
                         row_h,
