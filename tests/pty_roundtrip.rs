@@ -139,6 +139,15 @@ fn portable_pty_roundtrip() -> anyhow::Result<()> {
         "PREFIX 输出异常: {:?}",
         p.text()
     );
+    p.send("printf 'PATH=[%s]\\n' \"$PATH\"\n")?;
+    assert!(
+        p.wait_for(
+            "PATH=[/data/data/com.termux/files/usr/bin",
+            Duration::from_secs(5)
+        ),
+        "PATH 注入异常: {:?}",
+        p.text()
+    );
     assert!(
         p.wait_for("$HOME", Duration::from_secs(5)),
         "pwd 输出异常: {:?}",
