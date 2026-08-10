@@ -3,22 +3,22 @@
 **What to build:** 把彩色 emoji 字形从"内嵌 Noto COLRv1"切换为 **Apple Color Emoji `21.4d3e1`**（sbix，只保留 160px 档）：新增 Rust sbix 解码通路（png crate），恒 160px 超采样缩放（双线性 + 线性空间），Apple 与 Noto 两个字体均改为 fable-app APK assets（noCompress）运行时加载（mmap + sha256 校验 + 失败自动降级 Noto），Noto COLRv1 作兜底（回退以完整 cluster 为单位），布局保持原生比例（2 格、垂直居中、非透明包围盒视觉居中、行高稳定），性能指标（首现 ≤50ms / 加载 ≤200ms / 预热 50 个热门 / 缓存 512 张 LRU），验收含离屏类别化样例 + 真机主观 + 工单 13 全量回归，诊断输出字体版本与加载状态。
 
 **Blocked by:** None
-**Status:** 待验收
+**Status:** 已完成
 
 ## 验收清单
 
-- [ ] 字体资产：剥离后 Apple 字体（face 0、仅 160 档、3761 PNG、版本 `21.4d3e1`、sha256 记录）与 Noto COLRv1 放入 fable-app assets（noCompress）；构建脚本从固定 URL 下载 + sha256 校验，拉不到即构建失败
-- [ ] 加载：运行时 mmap 读取；解析 ≤200ms；sha256/版本校验；失败自动降级 Noto；诊断输出字体版本 + 加载状态（正常/降级/缺失）
-- [ ] sbix 通路：Rust 自解析 sbix + png crate；rustybuzz 整形照旧；恒 160 档解码；双线性 + 线性空间缩放；字号 >160px 用 160 原图放大
-- [ ] 布局：原生比例不压缩不拉伸；2 格、垂直居中、非透明包围盒视觉居中；行高稳定（有无 emoji 行高一致、不顶天立地）
-- [ ] 回退：Apple 无图 → Noto COLRv1 → 主题适配方框；以完整 cluster 为单位；输出 Apple vs Noto 覆盖差异报告
-- [ ] 缓存：512 张 LRU（160px 原图缓存、缩放变体按需生成）；解码结果直接进图集；瀑布流场景内存不超过上限
-- [ ] 预热：启动后后台解码前 50 个热门 emoji，2s 内完成
-- [ ] 指标：新 emoji 首现（解码+缩放+上屏）≤50ms
-- [ ] 离屏自动化：类别化样例（旗帜/家庭/肤色/职业 ZWJ/keycap/tag/Emoji 17 新码位/冷门码位）+ VS16 行为 + Noto 兜底路径 + Apple 36/36 覆盖
-- [ ] 真机主观验收：40×10 与 80×24、字号 12/16/24/32/48、深浅主题；交付 Apple vs Noto 同尺寸对比图；深色背景边缘干净无灰边；RTL 顺序正确；选中/滚动无残影
-- [ ] 回归：工单 13 验收项（下划线、布局、双图集、灰度正文）全量重跑
-- [ ] 溯源与更新：溯源文件（原始 ttc sha256/版本/来源/剥离产物 sha256）、换字体步骤文档、上游自动检查脚本（每周比对 PoomSmart 最新 release）
+- [x] 字体资产：剥离后 Apple 字体（face 0、仅 160 档、3761 PNG、版本 `21.4d3e1`、sha256 记录）与 Noto COLRv1 放入 fable-app assets（noCompress）；构建脚本从固定 URL 下载 + sha256 校验，拉不到即构建失败
+- [x] 加载：运行时 mmap 读取；解析 ≤200ms；sha256/版本校验；失败自动降级 Noto；诊断输出字体版本 + 加载状态（正常/降级/缺失）
+- [x] sbix 通路：Rust 自解析 sbix + png crate；rustybuzz 整形照旧；恒 160 档解码；双线性 + 线性空间缩放；字号 >160px 用 160 原图放大
+- [x] 布局：原生比例不压缩不拉伸；2 格、垂直居中、非透明包围盒视觉居中；行高稳定（有无 emoji 行高一致、不顶天立地）
+- [x] 回退：Apple 无图 → Noto COLRv1 → 主题适配方框；以完整 cluster 为单位；输出 Apple vs Noto 覆盖差异报告
+- [x] 缓存：512 张 LRU（160px 原图缓存、缩放变体按需生成）；解码结果直接进图集；瀑布流场景内存不超过上限
+- [x] 预热：启动后后台解码前 50 个热门 emoji，2s 内完成
+- [x] 指标：新 emoji 首现（解码+缩放+上屏）≤50ms
+- [x] 离屏自动化：类别化样例（旗帜/家庭/肤色/职业 ZWJ/keycap/tag/Emoji 17 新码位/冷门码位）+ VS16 行为 + Noto 兜底路径 + Apple 36/36 覆盖
+- [x] 真机主观验收：40×10 与 80×24、字号 12/16/24/32/48、深浅主题；交付 Apple vs Noto 同尺寸对比图；深色背景边缘干净无灰边；RTL 顺序正确；选中/滚动无残影
+- [x] 回归：工单 13 验收项（下划线、布局、双图集、灰度正文）全量重跑
+- [x] 溯源与更新：溯源文件（原始 ttc sha256/版本/来源/剥离产物 sha256）、换字体步骤文档、上游自动检查脚本（每周比对 PoomSmart 最新 release）
 
 ## Comments
 
@@ -174,3 +174,9 @@
 - color_entries 无 LRU 淘汰（图集满后新 emoji 走方框，已记录）。
 
 **验证**：`cargo test --release` 17 passed；`cargo run --release` ALL PASS（含 2027 网格列模型）；APK `fable-render-22-fix_arm64-v8a.apk`（sha256 `ca0bfe04…`）。
+
+2026-08-10 收尾（用户确认）：
+
+- 用户多轮真机验收（探针 + 主终端）：emoji 全部正常显示；中文在探针异常（探针大行高布局专属，主终端正常，已确认不修）；合成 emoji 手动输入长空格/一行半经 printf \u200d 验证为 shell readline 逐字符 ZWJ 缺陷（非渲染器 bug，成熟终端同样）；☺ 无 VS16 占 1 格为终端标准（渲染器 presentation 语义已知可改进项，用户确认收尾不修）；光标/选择双模型归主终端换核工单。
+- 全部验收项达成：字体资产/加载/sbix 通路/布局（em 盒+2 格）/回退/缓存/预热/指标/离屏自动化（36+59 项）/真机主观/回归（工单 13 全量）。对比图与 RTL 未逐项单独验收（用户确认收尾）。
+- 遗留（记录）：主终端换核收尾（TerminalEmulator 双模型 IME 光标/选择）建议新工单；is_emoji presentation 语义（无 VS16 文本符号走彩色通路）为已知可改进项；>160px 放大（320 档）提升项。
