@@ -147,3 +147,30 @@
   5. **DECSET 2027 保留**：核心诊断证明 2027 下中文/肤色/家庭/学生全部按 2 列（`你/␣/好/␣`、`👍|🏻/␣`、`👨|ZWJ|👩|ZWJ|👧|ZWJ|👦/␣`、`🧑|ZWJ|🎓/␣`），长空白根治；渲染层已适配 2027 cells。
 - **修复**：Rust（列定位、merge 肤色条件）+ Kotlin（去 paste、emoji13/22 按钮改 `printf '...\u200d...'` 转义；bash printf 展开 ZWJ，readline 不吞 ASCII 转义）。
 - **验证**：`cargo test --release` 18 passed（新增 2027 肤色/家庭不合并、中文列距、光标宽字符）；`cargo run --release` ALL PASS；真实 bash pty 验证 `printf '🧑\u200d🎓\n'` 输出 ZWJ 保留、命令执行；APK `fable-render-22-fix_arm64-v8a.apk`（sha256 `bb6a36c4…`）。
+
+2026-08-10 地毯式全面审查与全局重构（6 个并行审查子代理：Standards/Spec/emoji 数据通路/渲染布局/成熟终端语义/Kotlin 壳；每项结论带代码行或核心诊断证据）：
+
+**审查确认的"全局正确"部分**
+- Apple sbix 合成/缩放/画布链路统一：位图摆放公式与 FreeType `horiBearingY=originOffsetY+height` 逐字一致；画布=em 盒（含透明边）、内容保持字体原生位置；无任何按 emoji 特判分支；36+59 项自检画布统一。
+- 成熟终端语义交叉验证（≥2 来源）：DECSET 2027 按 grapheme cluster 算宽（Ghostty/foot/wezterm/contour/iTerm2 正确；Alacritty/kitty/Terminal.app 反而 4-6 格）；sbix 位图按 origin 摆 em 盒、禁止 bbox fit；block 光标盖满宽字符是渲染层职责。
+
+**审查发现并已全局修复（不是单 emoji 补丁）**
+1. **[架构] 废除 merge_emoji_runs 启发式补丁**：核心（2027）每行 cells=cols、宽字符=「1 非空格+1 空占位格」=2 列，本身就是唯一宽度权威。渲染层改为直接遍历核心 cells（列定位=cell 下标、宽度=下一格是否空占位），行布局/光标/选区/selection_text 全部共用同一列模型；删除 merge（render_android + main.rs 副本）与手写 terminal_cell_width 宽度表。核心诊断验证：中文/旗帜/英格兰/keycap/肤色/家庭/职业在 2027 下全部「cluster+占位」2 列，两种模式（2027 开/关）渲染都与核心一致。
+2. **[高] 彩色图集统一格子尺寸**：64/128px 格混排时全局编号会映射同一像素区互相覆盖（大字号 + Noto 兜底即触发）。修复：图集级统一格子（遇更大画布升级并清空重建），容量 64px 格 4096 / 128px 格 1024（≥512 LRU）。
+3. **[高] 图集降级越界写**：`ensure_color_glyph` 行跨步硬编码 4096，设备 max_texture<4096 降级后越界写 + 不上传。修复：统一 `self.color_size` + 降级后立即重传。
+4. **[高] 主终端 reset 后 2027 丢失**：`FableRenderCoreAdapter.reset()` 重建渲染器后补发 `ESC[?2027h`。
+5. **[中] Noto 兜底内部画布语义**：Noto 字形 ascent>1em，em 盒画布会裁内容；回退为内容范围画布，显示统一由布局层 fit 2 格宽/行高保证（记录为已知内部差异）。
+6. **[中] 自检开启 2027**：main.rs 测试终端发 `ESC[?2027h`，软件路径覆盖核心占位格列模型。
+7. **[中] emoji27 与 13/22 统一**：🏳️🌈 改 `printf '\u200d'` 转义。
+8. **[低] 新测试**：统一格子升级、核心占位格列定位（中文不重叠）、光标 2 格、选区文本。
+
+**交叉验证修正的旧诊断**
+- "readline 吞 ZWJ" 被推翻/弱化：本机真实 bash 5.3 PTY 多种写入方式验证 readline **保留** ZWJ（旧捕获 ZWJ=0 是 heredoc 编码损坏的误判）；但 zsh/readline 对**逐字符交互键入** ZWJ 确有缺陷（zsh ML + readline sr #110601 + VS Code issue 交叉）。按钮保留 `printf '\u200d'` 转义（无论哪种 readline 行为都稳）。
+
+**记录为后续工单/提升项（本次未动）**
+- 主终端 terminal-emulator 软件模型（IME 光标/长按选择）仍按码位算宽，与核心 2027 双轨——主终端光标/选择可能错位，需单独架构工单（探针单模型一致，本次不扩范围）。
+- 恒 160 档超采样，>160px 目标放大（Apple 字体有 320 档，可提升大字号清晰度）。
+- emoji 垂直居中 vs 基线：成熟终端 emoji 视觉居中常见，用户未反馈，暂不调整。
+- color_entries 无 LRU 淘汰（图集满后新 emoji 走方框，已记录）。
+
+**验证**：`cargo test --release` 17 passed；`cargo run --release` ALL PASS（含 2027 网格列模型）；APK `fable-render-22-fix_arm64-v8a.apk`（sha256 `ca0bfe04…`）。
