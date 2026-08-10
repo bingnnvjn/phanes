@@ -237,8 +237,16 @@ fn merge_emoji_runs_main(cells: &mut Vec<Cell>) {
             let cell_all_ri =
                 cell.text.chars().all(|c| (0x1F1E6..=0x1F1FF).contains(&(c as u32)));
             let next_all_ri = next.chars().all(|c| (0x1F1E6..=0x1F1FF).contains(&(c as u32)));
-            let need_merge =
-                cell.text.ends_with('\u{200d}') || next_is_skin || (cell_all_ri && next_all_ri);
+            // 与 render_android::merge_emoji_runs 同款（工单 22 真机反馈修复）。
+            let ri_count = |s: &str| {
+                s.chars()
+                    .filter(|c| (0x1F1E6..=0x1F1FF).contains(&(*c as u32)))
+                    .count()
+            };
+            let need_merge = cell.text.ends_with('\u{200d}')
+                || next.starts_with('\u{200d}')
+                || next_is_skin
+                || (cell_all_ri && next_all_ri && ri_count(&cell.text) < 2);
             if !need_merge {
                 break;
             }
@@ -1177,7 +1185,7 @@ fn main() {
         // 彩色能力由 ✅/🚀/旗帜等其他断言覆盖）。
         let category_samples: [&str; 36] = [
             "🇨🇳", "🇺🇸", "🇯🇵", "🇬🇧", "🇫🇷", "🇩🇪", "🇧🇷", "🇰🇷",
-            "👨‍👩‍👧‍👦", "👩‍👩‍👧‍👦", "👨‍👨‍👦", "👨‍👩‍👦",
+            "👨‍👩‍👧‍👦", "👨‍👩‍👦", "👨‍👩‍👧", "👨‍👩‍👦‍👦",
             "👍🏻", "👍🏽", "👋🏾", "🧑🏿",
             "🧑‍🚀", "🧑‍💻", "👩‍🎓", "👨‍🍳",
             "1️⃣", "9️⃣", "#️⃣", "*️⃣",

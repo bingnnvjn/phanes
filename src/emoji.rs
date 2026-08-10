@@ -38,7 +38,8 @@ pub fn is_emoji(ch: char) -> bool {
 }
 
 /// 整段文本是否为 emoji run：单字符 emoji 或含 ZWJ / VS16 / 肤色修饰 /
-/// 区域指示符等组合（家庭、肤色、旗帜、键帽等序列都命中）。
+/// 区域指示符 / keycap（U+20E3）/ tag 字符（U+E0020..U+E007F，旗帜 tag 序列）
+/// 等组合（家庭、肤色、旗帜、键帽、tag 旗帜等序列都命中）。
 pub fn is_emoji_run(text: &str) -> bool {
     if text.is_empty() {
         return false;
@@ -47,7 +48,10 @@ pub fn is_emoji_run(text: &str) -> bool {
         if is_emoji(ch) {
             return true;
         }
-        matches!(ch as u32, 0x200D | 0xFE0F | 0x1F3FB..=0x1F3FF | 0x1F1E6..=0x1F1FF)
+        matches!(
+            ch as u32,
+            0x200D | 0xFE0F | 0x1F3FB..=0x1F3FF | 0x1F1E6..=0x1F1FF | 0x20E3 | 0xE0020..=0xE007F
+        )
     })
 }
 

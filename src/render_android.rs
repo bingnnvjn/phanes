@@ -536,8 +536,19 @@ pub fn merge_emoji_runs(cells: &mut Vec<Cell>) {
             let cell_all_ri =
                 cell.text.chars().all(|c| (0x1F1E6..=0x1F1FF).contains(&(c as u32)));
             let next_all_ri = next.chars().all(|c| (0x1F1E6..=0x1F1FF).contains(&(c as u32)));
-            let need_merge =
-                cell.text.ends_with('\u{200d}') || next_is_skin || (cell_all_ri && next_all_ri);
+            // 旗帜 = 恰好 2 个区域指示符；连续 4 面旗（8 个 RI）必须拆成
+            // 4 个 cluster，否则 4 面旗挤进 2 格宽（工单 22 真机反馈）。
+            let ri_count = |s: &str| {
+                s.chars()
+                    .filter(|c| (0x1F1E6..=0x1F1FF).contains(&(*c as u32)))
+                    .count()
+            };
+            let need_merge = cell.text.ends_with('\u{200d}')
+                // 防御：核心拆格若把 ZWJ 留在下一格开头（🧑|ZWJ 拆成
+                // 「🧑」「ZWJ🎓」时），同样合并。
+                || next.starts_with('\u{200d}')
+                || next_is_skin
+                || (cell_all_ri && next_all_ri && ri_count(&cell.text) < 2);
             if !need_merge {
                 break;
             }
@@ -707,6 +718,74 @@ mod tests {
             flag_entry.bbox_h as f32 >= flag_h * 0.55,
             "国旗内容至少 0.55em（原生 0.64em）"
         );
+    }
+
+    #[test]
+    fn merge_emoji_runs_ticket22_regressions() {
+        // 模拟 libghostty-vt 核心拆分（每格文本 + 宽字符第二格空 cell）：
+        // 连续旗帜（8 个 RI）必须拆成 4 个独立旗帜 cluster，不得挤成一个。
+        let cells = |texts: &[&str]| -> Vec<Cell> {
+            texts
+                .iter()
+                .map(|t| Cell {
+                    text: t.to_string(),
+                    fg: None,
+                    bg: None,
+                    selected: false,
+                    underline: false,
+                    underline_color: None,
+                    strikethrough: false,
+                    overline: false,
+                    col_span: 1,
+                })
+                .collect()
+        };
+
+        // 1. 🇨🇳🇺🇸🇯🇵🇬🇧（4 面旗 = 8 个 RI + 空第二格）
+        let mut row = cells(&["🇨", "", "🇳", "", "🇺", "", "🇸", "", "🇯", "", "🇵", "", "🇬", "", "🇧", ""]);
+        merge_emoji_runs(&mut row);
+        let merged: Vec<&str> = row.iter().map(|c| c.text.as_str()).collect();
+        println!("flags merged: {merged:?}");
+        assert_eq!(
+            merged,
+            vec!["🇨🇳", "🇺🇸", "🇯🇵", "🇬🇧"],
+            "连续旗帜应拆成 4 个独立 cluster: {merged:?}"
+        );
+        assert!(row.iter().all(|c| c.col_span == 2), "每面旗占 2 格");
+
+        // 2. keycap：核心合成单格 "1+KEYCAP"，必须判为 emoji run（span=2）。
+        let mut row = cells(&["1\u{20e3}", "9\u{20e3}", "#\u{20e3}", "*\u{20e3}"]);
+        merge_emoji_runs(&mut row);
+        assert_eq!(row.len(), 4);
+        assert!(
+            row.iter().all(|c| c.col_span == 2),
+            "keycap 应占 2 格（彩色 keycap 按钮）: {:?}",
+            row.iter().map(|c| (c.text.as_str(), c.col_span)).collect::<Vec<_>>()
+        );
+
+        // 3. ZWJ 在下一格开头（防御形态 🧑 + ZWJ🎓）也应合并。
+        let mut row = cells(&["🧑", "\u{200d}🎓"]);
+        merge_emoji_runs(&mut row);
+        assert_eq!(row.len(), 1);
+        assert_eq!(row[0].text, "🧑\u{200d}🎓");
+        assert_eq!(row[0].col_span, 2);
+
+        // 4. 家庭序列（核心拆：👨|ZWJ / 空 / 👩|ZWJ / 空 / 👧|ZWJ / 空 / 👦 / 空）
+        //    应合并成完整家庭，且不吞并下一个家庭。
+        let mut row = cells(&[
+            "👨\u{200d}", "", "👩\u{200d}", "", "👧\u{200d}", "", "👦", "",
+            "👩\u{200d}", "", "👩\u{200d}", "", "👧\u{200d}", "", "👦", "",
+        ]);
+        merge_emoji_runs(&mut row);
+        let merged: Vec<&str> = row.iter().map(|c| c.text.as_str()).collect();
+        assert_eq!(merged, vec!["👨‍👩‍👧‍👦", "👩‍👩‍👧‍👦"]);
+        assert!(row.iter().all(|c| c.col_span == 2));
+
+        // 5. 英格兰 tag 旗（核心合成单格）保持独立 cluster（span=2）。
+        let mut row = cells(&["🏴\u{e0067}\u{e0062}\u{e0065}\u{e006e}\u{e0067}\u{e007f}"]);
+        merge_emoji_runs(&mut row);
+        assert_eq!(row.len(), 1);
+        assert_eq!(row[0].col_span, 2);
     }
 
     #[test]
