@@ -6,6 +6,7 @@
 > 来源：项目总览与交接 + 本仓库现状探索（to-spec）
 
 > 架构约束（2026-08-07 补，见 `docs/adr/0003`、`docs/adr/0004`）：v1 交付范围不变（纯终端、打开即终端）；UI 只对着 **CoreAdapter** 缝写，保证后续换核不动 UI；终态方向 = Kotlin 壳 + Rust 底层（渲染/会话/事件流）+ libghostty-vt 核心，渲染器定案 Rust + wgpu（安卓 Vulkan）。
+> 会话层 Rust 方向（2026-08-10 决策窗口 8，见 `docs/adr/0008`）：终态会话层（PTY/进程/环境/生命周期）全进 Rust、独立先行（不并入 Kotlin 壳重构）、双实现并行 + 切换开关、事件流最小集定案；落地工单 23（基线）→ 24（验证切片）→ 25（会话层实现+事件流+JNI）→ 26（双实现集成+切换）→ 27（验收对比+Java 下线评估）。
 > 集成定案（2026-08-07，方向"正式集成主终端" to-spec）：主终端渲染路径切换为 Fable 自研渲染器（fable-render：libghostty-vt 核心 + Rust wgpu 画法层，ADR-0003/0004，工单 08–12 已验证）；UI 只对着 **CoreAdapter** 缝写；会话层（Termux Java：PTY/进程/环境/生命周期）阶段一不动。落地工单：14（渲染器集成 API 补齐）→ 15（主终端正式集成）→ 04（v1 最小集 UI，Blocked by 15）。
 
 ## Problem Statement
@@ -55,6 +56,7 @@ Fable v1 是一个纯终端 Android App：包名 `com.gph.fable`、正式签名�
 11. **包安装源（2026-08-09 决策窗口 5）**：Fable 环境不消费官方 termux-main（com.termux 前缀包路径硬编码）；自建 Fable 包仓库（fable-repo，ADR-0005）——扁平 apt 仓库托管于 fable-bootstrap GitHub Releases（`latest/download` 稳定 URL），GPG 签名，CI 按需构建指定包；迁移期先本地 dpkg 装归档内 debs（工单 02 现状），自举 + 日常缺口（git/nodejs/openjdk/rust/clang/runit 等）经仓库按需补齐。
 12. **彩色字形通路（2026-08-09 决策窗口 6 / 工单 13，ADR-0006）**：彩色 emoji 字形 = FreeType 光栅 COLRv1 + 内嵌 NotoColorEmoji（COLRv1 完整版，Unicode 17.0，替换 2017 CBDT）；ZWJ 家庭/肤色/旗帜经 rustybuzz 整形一并解决；✅ 接受原生彩色绿勾；灰度正文保持 fontdue（FreeType 只接彩色字形）；下划线专项并入工单 13；图集增量上传与灰度统一为独立 backlog。
 13. **emoji 字体（2026-08-10 决策窗口 7 / 工单 22，ADR-0007）**：彩色 emoji 主字体切换为 Apple Color Emoji `21.4d3e1`（sbix，只保留 160px 档，恒 160 超采样缩放，Rust 自解析 sbix + png crate，不加 C 依赖）；Noto COLRv1 保留为兜底（回退以完整 cluster 为单位）；Apple 与 Noto 均改为 fable-app APK assets（noCompress）运行时加载（sha256 校验、失败自动降级）；布局保持原生比例（2 格、垂直居中、非透明包围盒视觉居中、行高稳定）；性能指标（新 emoji 首现 ≤50ms、加载 ≤200ms、预热 50 个热门、缓存 512 张 LRU）；更新机制含溯源文件 + 上游自动检查（每周比对，Emoji 18.0 发布后按流程换字体）。
+14. **会话层搬 Rust（2026-08-10 决策窗口 8，ADR-0008）**：终态会话层（PTY 生命周期 spawn/close/resize、进程管理、环境注入、字节 I/O）全进 Rust；Java 壳只保留 UI、设置、系统集成（通知/前台服务/Intent）。驱动优先级 = 多 Agent 并行（2–4 个 Agent 同时跑）的并发安全与稳定性第一，语言统一（壳内单一 Kotlin↔Rust 边界、去 Java 第三套 JNI）与事件流为综合收益一并覆盖。零件选型 = **portable-pty 0.9.0（MIT）主选 + nix 自拼（posix_openpt 序列）兜底**——事实依据：portable-pty Unix 实现依赖 `libc::openpty()`，Bionic 自 API 23 起提供该符号（本项目 minSdk 24），Termux clang 实测编译链接运行通过；仅 NDK/GitHub Actions 备用构建线需显式 min API ≥ 23（见 `.scratch/fable-v1/research-会话层Rust零件.md`）。排期 = 独立先行、验证切片先行（工单 24 试编 + 真机探针），不并入 Kotlin 壳重构；过渡 = 双实现并行 + 切换开关，Java 会话层原样保留至验收对比后再评估去留。并发指标 = 2–4 会话硬指标、8 并发设计余量；先采 Java 会话层并发基线（工单 23）作验收对比。事件流（头脑风暴 §3.3 转正）第一版 = 最小集六事件：`command_started` / `output_chunk` / `command_finished` / `exit_code` / `session_created` / `session_closed`，schema 含 session_id、时间戳并留扩展 metadata；Rust 侧产出、经 JNI 事件回调暴露 Kotlin，Kotlin 第一版只接诊断/日志订阅。
 
 ## Testing Decisions
 
@@ -82,7 +84,7 @@ Fable v1 是一个纯终端 Android App：包名 `com.gph.fable`、正式签名�
 - **红线**：当前 APK 仍是 com.termux + debug 签名，与已装 F-Droid Termux 冲突——包名与签名是全部后续工作的前提，优先级最高。
 - **迁移内容清单（用户确认版）**：CODEX/ 全迁；配置与身份全迁（.bashrc 含带尾随空格的那个、.profile、.gitconfig、.gitignore、.ssh、.termux、AGENTS.md）；服务脚本与代理配置全迁；第②类项目（ChatGPT_smali/reader/chat-agent-build/pi-pokemon-cn 等）全部不迁；第③类缓存与临时产物（.gradle/.cache/.npm/android-sdk/perf 结果等）全部不迁；已装包按清单重装。
 - **未决事项（ticket 阶段定案）**：UI 框架选型（已定案：XML/经典 View，ADR-0001）、v1 最小集清单（已定案：ADR-0002）、迁移触发形态（仍待定，工单 02）。
-- 头脑风暴四条（终端三层/环境接口/会话事件流/HUD）是设计方向而非 v1 承诺，记录于此仅作语境，避免后续实现偏离已定的产品逻辑（终端优先、AI 增强）。
+- 头脑风暴四条（终端三层/环境接口/会话事件流/HUD）是设计方向而非 v1 承诺，记录于此仅作语境，避免后续实现偏离已定的产品逻辑（终端优先、AI 增强）。其中 **3.3 会话事件流已随决策窗口 8 转正**（最小集六事件 + 扩展点，2026-08-10，见决策 14 与 ADR-0008）；3.2 环境接口与 3.4 HUD 交互语言仍为候选，不阻塞本次。
 - 工作流约定：本规格与后续 tickets 在同一上下文窗口内产出；每个 ticket 单独干净上下文实施，内部 tdd 驱动，收尾 code-review。
 - 构建环境事实（JDK 17、腾讯镜像、gh-proxy 前缀、本地 SDK 路径）在实施 ticket 时按交接文档速查，不在本规格重复。
 - 2026-08-06 决策：重建 com.gph.fable 前缀 bootstrap（工单 06，公开仓库 bingnnvjn/fable-bootstrap + GitHub Actions，安全清单见工单）；fable-app 仓库暂不创建。官方 bootstrap 二进制硬编码 /data/data/com.termux 前缀，改包名后必须整体重建（termux-app issue #3973/#1059/#2160）。
@@ -92,3 +94,4 @@ Fable v1 是一个纯终端 Android App：包名 `com.gph.fable`、正式签名�
 - 2026-08-06 决策：UI 框架选型与 v1 最小集定案（工单 03）——v1 界面层用 XML/经典 View（ADR-0001）；最小集含字号/主题（外壳三选一 + colors.properties 优先）/键盘/会话恢复（方案 B）/设置页精简（删配套入口、留调试与关于）/界面原生中文（ADR-0002）。
 - 2026-08-06 决策（ADR-0003）：引擎与语言架构终态 = **Kotlin 壳 + Rust 底层（渲染/会话/事件流）+ libghostty-vt 核心**。核心选 libghostty-vt（Zig/C API，安卓官方支持；xterm.js 挂起为未来分支）；渲染器必须自研但借代码起步（expo-libghostty / Termux 绘制代码 / Ghostling）；会话层阶段一保留 Termux Java、终态搬 Rust（借 portable-pty / alacritty tty 零件拼装）；B（C/C++ 底层）淘汰。**工单 04 新增约束：UI 只对着 CoreAdapter 缝写**（喂字节、拉网格、脏行事件），今天 TerminalView 实现该缝、终态 libghostty-vt 实现，UI 代码不依赖具体核心。**验证切片（工单 08）先行**：零渲染文本 dump 验证 libghostty-vt + Termux 环境 + 字节管道真机可行，再定正式渲染方案。
 - 2026-08-07 方向定案（to-spec）：**正式集成主终端**——fable-render（工单 08–12 已验证）切入主终端：CoreAdapter 缝定案 + 会话层字节管道 + 每会话 SurfaceView 渲染；渲染器集成 API（选中文本/字号/配色板）先补齐（工单 14），主终端切换（工单 15）后，工单 04 最小集在其上实施。TerminalView 旧路径保留不删，作为回退参考；集成稳定后另行评估去留。
+- 2026-08-10 决策窗口 8（to-spec）：**会话层搬 Rust**——ADR-0003 决策 4 的空白（搬移时机）已填：独立先行、验证切片先行；范围 = PTY/进程/环境/生命周期全搬，Java 壳保留 UI/设置/系统集成；驱动 = 多 Agent 并发安全第一，语言统一 + 事件流为综合收益；零件 = portable-pty 0.9.0 + nix 兜底（调研文件 `.scratch/fable-v1/research-会话层Rust零件.md`）；过渡 = 双实现并行 + 切换开关；先采 Java 基线；事件流最小集定案。ADR-0008 记录，工单 23–27。
