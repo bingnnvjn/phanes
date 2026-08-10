@@ -152,6 +152,26 @@
             </intent-filter>
         </activity-alias>
 
+        <!-- 工单 25 验证切片：SessionHandle 生产 JNI 探针（独立图标，不干扰主终端） -->
+        <activity
+            android:name=".app.SessionHandleProbeActivity"
+            android:exported="true"
+            android:label="Fable Session Handle Probe"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.TermuxActivity.DayNight.NoActionBar" />
+
+        <activity-alias
+            android:name=".SessionHandleProbeActivityLauncher"
+            android:exported="true"
+            android:targetActivity=".app.SessionHandleProbeActivity"
+            android:label="Fable Session Handle Probe">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
         <activity
             android:name=".app.activities.HelpActivity"
             android:exported="false"
