@@ -3,7 +3,7 @@
 **What to build:** 验证"portable-pty 0.9.0（或 nix 兜底）在 aarch64-linux-android + Termux clang 构建线下可用"：新 Rust crate 试编 portable-pty，薄 JNI 桥暴露 ptySpawn/Read/Write/Resize/Close；独立探针 APK（"Fable Session Probe" launcher 图标，不碰主终端）：spawn bash（com.gph.fable 环境注入：PREFIX/HOME/PATH/TERM/TMPDIR，环境由 Kotlin 传入）、读写交互、resize（40x10/80x24）、4 会话并行、seq 长输出性能粗测。若 portable-pty 链接/运行遇坑，切 nix 自拼（posix_openpt 序列）路径并记录证据。
 
 **Blocked by:** None（与 fable-v1/23 并行）
-Status: 待验收
+Status: 已完成
 
 ## 验收清单
 
@@ -46,3 +46,9 @@ Status: 待验收
 - 对 fable-v1/25 的输入：① JNI 桥 API 形态已验证（env 由 Kotlin 构造 `"KEY=VALUE"` 数组 + cwd 传入，`CommandBuilder::env/cwd` 生效，`--login` + controlling tty 默认开）；② 会话注册表句柄 + close 先解阻塞读的语义可直接沿用；③ `.so` 极轻（无 ghostty 静态依赖），后续 25 加事件流 JNI 时 NEEDED 不会膨胀；④ 4 会话并行与 seq 200 在 portable-pty 下无卡死，性能基线可作 27 对比的 Rust 侧口径。
 - 对 fable-v1/25 的补充输入（真机自检后）：env 注入机制确认有效；但登录 shell 启动文件会调整 PATH（真实 Termux 会话同样如此）——生产实现沿用"login shell + profile"语义即可，有效 PATH 含 bootstrap bin 即为正确，不必与注入值逐字符一致。
 - 真机验收步骤（装机后出现 "Fable Session Probe" 图标）：打开 → 自动 spawn 1 会话 → 手动 `echo $PREFIX`/`pwd`/resize/seq200 → 点 [自检] 跑 PASS/FAIL 全量断言；验收数据回报后改 Status。
+
+2026-08-11 真机验收通过（用户确认）：
+
+- 修复 PATH 断言后重装 APK 重跑 [自检]：**12/12 全 PASS**（shell 存在 / spawn+读写 / env PREFIX / env HOME / env TERM / env TMPDIR / env PATH 含 prefix/bin（报告含实际 PATH 行）/ pwd=files/home / resize 40x10 / resize 80x24 / 4 会话并行 / seq 200 不卡死）。bash 提示符、$PREFIX、pwd 均与验收清单一致。
+- 装机包：`~/storage/downloads/fable-session-24_arm64-v8a.apk`，sha256 `8565f84b700b1f090ac01fbac72430a86e468f457cec5ed9acee4bc2274dcd42`（修复后版本）。
+- 结论不变：portable-pty 0.9.0 主选成立，无需切 nix；NDK/CI 线 min API ≥ 23 风险照调研记录保留。工单 24 全部验收项完成，可开跑 fable-v1/25。
