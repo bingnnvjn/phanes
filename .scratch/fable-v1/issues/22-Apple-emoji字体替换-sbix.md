@@ -125,3 +125,14 @@
   - 肤色（非 ZWJ，readline 不吞）随 merge 的 next_is_skin 修复一并正常。
 - 手动输入框（sendInput）同样走 sendToAll，粘贴 emoji 也保留 ZWJ。
 - APK：`fable-render-22-fix_arm64-v8a.apk`（sha256 `8232a61c…`）。
+
+2026-08-10 真机反馈修复（光标半格 + 组合 emoji 长空白）：
+
+- **现象**：中文/emoji 占 2 格但光标/选择只盖 1 格（半格）；组合 emoji（🧑🎓 学生）连敲 3-4 次后后面出现一段"光标能进、不能输入、不能删除"的长空白。
+- **根因（核心诊断）**：
+  - 长空白：核心默认按**每码位**算宽（🧑 2 列 + 🎓 2 列 = 4 列），渲染按完整 emoji（2 格）画 → 每敲一个学生多 2 列"核心认为有内容"的空白；×3 多 6 列。光标落点诊断：学生 cursor_x=8（4 列/个）、中文 cursor_x=2（正常 2 列）。
+  - 半格光标：画法层 `build_overlay_vertices` 光标固定 1 格宽，不检查所在列是否为宽字符。
+- **修复**：
+  1. **DECSET 2027（grapheme clustering）**：探针 spawn 与主终端 `SessionRender` 建立时各发一次 `ESC[?2027h`（幂等）。核心诊断验证：学生 4 列 → **2 列**、×3 12 列 → **6 列**，cluster 合并为 1 cell（`🧑|ZWJ|🎓`）+ 空列，光标/选择/删除/换行全部按 2 列正确；中文/肤色/keycap 均正常。这是标准终端模式（kitty/ghostty/wezterm 同款）。
+  2. **宽字符光标**：`build_overlay_vertices` 新增 `cell_render_span`（merge col_span 与 `terminal_cell_width` 取大），光标落在宽字符第一列或第二列时归到起始列并画 2 格宽（BLOCK/UNDERLINE/描边；BAR 保持 1 格细竖条）。
+- **验证**：`cargo test --release` 16 passed（新增 `overlay_cursor_wide_span_ticket22`：中/🚀/学生 cluster/A 四种光标宽度断言）；`cargo run --release` ALL PASS；APK `fable-render-22-fix_arm64-v8a.apk`（sha256 `c2fd39c4…`）。
