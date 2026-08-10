@@ -233,7 +233,10 @@ fn merge_emoji_runs_main(cells: &mut Vec<Cell>) {
                 break;
             }
             let next = &cells[j].text;
-            let next_is_skin = next.chars().any(|c| (0x1F3FB..=0x1F3FF).contains(&(c as u32)));
+            let next_only_skin = !next.is_empty()
+                && next
+                    .chars()
+                    .all(|c| (0x1F3FB..=0x1F3FF).contains(&(c as u32)));
             let cell_all_ri =
                 cell.text.chars().all(|c| (0x1F1E6..=0x1F1FF).contains(&(c as u32)));
             let next_all_ri = next.chars().all(|c| (0x1F1E6..=0x1F1FF).contains(&(c as u32)));
@@ -245,7 +248,7 @@ fn merge_emoji_runs_main(cells: &mut Vec<Cell>) {
             };
             let need_merge = cell.text.ends_with('\u{200d}')
                 || next.starts_with('\u{200d}')
-                || next_is_skin
+                || next_only_skin
                 || (cell_all_ri && next_all_ri && ri_count(&cell.text) < 2);
             if !need_merge {
                 break;
@@ -265,6 +268,32 @@ fn merge_emoji_runs_main(cells: &mut Vec<Cell>) {
 
 fn ansi_bg(c: GhosttyColorRgb) -> String {
     format!("\x1b[48;2;{};{};{}m", c.r, c.g, c.b)
+}
+
+/// 软件路径的格子渲染宽度（与 render_android::cell_render_span 同语义）：
+/// merge 后 emoji cluster 宽 2，中文/宽字符按码位判 2，取大。
+fn cell_render_span_main(cell: &Cell) -> usize {
+    let first = cell.text.chars().next();
+    let w = first
+        .map(|c| {
+            let cp = c as u32;
+            if (0x1100..=0x115f).contains(&cp)
+                || (0x2e80..=0xa4cf).contains(&cp)
+                || (0xac00..=0xd7a3).contains(&cp)
+                || (0xf900..=0xfaff).contains(&cp)
+                || (0xff00..=0xff60).contains(&cp)
+                || (0x1f000..=0x1faff).contains(&cp)
+                || (0x2300..=0x23ff).contains(&cp)
+                || (0x2600..=0x27bf).contains(&cp)
+                || (0x2b00..=0x2bff).contains(&cp)
+            {
+                2
+            } else {
+                1
+            }
+        })
+        .unwrap_or(1);
+    cell.col_span.max(1).max(w)
 }
 
 // ---------- 阶段 B：软件光栅 ----------
@@ -375,9 +404,12 @@ fn rasterize_grid(
                 }
             }
 
-            col_pos += cell.col_span.max(1);
+            // 工单 22 修复：按渲染宽度累加（中文渲染 2 格，col_span=1；
+            // 用 col_span 会让下一个字重叠进上一字第二格）。
+            col_pos += cell_render_span_main(cell);
             // 光标（块状）：光标格画反色底
-            let is_cursor = cursor == Some((col_pos - cell.col_span.max(1), row_index));
+            let is_cursor =
+                cursor == Some((col_pos - cell_render_span_main(cell), row_index));
             if is_cursor {
                 for y in 0..CELL_H {
                     for x in 0..CELL_W {

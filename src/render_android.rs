@@ -532,7 +532,14 @@ pub fn merge_emoji_runs(cells: &mut Vec<Cell>) {
                 break;
             }
             let next = &cells[j].text;
-            let next_is_skin = next.chars().any(|c| (0x1F3FB..=0x1F3FF).contains(&(c as u32)));
+            // 工单 22 修复：肤色合并只在「下一格是纯肤色修饰符」（无 2027
+            // 模式下核心把 👍 / 🏻 拆成两格）时触发；2027 模式下核心已把
+            // 👍🏻 合成一格（含 base），next="👍🏽" 含 base 不再合并，
+            // 否则连续肤色会全部挤成一个 cluster。
+            let next_only_skin = !next.is_empty()
+                && next
+                    .chars()
+                    .all(|c| (0x1F3FB..=0x1F3FF).contains(&(c as u32)));
             let cell_all_ri =
                 cell.text.chars().all(|c| (0x1F1E6..=0x1F1FF).contains(&(c as u32)));
             let next_all_ri = next.chars().all(|c| (0x1F1E6..=0x1F1FF).contains(&(c as u32)));
@@ -547,7 +554,7 @@ pub fn merge_emoji_runs(cells: &mut Vec<Cell>) {
                 // 防御：核心拆格若把 ZWJ 留在下一格开头（🧑|ZWJ 拆成
                 // 「🧑」「ZWJ🎓」时），同样合并。
                 || next.starts_with('\u{200d}')
-                || next_is_skin
+                || next_only_skin
                 || (cell_all_ri && next_all_ri && ri_count(&cell.text) < 2);
             if !need_merge {
                 break;
@@ -786,6 +793,121 @@ mod tests {
         merge_emoji_runs(&mut row);
         assert_eq!(row.len(), 1);
         assert_eq!(row[0].col_span, 2);
+    }
+
+    #[test]
+    fn merge_2027_mode_does_not_over_merge_skin_or_family() {
+        // 2027（grapheme clustering）模式下核心已把每个 cluster 合成一格：
+        // 肤色 = 👍🏻 / 空 / 👍🏽 / 空（含 base），家庭 = 完整 ZWJ 序列一格。
+        // merge 不得再把相邻完整 cluster 合并（旧 next_is_skin 会把连续
+        // 肤色全部并成一个；工单 22 修复为「下一格纯修饰符才合并」）。
+        let cells = |texts: &[&str]| -> Vec<Cell> {
+            texts
+                .iter()
+                .map(|t| Cell {
+                    text: t.to_string(),
+                    fg: None,
+                    bg: None,
+                    selected: false,
+                    underline: false,
+                    underline_color: None,
+                    strikethrough: false,
+                    overline: false,
+                    col_span: 1,
+                })
+                .collect()
+        };
+        // 肤色段：4 个完整 cluster + 空第二格，应保持 4 个独立 cluster。
+        let mut row = cells(&["👍🏻", "", "👍🏽", "", "👋🏾", "", "🧑🏿", ""]);
+        merge_emoji_runs(&mut row);
+        let merged: Vec<&str> = row.iter().map(|c| c.text.as_str()).collect();
+        assert_eq!(
+            merged,
+            vec!["👍🏻", "👍🏽", "👋🏾", "🧑🏿"],
+            "2027 模式连续肤色不得合并: {merged:?}"
+        );
+        assert!(row.iter().all(|c| c.col_span == 2));
+
+        // 家庭段：3 个完整家庭 cluster，保持独立。
+        let mut row = cells(&[
+            "👨\u{200d}👩\u{200d}👧\u{200d}👦",
+            "",
+            "👨\u{200d}👩\u{200d}👦",
+            "",
+            "👨\u{200d}👩\u{200d}👧",
+            "",
+        ]);
+        merge_emoji_runs(&mut row);
+        let merged: Vec<&str> = row.iter().map(|c| c.text.as_str()).collect();
+        assert_eq!(
+            merged,
+            vec!["👨‍👩‍👧‍👦", "👨‍👩‍👦", "👨‍👩‍👧"],
+            "2027 模式家庭不得互相合并: {merged:?}"
+        );
+        assert!(row.iter().all(|c| c.col_span == 2));
+    }
+
+    #[test]
+    fn wide_glyph_column_position_no_overlap_ticket22() {
+        // 工单 22 中文重叠修复：列定位按渲染宽度累加（中文/emoji 2 格），
+        // 中文行「你好吗」三个字渲染列应为 0/2/4，不得重叠。
+        let cell = |text: &str, span: u32| Cell {
+            text: text.to_string(),
+            fg: None,
+            bg: None,
+            selected: false,
+            underline: false,
+            underline_color: None,
+            strikethrough: false,
+            overline: false,
+            col_span: span,
+        };
+        // 模拟核心 2027 cells（merge 后：中文 col_span=1 但渲染宽 2）。
+        let row = vec![cell("你", 1), cell("好", 1), cell("吗", 1)];
+        let snapshot = Snapshot {
+            cols: 6,
+            rows: 1,
+            lines: vec![row],
+            cursor: None,
+            cursor_style: 1,
+            default_fg: Rgb { r: 255, g: 255, b: 255 },
+            default_bg: Rgb { r: 0, g: 0, b: 0 },
+            cursor_color: Rgb { r: 255, g: 255, b: 255 },
+            dirty: 1,
+            dirty_rows: vec![0],
+            selection_color: Rgb { r: 0, g: 0, b: 255 },
+            palette: None,
+            ansi_override: None,
+        };
+        let verts = build_row_vertices(0, &snapshot.lines[0], &snapshot, &mut GlyphAtlas::new().expect("atlas"), 60, 10);
+        // 收集每个非空 cell 的字形矩形左右 x（NDC -> px，cell_w=10）。
+        let mut xs: Vec<f32> = Vec::new();
+        let mut x1s: Vec<f32> = Vec::new();
+        for g in verts.chunks_exact(6) {
+            if g[0].mode >= 0.5 {
+                let x0 = (g[0].position[0] + 1.0) / 2.0 * 60.0;
+                let x1 = (g[1].position[0] + 1.0) / 2.0 * 60.0;
+                xs.push(x0.min(x1));
+                x1s.push(x0.max(x1));
+            }
+        }
+        assert_eq!(xs.len(), 3, "三个中文字形");
+        // 列定位修复：每字占 2 格（列距 ≈20px，字形在格内有 bearing 偏移），
+        // 字形矩形不得重叠（前一字右缘 < 后一字左缘）。
+        for i in 1..xs.len() {
+            assert!(
+                xs[i] > x1s[i - 1],
+                "中文不得重叠: 前一字右缘 {} 后一字左缘 {}",
+                x1s[i - 1],
+                xs[i]
+            );
+            assert!(
+                (xs[i] - xs[i - 1] - 20.0).abs() < 2.0,
+                "列距应 2 格(20px): {} -> {}",
+                xs[i - 1],
+                xs[i]
+            );
+        }
     }
 
     #[test]
@@ -1882,7 +2004,10 @@ pub fn build_row_vertices(
         let x = col_pos as f32 * cell_w;
         // 工单 13 真机修复：col_pos 必须在任何 continue 之前累加，
         // 否则 emoji 分支 continue 跳过累加，所有 emoji 叠在同一列。
-        col_pos += cell.col_span.max(1);
+        // 工单 22 修复：列定位按「渲染宽度」累加（中文/emoji 渲染 2 格，
+        // col_span 对中文是 1；用 col_span 会让下一个字从第 1 列开始，
+        // 与上一字第二格重叠）。
+        col_pos += cell_render_span(cell);
         let y = row_y;
 
         // 清屏色 = push 配色板背景（否则维持现状深灰）；
