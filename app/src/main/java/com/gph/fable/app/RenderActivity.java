@@ -242,6 +242,10 @@ public class RenderActivity extends Activity {
             return;
         }
         RenderCore.rendererSetFontSize(renderer, DEFAULT_FONT_PX);
+        // 工单 22 光标/宽度修复：新会话启用 DECSET 2027（grapheme clustering），
+        // 组合 emoji（学生/家庭）按 1 个 cluster 占 2 格，不再拆 4 格留长空白。
+        byte[] graphemeOn = "\u001b[?2027h".getBytes(StandardCharsets.UTF_8);
+        RenderCore.rendererWrite(renderer, graphemeOn, graphemeOn.length);
         long pty = 0;
         try {
             debugLog("before ptySpawn");

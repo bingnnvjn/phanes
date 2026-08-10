@@ -170,6 +170,13 @@ public final class FableTerminalView extends FrameLayout {
             this.host = host;
             this.session = session;
             this.adapter = adapter;
+            // 工单 22 光标/宽度修复：新会话启用 DECSET 2027（grapheme clustering），
+            // 组合 emoji（学生/家庭）按 1 个 cluster 占 2 格，不再拆 4 格留长空白。
+            // 幂等：会话切换重发无害。
+            if (isRenderable(adapter)) {
+                byte[] graphemeOn = "\u001b[?2027h".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                adapter.write(graphemeOn, graphemeOn.length);
+            }
             if (!isRenderable(adapter)) {
                 // 渲染器不可用（异常环境）：降级旧路径，由内嵌输入视图自绘。
                 surfaceView = null;
