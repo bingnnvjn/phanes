@@ -191,8 +191,10 @@ public class RenderActivity extends Activity {
         addButton(row3, "emoji13", v -> sendToAll(
             "printf '🚀✅👨\\u200d👩\\u200d👧\\u200d👦👍🏻🇨🇳⌨️🔋🧑\\u200d🚀🫖🫶\\n'\n"));
         // 工单 13 扩展测试集：黄脸/动物/食物/活动/物体/符号/ZWJ 27 个。
+        // 工单 22：🏳️🌈 含 ZWJ，同样用 printf \u200d 转义（与 emoji13/22
+        // 一致，readline 整行/逐字符对 ZWJ 行为不稳定，转义恒稳）。
         addButton(row3, "emoji27", v -> sendToAll(
-            "echo 😀😢😂😍😡🥺🐶🐱🐼🦊🍎🍕🍜⚽🎮🎵📱💻☕❤️⭐⚠️🎄🎂💯👋🏻🏳️‍🌈\n"));
+            "printf '😀😢😂😍😡🥺🐶🐱🐼🦊🍎🍕🍜⚽🎮🎵📱💻☕❤️⭐⚠️🎄🎂💯👋🏻🏳\\u200d🌈\\n'\n"));
         // 工单 22：Apple sbix 类别化样例（旗帜/标准家庭/肤色/职业 ZWJ/
         // keycap/tag/冷门/VS16；家庭只放异性恋标准组合）。
         addButton(row3, "emoji22", v -> sendToAll(

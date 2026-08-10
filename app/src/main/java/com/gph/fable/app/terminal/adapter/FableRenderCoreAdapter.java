@@ -286,6 +286,11 @@ public final class FableRenderCoreAdapter implements CoreAdapter {
         long newHandle = RenderCore.rendererCreate(cols, rows);
         if (newHandle == 0) return;
         FontAssets.install(mContext, newHandle);
+        // 工单 22 审查修复：reset 重建渲染器（新核心状态）后重发
+        // DECSET 2027（grapheme clustering），否则字素聚合静默关闭、
+        // 组合 emoji 长空白复发。
+        byte[] graphemeOn = "\u001b[?2027h".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        RenderCore.rendererWrite(newHandle, graphemeOn, graphemeOn.length);
         if (fontSizePx > 0f) RenderCore.rendererSetFontSize(newHandle, fontSizePx);
         if (paletteActive) {
             RenderCore.rendererSetPalette16(newHandle, fgArgb, bgArgb, selectionArgb, cursorArgb, ansiArgb);
