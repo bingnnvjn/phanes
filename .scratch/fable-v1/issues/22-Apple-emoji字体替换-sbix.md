@@ -136,3 +136,14 @@
   1. **DECSET 2027（grapheme clustering）**：探针 spawn 与主终端 `SessionRender` 建立时各发一次 `ESC[?2027h`（幂等）。核心诊断验证：学生 4 列 → **2 列**、×3 12 列 → **6 列**，cluster 合并为 1 cell（`🧑|ZWJ|🎓`）+ 空列，光标/选择/删除/换行全部按 2 列正确；中文/肤色/keycap 均正常。这是标准终端模式（kitty/ghostty/wezterm 同款）。
   2. **宽字符光标**：`build_overlay_vertices` 新增 `cell_render_span`（merge col_span 与 `terminal_cell_width` 取大），光标落在宽字符第一列或第二列时归到起始列并画 2 格宽（BLOCK/UNDERLINE/描边；BAR 保持 1 格细竖条）。
 - **验证**：`cargo test --release` 16 passed（新增 `overlay_cursor_wide_span_ticket22`：中/🚀/学生 cluster/A 四种光标宽度断言）；`cargo run --release` ALL PASS；APK `fable-render-22-fix_arm64-v8a.apk`（sha256 `c2fd39c4…`）。
+
+2026-08-10 全面回退审查（2027 版真机反馈：按钮不执行、中文重叠、肤色挤一起、家庭错乱）：
+
+- **审查结论（每项都有核心诊断证据）**：
+  1. **按钮不执行**：bracketed paste（`ESC[200~...`）在用户设备 readline 上不可靠（命令只回显不执行）。回退 paste 包装，恢复直接发送（可靠回车）。实测直接发送时 readline **只吞 ZWJ**，VS16/20E3/tag/肤色全部保留。
+  2. **中文重叠**：渲染列定位 `col_pos += col_span`（中文 col_span=1）但渲染 2 格宽 → 下一字重叠进上一字第二格。**此 bug 一直存在**（工单 13 col_span 定位引入），2027 版用户测试「你好吗」才暴露。修复：`col_pos += cell_render_span`（渲染宽度，中文/emoji 2 格）。
+  3. **肤色挤一起**：2027 模式下核心已把 `👍🏻` 合成一格（含 base），merge 的 `next_is_skin`（next 含修饰符）把连续完整肤色全并成一个 cluster。修复：合并条件改为「下一格是**纯**肤色修饰符」（无 2027 时核心拆 `👍 / 🏻` 才合并）。
+  4. **家庭错乱**：与 3 同源（2027 cells 与 merge 假设冲突），修复 3 后家庭各 cluster 独立。
+  5. **DECSET 2027 保留**：核心诊断证明 2027 下中文/肤色/家庭/学生全部按 2 列（`你/␣/好/␣`、`👍|🏻/␣`、`👨|ZWJ|👩|ZWJ|👧|ZWJ|👦/␣`、`🧑|ZWJ|🎓/␣`），长空白根治；渲染层已适配 2027 cells。
+- **修复**：Rust（列定位、merge 肤色条件）+ Kotlin（去 paste、emoji13/22 按钮改 `printf '...\u200d...'` 转义；bash printf 展开 ZWJ，readline 不吞 ASCII 转义）。
+- **验证**：`cargo test --release` 18 passed（新增 2027 肤色/家庭不合并、中文列距、光标宽字符）；`cargo run --release` ALL PASS；真实 bash pty 验证 `printf '🧑\u200d🎓\n'` 输出 ZWJ 保留、命令执行；APK `fable-render-22-fix_arm64-v8a.apk`（sha256 `bb6a36c4…`）。
