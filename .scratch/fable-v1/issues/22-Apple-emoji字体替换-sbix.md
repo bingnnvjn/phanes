@@ -104,3 +104,10 @@
 
 - 国旗内容 0.64em、键盘横条 0.14em 是字体原生设计（iOS/macOS 同字体同比例）；本次修复保证画布（em 盒）与位置语义与苹果一致，不做内容强行放大（点修被明确禁止）。
 - 👩❤️👨 等部分 ZWJ 序列 rustybuzz 整形成 2 个 glyph 且 x_offset 回退重叠（Apple 字体该序列无 GSUB 预组合；👨👩👧👦 等家庭序列有预组合单 glyph）；渲染结果可能只显示后半组合。已在诊断中记录，列为后续观察项（不属于本次国旗/电池/清晰度验收范围）。
+
+2026-08-10 真机回归修复（新 APK 探针 spawn 后黑屏，bash 登录不显示）：
+
+- **根因**：工单 22 修复把灰度图集从「单纹理 2 层数组」拆成「灰度 2048 + 彩色 4096 两个独立纹理」，bind group layout 与视图已改为 D2，但 shader 里灰度图集仍声明 `texture_2d_array<f32>` 并带 array index 采样 → `create_render_pipeline` 校验失败（shader 与 layout 类型不匹配）→ 整帧渲染失败 → 探针黑屏。
+- **为何本地自检没抓到**：`wgpu_offscreen_check` 用独立旧 shader 只画 solid 红色，从未覆盖真实 SURFACE_SHADER 的纹理路径；宿主 `cargo run` 是软件光栅（不走 wgpu）。已重写 `wgpu_offscreen_check`：直接用 `render_android::SURFACE_SHADER` + 3-binding 双纹理布局 + 4096 彩色纹理，画 mode=2 彩色 glyph 读回验证 → PASS（修复前该检查必 FAIL）。
+- **顺带加固**：彩色图集尺寸按设备 `max_texture_dimension_2d` 自适应降级（默认 4096，不足时降到 1024/2048/4096 的下一个 2 幂；`GlyphAtlas::set_color_size` 重建缓冲并清空条目，容量随格子动态换算）——避免旧设备不支持 4096 纹理时再次黑屏。
+- **验证**：`cargo run --release` ALL PASS；`cargo test --release` 14 passed；`wgpu_offscreen_check` PASS（真实管线 + 4096 采样）；APK 重建 `fable-render-22-fix_arm64-v8a.apk`（so 8,080,856B，NEEDED 五件套不变）。
