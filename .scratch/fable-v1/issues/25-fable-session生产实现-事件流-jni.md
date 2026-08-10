@@ -3,7 +3,7 @@
 **What to build:** 把验证切片升级为生产级 Rust 会话层 crate：SessionManager（创建/关闭/列表/生命周期，2–8 并发设计余量）、Session（PTY 读写、resize、进程退出捕获与回收）、环境注入（环境快照由 Kotlin 计算传入，Rust 不重实现 AndroidShellEnvironment）、事件流第一版最小集六事件（command_started / output_chunk / command_finished / exit_code / session_created / session_closed，schema 含 session_id/时间戳/扩展 metadata）、JNI 边界（SessionHandle 创建/读写/resize/close + 事件回调 + 诊断日志订阅）、Rust 单测（PTY 行为/事件序列/并发）。
 
 **Blocked by:** fable-v1/24
-Status: 待验收
+Status: 已完成
 
 ## 验收清单
 
@@ -44,3 +44,9 @@ Status: 待验收
 - **对 fable-v1/26 的输入**：① Rust 事件流已就绪，26 的会话层抽象（SessionFactory 接口）可直接对接 `SessionHandle`（env 快照 + args 数组 + 事件回调均从 Kotlin 传入）；② `sessionRead`（非阻塞侧缓冲）供不用事件回调的消费方；③ 切回 Java 时 `sessionSetEventCallback(handle, null)` 即可停掉分发线程；④ 诊断日志订阅在 Rust 模式的可见性已由探针自检覆盖；⑤ 并发余量数据：8 会话 477ms 无串（本机 bionic，可作 27 对比的 Rust 侧口径）；⑥ 参数面：事件队列有界 4096 条/会话（约 16MB 背压上限）、只读缓冲 1MiB 丢最旧记 warn，26 如需调参改 `SessionConfig::event_capacity`。
 
 Status → 待验收（真机安装 "Fable Session Handle Probe" 后跑 [自检]，验收数据回报后改 已完成）。
+
+2026-08-11 真机验收通过（用户确认：自检全过）：
+
+- 装机 "Fable Session Handle Probe" 后点 [自检]：**全过 PASS**——sessionCreate + 事件回调（session_created → command_started）、output_chunk 含 `__HANDLE_READY__`、sessionRead 同源字节、resize 40x10（10 40）、exit 3（command_finished + exit_code=3）、sessionClose 后 session_closed、诊断日志订阅收到 onLog、8 会话并发各自 UNIQ 标记互不串。
+- 装机包：`~/storage/downloads/fable-session-25_arm64-v8a.apk`，sha256 `968c2f7701934eca747d8363b33e52555651bf64d90a71ef09cde95682fd5992`。
+- 结论不变：SessionManager + 六事件流 + SessionHandle JNI 边界验收项全部满足；对 fable-v1/26 的输入见上方 Comments（事件回调/read 双消费语义、setEventCallback(null) 停分发、日志订阅可见性、8 会话并发口径）。工单 25 完成，可开跑 fable-v1/26。
