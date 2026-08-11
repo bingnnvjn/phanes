@@ -40,6 +40,8 @@ public final class RustPtySession implements FableSession {
     private volatile boolean mRunning = true;
     private volatile boolean mExited;
     private volatile boolean mClosed;
+    /** 会话结束后是否已释放 Rust 侧句柄（sessionClose 幂等标记）。 */
+    private volatile boolean mHandleReleased;
     private volatile int mExitStatus;
 
     RustPtySession(FableSessionSpec spec, FableSessionCallbacks callbacks) {
@@ -65,8 +67,9 @@ public final class RustPtySession implements FableSession {
                           byte[] data, int exitCode, String message, String[] extra) {
         switch (event) {
             case EVENT_OUTPUT_CHUNK:
-                // close() 后的残余输出不再投递；session_closed 仍需处理（onExit）。
-                if (!mClosed && data != null && data.length > 0) {
+                // 与 Java 语义一致：直到 session_closed 前的输出都投递
+                // （kill 后残余输出也回显，如 logout）。
+                if (data != null && data.length > 0) {
                     mCallbacks.onOutput(data, data.length);
                 }
                 break;
@@ -79,6 +82,9 @@ public final class RustPtySession implements FableSession {
                     mRunning = false;
                     mCallbacks.onExit(mExitStatus);
                 }
+                // 会话已结束：释放 Rust 侧会话记录（幂等；kill 流程的
+                // sessionClose 已在 close() 先行，此处仅自然退出时执行）。
+                releaseHandle();
                 break;
             default:
                 break;
@@ -90,11 +96,19 @@ public final class RustPtySession implements FableSession {
     public void write(byte[] data, int offset, int len) {
         if (mHandle == 0 || mClosed || mExited) return;
         if (offset == 0 && len == data.length) {
-            SessionHandle.sessionWrite(mHandle, data, len);
+            writeChecked(data, len);
         } else {
             byte[] slice = new byte[len];
             System.arraycopy(data, offset, slice, 0, len);
-            SessionHandle.sessionWrite(mHandle, slice, len);
+            writeChecked(slice, len);
+        }
+    }
+
+    private void writeChecked(byte[] data, int len) {
+        int written = SessionHandle.sessionWrite(mHandle, data, len);
+        if (written < 0) {
+            // 写失败不再静默（工单 26 审查项：错误零反馈）。
+            Logger.logWarn(LOG_TAG, "sessionWrite failed: " + SessionHandle.sessionLastError());
         }
     }
 
@@ -113,7 +127,15 @@ public final class RustPtySession implements FableSession {
             // sessionClose 杀死子进程并关闭会话；exit_code → session_closed
             // 事件仍会投递，onExit 在 session_closed 处触发（与 Java SIGKILL 语义对齐）。
             SessionHandle.sessionClose(mHandle);
+            mHandleReleased = true;
         }
+    }
+
+    /** 释放 Rust 侧会话记录（会话结束后调用；幂等）。 */
+    private void releaseHandle() {
+        if (mHandle == 0 || mHandleReleased) return;
+        mHandleReleased = true;
+        SessionHandle.sessionClose(mHandle);
     }
 
     @Override
