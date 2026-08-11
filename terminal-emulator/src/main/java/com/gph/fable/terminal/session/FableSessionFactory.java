@@ -3,8 +3,8 @@ package com.gph.fable.terminal.session;
 import androidx.annotation.Nullable;
 
 /**
- * 会话层工厂接口（工单 26 缝）：Java/Rust 两实现平级，切换开关决定
- * 当前会话用哪个工厂（构建期默认 Rust，设置页 debug 项可切回 Java）。
+ * 会话层工厂接口（工单 26 缝）：唯一实现 = RustFableSessionFactory
+ * （Java 会话层已随工单 27 下线删除），由 TermuxService 注入。
  */
 public interface FableSessionFactory {
 

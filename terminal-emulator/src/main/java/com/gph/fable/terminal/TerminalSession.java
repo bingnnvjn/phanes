@@ -8,7 +8,6 @@ import com.gph.fable.terminal.session.FableSession;
 import com.gph.fable.terminal.session.FableSessionCallbacks;
 import com.gph.fable.terminal.session.FableSessionFactory;
 import com.gph.fable.terminal.session.FableSessionSpec;
-import com.gph.fable.terminal.session.JavaFableSessionFactory;
 
 /**
  * A terminal session, consisting of a process coupled to a terminal interface.
@@ -20,7 +19,7 @@ import com.gph.fable.terminal.session.JavaFableSessionFactory;
  * The child process may be exited forcefully by using the {@link #finishIfRunning()} method.
  * <p>
  * 工单 26：PTY/进程/生命周期经会话层抽象缝（{@link FableSession}）委托给
- * Java（现状）或 Rust（libfable-session）实现；本类只负责字节与
+ * Rust（libfable-session）实现（Java 会话层已随工单 27 下线删除）；本类只负责字节与
  * emulator / CoreAdapter 的接线，不再直接持有 PTY fd 与读写线程。
  * <p>
  * NOTE: The terminal session may outlive the EmulatorView, so be careful with callbacks!
@@ -52,10 +51,10 @@ public final class TerminalSession extends TerminalOutput {
     private int mByteHistoryStart;
     private int mByteHistorySize;
 
-    /** 会话层抽象缝（工单 26）：Java/Rust 后端句柄；null = 尚未初始化。 */
+    /** 会话层抽象缝（工单 26）：Rust 后端句柄；null = 尚未初始化。 */
     private FableSession mFableSession;
 
-    /** 会话层工厂：默认 Java 实现；切换开关由 TermuxService 注入实际工厂。 */
+    /** 会话层工厂（工单 26 缝）：由 TermuxService 注入 Rust 实现（唯一实现）。 */
     private final FableSessionFactory mSessionFactory;
 
     private static final String LOG_TAG = "TerminalSession";
@@ -95,15 +94,10 @@ public final class TerminalSession extends TerminalOutput {
     /** Buffer to write translate code points into utf8 before writing to the session. */
     private final byte[] mUtf8InputBuffer = new byte[5];
 
-    public TerminalSession(String shellPath, String cwd, String[] args, String[] env, Integer transcriptRows, TerminalSessionClient client) {
-        this(shellPath, cwd, args, env, transcriptRows, client, null);
-    }
-
     /**
      * 工单 26：可注入会话层工厂（Java/Rust 切换点）。
-     * null = 默认 Java 实现——此为缝的防呆回退（terminal-emulator 无 app 依赖，
-     * 无法引用 Rust 工厂）；生产路径由 TermuxService 按 FableSessionSwitch
-     * （设置页开关，构建期默认 Rust）解析后显式注入。
+     * Java 会话层已下线（工单 27）：RustFableSessionFactory 是唯一实现，
+     * 由 TermuxService 显式注入（terminal-emulator 模块无 app 依赖）。
      */
     public TerminalSession(String shellPath, String cwd, String[] args, String[] env,
                            Integer transcriptRows, TerminalSessionClient client,
@@ -114,7 +108,7 @@ public final class TerminalSession extends TerminalOutput {
         this.mEnv = env;
         this.mTranscriptRows = transcriptRows;
         this.mClient = client;
-        this.mSessionFactory = sessionFactory == null ? JavaFableSessionFactory.INSTANCE : sessionFactory;
+        this.mSessionFactory = sessionFactory;
     }
 
     public FableSessionFactory getSessionFactory() {

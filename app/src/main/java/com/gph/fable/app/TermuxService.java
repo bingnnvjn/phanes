@@ -37,7 +37,7 @@ import com.gph.fable.shared.termux.TermuxConstants.TERMUX_APP.TERMUX_SERVICE;
 import com.gph.fable.shared.termux.settings.preferences.TermuxAppSharedPreferences;
 import com.gph.fable.shared.termux.shell.TermuxShellManager;
 import com.gph.fable.shared.termux.shell.command.runner.terminal.TermuxSession;
-import com.gph.fable.app.session.FableSessionSwitch;
+import com.gph.fable.app.session.RustFableSessionFactory;
 import com.gph.fable.shared.termux.terminal.TermuxTerminalSessionClientBase;
 import com.gph.fable.shared.logger.Logger;
 import com.gph.fable.shared.notification.NotificationUtils;
@@ -594,7 +594,7 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
         // then no need to set stdout
         TermuxSession newTermuxSession = TermuxSession.execute(this, executionCommand, getTermuxTerminalSessionClient(),
             this, new TermuxShellEnvironment(), null, executionCommand.isPluginExecutionCommand,
-            FableSessionSwitch.getFactory(this));
+            RustFableSessionFactory.INSTANCE);
         if (newTermuxSession == null) {
             Logger.logError(LOG_TAG, "Failed to execute new TermuxSession command for:\n" + executionCommand.getCommandIdAndLabelLogString());
             // If the execution command was started for a plugin, then process the error

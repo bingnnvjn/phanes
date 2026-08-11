@@ -73,8 +73,8 @@ public class TermuxSession {
      *                        anything sent to the the pseudo terminal /dev/pts, including PS1 prefixes.
      *                        Set this to {@code true} only if the session transcript is required,
      *                        since this requires extra processing to get it.
-     * @param sessionFactory 会话层抽象缝工厂（工单 26）：null = Java 默认实现；
-     *                       切换开关（Rust/Java）由调用方（TermuxService）解析后传入。
+     * @param sessionFactory 会话层抽象缝工厂（工单 26）：唯一实现 =
+     *                       RustFableSessionFactory，由调用方（TermuxService）注入。
      * @return Returns the {@link TermuxSession}. This will be {@code null} if failed to start the execution command.
      */
     public static TermuxSession execute(@NonNull final Context currentPackageContext, @NonNull ExecutionCommand executionCommand,
@@ -82,7 +82,7 @@ public class TermuxSession {
                                         @NonNull final IShellEnvironment shellEnvironmentClient,
                                         @Nullable HashMap<String, String> additionalEnvironment,
                                         final boolean setStdoutOnExit,
-                                        @Nullable final FableSessionFactory sessionFactory) {
+                                        @NonNull final FableSessionFactory sessionFactory) {
         if (executionCommand.executable != null && executionCommand.executable.isEmpty())
             executionCommand.executable = null;
         if (executionCommand.workingDirectory == null || executionCommand.workingDirectory.isEmpty())

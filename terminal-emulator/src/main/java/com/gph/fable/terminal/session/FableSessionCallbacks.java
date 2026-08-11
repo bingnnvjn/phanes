@@ -2,8 +2,7 @@ package com.gph.fable.terminal.session;
 
 /**
  * 会话层事件回调（工单 26 缝）。所有回调都在主线程投递：
- * Java 实现经内部 main-thread Handler；Rust 实现把 libfable-session 分发线程
- * 的事件 marshal 到主线程后再调用。
+ * Rust 实现把 libfable-session 分发线程的事件 marshal 到主线程后再调用。
  */
 public interface FableSessionCallbacks {
 

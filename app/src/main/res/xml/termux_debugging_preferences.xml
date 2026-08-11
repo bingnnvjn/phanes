@@ -24,16 +24,4 @@
 
     </PreferenceCategory>
 
-    <PreferenceCategory
-        app:key="session_layer"
-        app:title="@string/fable_session_layer_header">
-
-        <SwitchPreferenceCompat
-            app:defaultValue="true"
-            app:key="fable_session_rust_enabled"
-            app:summary="@string/fable_session_rust_enabled_summary"
-            app:title="@string/fable_session_rust_enabled_title" />
-
-    </PreferenceCategory>
-
 </PreferenceScreen>

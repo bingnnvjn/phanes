@@ -1,13 +1,14 @@
 package com.gph.fable.terminal.session;
 
 /**
- * 会话层创建参数（工单 26 缝）：Java/Rust 两实现的统一输入。
+ * 会话层创建参数（工单 26 缝）：Rust 实现的统一输入
+ * （Java 会话层已随工单 27 下线删除）。
  *
- * cellWidthPixels/cellHeightPixels 仅 Java PTY 的 TIOCSWINSZ 初始像素尺寸使用；
- * Rust 实现（libfable-session sessionCreate 只收 cols/rows）忽略这两个字段。
+ * cellWidthPixels/cellHeightPixels 由 Kotlin 侧计算传入；Rust 实现
+ * （libfable-session sessionCreate 只收 cols/rows）忽略这两个字段。
  *
- * args[0] 是 argv0 名（登录 shell 为 "-bash"，与 Java createSubprocess / execvp 同语义）；
- * args[1..] 为真实参数。Java/Rust 两实现均按此约定消费。
+ * args[0] 是 argv0 名（登录 shell 为 "-bash"，与 execvp 同语义）；
+ * args[1..] 为真实参数。Rust 侧按此约定消费（portable-pty argv0 补丁）。
  */
 public final class FableSessionSpec {
 

@@ -24,9 +24,8 @@ import static org.junit.Assert.assertTrue;
  * 会话层抽象缝（工单 26）JVM 契约测试：
  *
  * TerminalSession 只依赖 {@link FableSessionFactory} / {@link FableSession} 接口，
- * 不直接依赖具体 PTY 实现；Java 与 Rust 两实现平级。JVM 内无法加载
- * libfable-session.so / Termux 原生 JNI，因此后端用 FakeSession 驱动断言
- * TerminalSession 的接线行为；真实 Java/Rust 后端由构建产物 + 真机验收覆盖。
+ * 不直接依赖具体 PTY 实现。JVM 内无法加载 libfable-session.so，因此后端用
+ * FakeSession 驱动断言 TerminalSession 的接线行为；真实 Rust 后端由构建产物 + 真机验收覆盖。
  */
 public class FableSessionSeamTest {
 
@@ -380,14 +379,6 @@ public class FableSessionSeamTest {
         assertEquals(5, spec.getRows());
         assertEquals(CELL_W, spec.getCellWidthPixels());
         assertEquals(CELL_H, spec.getCellHeightPixels());
-    }
-
-    @Test
-    public void defaultFactoryIsJavaWhenNoneProvided() {
-        mSession = new TerminalSession(SHELL, CWD,
-            new String[] { "-bash" }, new String[] { "HOME=" + CWD }, 100, new RecordingClient(), null);
-        assertEquals("java", mSession.getSessionFactory().getEngineName());
-        assertEquals("java", JavaFableSessionFactory.INSTANCE.getEngineName());
     }
 
     @Test

@@ -15,12 +15,12 @@ import com.gph.fable.terminal.session.FableSessionSpec;
  * {@link SessionHandle}（libfable-session.so，portable-pty）。
  *
  * - 事件回调来自 Rust 每会话分发线程，先 marshal 到主线程再投递
- *   {@link FableSessionCallbacks}（与 Java 实现同主线程契约）；
+ *   {@link FableSessionCallbacks}（主线程契约）；
  * - 事件流六事件第一版只做诊断/日志（ADR-0008 决策 7，2026-08-11 核实）：
  *   output_chunk → onOutput；exit_code → 记录退出码；session_closed → onExit；
  * - pid 未从 JNI 暴露（工单 25 边界定稿 8 符号，2026-08-11 核实），getPid() 返回 0；
- *   getCwd() 返回创建时 cwd（Java 实现读 /proc/<pid>/cwd 实时值，差异见工单 Comments）。
- * - args[0] 是 argv0 名（登录 shell "-bash"，与 Java createSubprocess 同语义），
+ *   getCwd() 返回创建时 cwd。
+ * - args[0] 是 argv0 名（登录 shell "-bash"，与 execvp 同语义），
  *   原样传给 sessionCreate；Rust 侧经 portable-pty argv0 补丁实现（2026-08-11）。
  */
 public final class RustPtySession implements FableSession {
