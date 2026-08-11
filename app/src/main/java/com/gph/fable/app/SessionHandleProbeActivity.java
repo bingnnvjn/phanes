@@ -205,7 +205,7 @@ public class SessionHandleProbeActivity extends Activity {
     }
 
     private void spawnOne() {
-        long h = SessionHandle.sessionCreate(SHELL, new String[]{"--login"}, envSnapshot(),
+        long h = SessionHandle.sessionCreate(SHELL, new String[]{"-bash"}, envSnapshot(),
                 HOME, 80, 24, eventCallback);
         if (h == 0) {
             setStatus("spawn FAILED: " + SessionHandle.sessionLastError());

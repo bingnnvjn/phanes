@@ -17,7 +17,11 @@ public final class SessionHandle {
     private SessionHandle() {
     }
 
-    /** 创建会话；callback 可为 null（输出走 sessionRead）。返回句柄，0=失败（sessionLastError）。 */
+    /**
+     * 创建会话；callback 可为 null（输出走 sessionRead）。返回句柄，0=失败（sessionLastError）。
+     * args[0] 是 argv0 名（登录 shell 为 "-bash"，与 Java createSubprocess / execvp 同语义；
+     * 程序路径由 shell 参数决定，argv0 与真实参数分离，Rust 侧经 portable-pty argv0 补丁实现）。
+     */
     public static native long sessionCreate(String shell, String[] args, String[] env,
                                             String cwd, int cols, int rows,
                                             SessionEventCallback callback);

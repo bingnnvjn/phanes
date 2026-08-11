@@ -5,6 +5,9 @@ package com.gph.fable.terminal.session;
  *
  * cellWidthPixels/cellHeightPixels 仅 Java PTY 的 TIOCSWINSZ 初始像素尺寸使用；
  * Rust 实现（libfable-session sessionCreate 只收 cols/rows）忽略这两个字段。
+ *
+ * args[0] 是 argv0 名（登录 shell 为 "-bash"，与 Java createSubprocess / execvp 同语义）；
+ * args[1..] 为真实参数。Java/Rust 两实现均按此约定消费。
  */
 public final class FableSessionSpec {
 
