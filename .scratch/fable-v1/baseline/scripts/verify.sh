@@ -10,7 +10,7 @@ ok() { echo "PASS  $1"; pass=$((pass + 1)); }
 bad() { echo "FAIL  $1"; fail=$((fail + 1)); }
 
 echo "---- 输出完整性 ----"
-for sid in s1 s2 s3 s4; do
+for sid in $(seq -f 's%g' 1 "${FABLE_SESSIONS:-4}"); do
   f="$RUN/$sid.txt"
   d="$RUN/$sid.done"
   if [ ! -f "$d" ]; then

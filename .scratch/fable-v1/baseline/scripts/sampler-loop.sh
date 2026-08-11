@@ -14,7 +14,7 @@ while true; do
   now=$(date +%s)
   rel=$((now - start))
   done_count=$(ls "$RUN"/s?.done 2>/dev/null | wc -l)
-  if [ "$done_count" -ge 4 ] || [ "$rel" -ge 1100 ]; then break; fi
+  if [ "$done_count" -ge "${FABLE_DONE_TARGET:-4}" ] || [ "$rel" -ge 1100 ]; then break; fi
   total=0
   for pid in $(ls /proc | grep -E '^[0-9]+$'); do
     cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null)

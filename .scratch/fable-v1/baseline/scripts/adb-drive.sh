@@ -14,8 +14,10 @@ set -u
 ADB=adb
 PKG=com.gph.fable
 ACT=.app.TermuxActivity
-BASE=/storage/emulated/0/Download/fable-baseline-23
-RESULTS=$HOME/CODEX/Fable/.scratch/fable-v1/baseline/results-$(date +%Y%m%d-%H%M)
+BASE="${FABLE_BASELINE_BASE:-/storage/emulated/0/Download/fable-baseline-23}"
+NSESS="${FABLE_SESSIONS:-4}"          # 会话数：4 = 与 fable-v1/23 同口径；8 = 余量数据
+DONE_TARGET="${FABLE_DONE_TARGET:-$NSESS}"
+RESULTS="${FABLE_RESULTS:-$HOME/CODEX/Fable/.scratch/fable-v1/baseline/results-$(date +%Y%m%d-%H%M)}"
 mkdir -p "$RESULTS"
 
 DEV="${ADB_DEV:-}"
@@ -145,15 +147,15 @@ cmd_prep() {
   SA logcat -c
   ensure_front
   echo "== prep: 会话1 start-run + 工作负载 =="
-  type_text "bash $BASE/start-run.sh"; enter; sleep 2
-  type_text "bash $BASE/run-session.sh s1"; enter; sleep 2
-  for s in s2 s3 s4; do
+  type_text "FABLE_BASELINE_BASE=$BASE bash $BASE/start-run.sh"; enter; sleep 2
+  type_text "FABLE_BASELINE_BASE=$BASE bash $BASE/run-session.sh s1"; enter; sleep 2
+  for s in $(seq -f 's%g' 2 "$NSESS"); do
     new_session
-    type_text "bash $BASE/run-session.sh $s"; enter; sleep 2
+    type_text "FABLE_BASELINE_BASE=$BASE bash $BASE/run-session.sh $s"; enter; sleep 2
   done
   ensure_front
   open_drawer; ui_dump
-  echo "会话行数（期望 4）：$(session_row_centers | wc -l)"
+  echo "会话行数（期望 $NSESS）：$(session_row_centers | wc -l)"
   echo "$(date +%s) prep_done" >> "$RESULTS/drive.log"
   echo "prep 完成"
 }
@@ -185,18 +187,18 @@ cmd_stress() {
 
 cmd_finish() {
   ensure_front
-  echo "== finish: 等 4 会话 DONE =="
+  echo "== finish: 等 $DONE_TARGET 会话 DONE =="
   for i in $(seq 1 60); do
     n=$(SA ls "$BASE/current/" 2>/dev/null | grep -c '\.done$')
-    [ "$n" -ge 4 ] && break
+    [ "$n" -ge "$DONE_TARGET" ] && break
     sleep 10
   done
   echo "done 文件数: $n"
   ensure_front
   switch_session 1
   ensure_front
-  type_text "bash $BASE/verify.sh"; enter
-  sleep 90
+  type_text "FABLE_BASELINE_BASE=$BASE FABLE_SESSIONS=$NSESS bash $BASE/verify.sh"; enter
+  sleep $(( NSESS * 25 ))   # 4 会话 ≈100s；8 会话 ≈200s（verify 生成期望流 + sha256）
   adb -s "$DEV" pull "$BASE/current/" "$RESULTS/current/" >/dev/null 2>&1
   adb -s "$DEV" shell dumpsys meminfo $PKG > "$RESULTS/meminfo.txt" 2>&1
   adb -s "$DEV" logcat -d -v time > "$RESULTS/logcat.txt" 2>&1

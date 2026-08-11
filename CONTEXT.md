@@ -16,7 +16,7 @@ Fable（寓言）= 私人 Android 终端 App：**Kotlin 壳 + Rust 底层 + libg
 
 | 术语 | 含义 |
 | --- | --- |
-| 会话层 | PTY + 进程 + 环境 + 生命周期；阶段一 Termux Java 不动，终态搬 Rust |
+| 会话层 | PTY + 进程 + 环境 + 生命周期；唯一实现 = Rust（libfable-session，portable-pty）；Java 会话层已随工单 27 下线删除（2026-08-11） |
 | 渲染状态 | 核心交给渲染器的数据（脏行、格子文本/样式、配色板、光标）；C API `ghostty_render_state_*` |
 | 画法层 | 把渲染状态变成像素的部分（字形图集、GPU 绘制、shader） |
 | 快照层 | Fable 渲染器内部"渲染状态 → 结构化快照"的一层（脏行/行文本/样式 run/光标/模式/滚动） |
@@ -38,3 +38,4 @@ Fable（寓言）= 私人 Android 终端 App：**Kotlin 壳 + Rust 底层 + libg
 - ADR-0005：Fable 包仓库（自建 fable 前缀扁平 apt 仓库，GitHub Releases 托管 + GPG 签名）
 - ADR-0006：彩色字形通路 = FreeType + 内嵌 NotoColorEmoji COLRv1（ZWJ 经 rustybuzz 整形一并解决；灰度正文保持 fontdue）
 - ADR-0007：emoji 字体 = Apple Color Emoji 21.4d3e1（sbix 160px 单档）+ Rust 自解析 sbix + Noto 兜底（2026-08-10 定案）
+- ADR-0008：会话层 = Rust（portable-pty 主选 + 事件流六事件最小集）；Java 会话层已下线（2026-08-11 工单 27，过渡期结束）

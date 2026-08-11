@@ -5,7 +5,7 @@
 SID="${1:-}"
 BASE="${FABLE_BASELINE_BASE:-/storage/emulated/0/Download/fable-baseline-23}"
 RUN="$BASE/current"
-case "$SID" in s1|s2|s3|s4) ;; *) echo "用法: bash run-session.sh s1|s2|s3|s4"; exit 1 ;; esac
+case "$SID" in s1|s2|s3|s4|s5|s6|s7|s8) ;; *) echo "用法: bash run-session.sh s1..s8（4 会话对比用 s1..s4；8 会话余量用 s1..s8）"; exit 1 ;; esac
 # 首次调用自动转入后台（保留 stdout 在本会话显示），会话保持可交互（粘贴直达提示符）。
 # 手动 `bash run-session.sh s1 &` 也兼容（双重后台无害）。
 if [ -z "$FABLE_WL_DAEMON" ]; then

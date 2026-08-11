@@ -1,6 +1,7 @@
 # ADR-0008: 会话层搬 Rust（终态落地 · 独立先行）
 
-- 状态：已确认（2026-08-10，决策窗口 8）
+- 状态：已确认（2026-08-10，决策窗口 8）；过渡期结束（2026-08-11 工单 27：
+  Java 会话层下线删除，决策 5 到期）
 - 日期：2026-08-10
 - 范围：ADR-0003 决策 4（会话层终态 Rust）的落地路径；v1 已交付功能不回退
 
@@ -20,7 +21,7 @@ ADR-0003 已定终态 = Kotlin 壳 + Rust 底层（渲染/会话/事件流）+ l
 2. **驱动优先级**：多 Agent 并行并发安全第一；语言统一与事件流为综合收益一并覆盖。
 3. **零件**：portable-pty 0.9.0（MIT）主选；nix 自拼（posix_openpt 序列）兜底。NDK/CI 备用构建线若启用，需显式 min API ≥ 23。
 4. **排期**：独立先行、验证切片先行（工单 24），不并入 Kotlin 壳重构；工单 23（Java 基线采集）与 24 并行。
-5. **过渡**：双实现并行 + 切换开关（构建期默认 Rust；设置页 debug 项可切回 Java）；Java 会话层原样保留，至验收对比（工单 27）后再评估去留。
+5. **过渡**：双实现并行 + 切换开关（构建期默认 Rust；设置页 debug 项可切回 Java）；Java 会话层原样保留，至验收对比（工单 27）后再评估去留。**已于 2026-08-11 工单 27 结束**：验收对比 4 会话硬指标 PASS 后，用户拍板下线 Java 会话层并删除（JavaFableSession/JNI(PTY)/ByteQueue/切换开关/libtermux.so），会话层唯一实现 = Rust。
 6. **并发指标**：2–4 会话硬指标、8 并发设计余量。
 7. **事件流（头脑风暴 §3.3 转正）**：第一版最小集六事件 = `command_started` / `output_chunk` / `command_finished` / `exit_code` / `session_created` / `session_closed`；schema 含 session_id、时间戳，留扩展 metadata；Rust 侧产出，经 JNI 事件回调暴露 Kotlin；Kotlin 第一版只接诊断/日志订阅。
 8. **环境注入边界**：环境快照由 Kotlin 计算后传入 Rust（不重实现 AndroidShellEnvironment / termux-shared 的环境组装逻辑），第一版不搬环境构造。
@@ -42,7 +43,7 @@ ADR-0003 已定终态 = Kotlin 壳 + Rust 底层（渲染/会话/事件流）+ l
 ## 重开条件
 
 - 工单 24 证明 portable-pty 在 aarch64-linux-android（Termux clang 构建线）无法链接/运行，且 nix 兜底也不可行 → 回到零件重新评估。
-- 工单 27 验收对比显示 Rust 会话层并发/稳定性不优于 Java 基线 → 暂停 Java 下线，保留双实现并评估原因。
+- 工单 27 验收对比显示 Rust 会话层并发/稳定性不优于 Java 基线 → 暂停 Java 下线，保留双实现并评估原因。**已评估（2026-08-11）**：4 会话硬指标（崩溃/ANR=0、180 万行零丢失、surface 零强制重建）Rust 不劣于基线，条件未触发；内存创建尖峰（~1.48GB vs ~949MB，稳态相当）为已知差异，转入内存优化 backlog 优化，不视为重开条件。
 
 ## 参考
 
