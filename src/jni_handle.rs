@@ -21,6 +21,7 @@ use jni::sys::{jint, jlong, jstring};
 use jni::signature::RuntimeMethodSignature;
 use jni::strings::JNIString;
 use jni::{Env, JValue, JavaVM};
+use crossbeam_channel::RecvTimeoutError;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
@@ -208,7 +209,11 @@ fn spawn_event_dispatcher(session_id: SessionId, slot: CallbackSlot) {
                                 break;
                             }
                         }
-                        Err(_) => break,
+                        // 超时≠退出：静默期（用户思考/长时间无输出）后回显与命令
+                        // 输出仍须投递；只有会话释放（events_tx drop）才退出。
+                        // 旧实现超时即自杀 → 输入进了 shell 但回显全丢（工单 26 真机问题）。
+                        Err(RecvTimeoutError::Timeout) => continue,
+                        Err(RecvTimeoutError::Disconnected) => break,
                     }
                 }
                 Ok(())

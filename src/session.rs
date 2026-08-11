@@ -5,8 +5,10 @@
 //! 输出字节同时进事件流（output_chunk，主通道）和只读侧缓冲（`read_output`，
 //! 供 JNI `sessionRead` 等非事件消费方）。EOF/EIO 后轮询 `try_wait` 回收子进程
 //! （不持锁阻塞 wait，可被 close 打断），发 command_finished/exit_code，
-//! 再等 close 信号后退出；close() 先置标志、close 读 fd、kill 子进程、join，
-//! 最后发 session_closed——保证六事件序列顺序。
+//! 随后**自然退出闭环**：发 session_closed → 置 Closed → 关读 fd → 线程退出
+//! （旧实现等 close 信号，子进程自然退出后会话永不收尾、Kotlin onExit 不触发——
+//! 工单 26 真机输入失效的根因之一）；close() 先置标志、close 读 fd、kill 子进程、
+//! join，reader 已发 session_closed 则跳过重复——保证六事件序列顺序。
 
 use crate::event::{
     Event, EventKind, EventMeta, EventReceiver, EventSender, SessionId, event_channel, now_ms,
@@ -18,7 +20,7 @@ use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system}
 use std::collections::VecDeque;
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -29,7 +31,8 @@ pub const DEFAULT_OUTPUT_BUF_CAP: usize = 1 << 20;
 pub struct SessionConfig {
     /// 可执行路径（如 /data/data/com.gph.fable/files/usr/bin/bash）。
     pub shell: String,
-    /// 附加参数（如 --login；测试用 --noprofile --norc / -c "..."）。
+    /// argv[0] 名 + 真实参数：args[0] = argv0（登录 shell 为 "-bash"，与 Java
+    /// createSubprocess / execvp 同语义），args[1..] = 真实参数（如 --noprofile）。
     pub args: Vec<String>,
     /// 环境快照（Kotlin 构造传入，本 crate 不重建 AndroidShellEnvironment）。
     pub env: Vec<(String, String)>,
@@ -86,8 +89,6 @@ struct ReaderShared {
     output_buf: Mutex<VecDeque<u8>>,
     state: Mutex<SessionState>,
     close_flag: AtomicBool,
-    close_lock: Mutex<()>,
-    close_cv: Condvar,
 }
 
 pub struct Session {
@@ -179,7 +180,6 @@ impl Session {
             }
         }
         self.reader.close_flag.store(true, Ordering::SeqCst);
-        self.reader.close_cv.notify_all();
 
         {
             let mut fd = self.reader.read_fd.lock().unwrap_or_else(|p| p.into_inner());
@@ -204,17 +204,19 @@ impl Session {
         {
             let _ = handle.join();
         }
-        {
+        // reader 自然退出时已置 Closed 并发过 session_closed，此处跳过重复。
+        let already_closed = {
             let mut st = self.reader.state.lock().unwrap_or_else(|p| p.into_inner());
+            let was = *st == SessionState::Closed;
             *st = SessionState::Closed;
+            was
+        };
+        if !already_closed {
+            send_terminal_event(&self.reader, self.id);
+            log_info(Some(self.id), "session_closed 已发出（close 路径），句柄回收完成");
+        } else {
+            log_info(Some(self.id), "session_closed 已由 reader 自然退出发出，跳过重复");
         }
-        let _ = self.reader.events_tx.send(Event {
-            kind: EventKind::SessionClosed,
-            session_id: self.id,
-            timestamp_ms: now_ms(),
-            meta: EventMeta::default(),
-        });
-        log_info(Some(self.id), "session_closed 已发出，句柄回收完成");
     }
 
     /// create 用：内部构造（spawn 成功后）。
@@ -247,8 +249,6 @@ impl Session {
             output_buf: Mutex::new(VecDeque::new()),
             state: Mutex::new(SessionState::Running),
             close_flag: AtomicBool::new(false),
-            close_lock: Mutex::new(()),
-            close_cv: Condvar::new(),
         });
         Ok(Self {
             id,
@@ -339,6 +339,18 @@ pub(crate) fn spawn_session(
         pixel_height: 0,
     };
     let pair = system.openpty(size).context("openpty 失败")?;
+    // 与 Java create_subprocess（termux.c）一致：IUTF8 + 清 IXON/IXOFF，
+    // 否则 Ctrl+S 冻结显示、UTF-8 行规程与 Java 模式不一致（工单 26 真机审查）。
+    if let Some(master_fd) = pair.master.as_raw_fd() {
+        unsafe {
+        let mut tios: libc::termios = std::mem::zeroed();
+        if libc::tcgetattr(master_fd, &mut tios) == 0 {
+            tios.c_iflag |= libc::IUTF8;
+            tios.c_iflag &= !(libc::IXON | libc::IXOFF);
+            libc::tcsetattr(master_fd, libc::TCSANOW, &tios);
+        }
+        }
+    }
     let child = pair
         .slave
         .spawn_command(cmd)
@@ -457,17 +469,29 @@ fn reader_loop(shared: Arc<ReaderShared>) {
     );
     log_info(Some(id), "command_finished / exit_code 已发出");
 
-    // 3) 等 close() 信号后退出（close 会 join 本线程）。
-    let guard = shared.close_lock.lock().unwrap_or_else(|p| p.into_inner());
-    let mut guard = guard;
-    while !shared.close_flag.load(Ordering::SeqCst) {
-        guard = shared
-            .close_cv
-            .wait(guard)
-            .unwrap_or_else(|p| p.into_inner());
+    // 3) 自然退出闭环：发 session_closed → 置 Closed → 关读 fd → 线程退出。
+    //    （旧实现等 close() 信号：子进程自然退出后会话永不收尾、Kotlin onExit
+    //    永不触发、isRunning 卡 true、输入被静默丢弃——工单 26 真机输入失效。）
+    send_terminal_event(&shared, id);
+    {
+        let mut st = shared.state.lock().unwrap_or_else(|p| p.into_inner());
+        *st = SessionState::Closed;
     }
-    drop(guard);
-    log_info(Some(id), "reader 线程退出");
+    {
+        let mut fd = shared.read_fd.lock().unwrap_or_else(|p| p.into_inner());
+        if *fd >= 0 {
+            unsafe {
+                libc::close(*fd);
+            }
+            *fd = -1;
+        }
+    }
+    shared.close_flag.store(true, Ordering::SeqCst);
+    {
+        let mut child = shared.child.lock().unwrap_or_else(|p| p.into_inner());
+        *child = None;
+    }
+    log_info(Some(id), "session_closed 已发出（自然退出），reader 线程退出");
 }
 
 /// 有界事件发送：关闭中（或通道断开）即停止产出，避免 reader 永久阻塞。
@@ -484,6 +508,24 @@ fn send_event(shared: &Arc<ReaderShared>, event: Event) -> bool {
             Err(SendTimeoutError::Timeout(_)) => continue,
             Err(SendTimeoutError::Disconnected(_)) => return false,
         }
+    }
+}
+
+/// session_closed 专用送达：不受 close_flag 影响（自然退出闭环必须最终送达）；
+/// 通道断开（订阅者全退）则丢弃。
+fn send_terminal_event(shared: &Arc<ReaderShared>, id: SessionId) {
+    let event = Event {
+        kind: EventKind::SessionClosed,
+        session_id: id,
+        timestamp_ms: now_ms(),
+        meta: EventMeta::default(),
+    };
+    if shared
+        .events_tx
+        .send_timeout(event, Duration::from_millis(500))
+        .is_err()
+    {
+        log_warn(Some(id), "session_closed 投递失败（通道断开或背压）");
     }
 }
 

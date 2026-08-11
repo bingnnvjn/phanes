@@ -16,9 +16,9 @@ const BASH: &str = "/data/data/com.termux/files/usr/bin/bash";
 fn base_cfg() -> SessionConfig {
     SessionConfig {
         shell: BASH.to_string(),
-        // args[0] 是 argv0 名（与 Java createSubprocess 同语义）；--noprofile/--norc
-        // 仍是真实参数，测试进程不读用户 profile。
-        args: vec!["-bash".into(), "--noprofile".into(), "--norc".into()],
+        // args[0] 是 argv0 名（与 Java createSubprocess 同语义）；用非登录
+        // argv0 "bash" + --noprofile/--norc，保证测试进程 hermetic（不读 profile）。
+        args: vec!["bash".into(), "--noprofile".into(), "--norc".into()],
         env: vec![
             ("TERM".into(), "xterm-256color".into()),
             ("HOME".into(), "$HOME".into()),
@@ -115,6 +115,7 @@ fn six_event_sequence_with_exit_code() {
     let m = SessionManager::new();
     let mut cfg = base_cfg();
     cfg.args = vec![
+        "bash".into(),
         "--noprofile".into(),
         "--norc".into(),
         "-c".into(),
@@ -123,7 +124,7 @@ fn six_event_sequence_with_exit_code() {
     let id = m.create(cfg).unwrap();
     let s = m.get(id).unwrap();
 
-    // 事件流是异步的：先等到 exit_code（其前必有 command_finished），再 close 收 session_closed。
+    // 事件流是异步的：先等到 exit_code（其前必有 command_finished）。
     let events = collect_until(&s, EventKind::ExitCode, Duration::from_secs(10));
     let kinds: Vec<EventKind> = events.iter().map(|e| e.kind).collect();
 
@@ -153,9 +154,17 @@ fn six_event_sequence_with_exit_code() {
         events.last().unwrap().meta
     );
 
-    m.close(id).unwrap();
+    // 自然退出闭环：子进程退出后 session_closed 必须自行送达（无需 close()）。
     let closed = collect_until(&s, EventKind::SessionClosed, Duration::from_secs(5));
     assert_eq!(closed.last().unwrap().kind, EventKind::SessionClosed);
+    assert!(
+        m.get(id).is_some(),
+        "自然退出后句柄仍应存在（由 Kotlin sessionClose 释放）"
+    );
+
+    // close() 幂等：状态已 Closed，不重复发 session_closed、不报错。
+    m.close(id).unwrap();
+    assert!(m.list().is_empty());
 
     // schema：session_id 一致、时间戳单调不减、metadata 有值
     let mut all = events.clone();
@@ -238,6 +247,7 @@ fn exit_code_captured_and_reaped() {
     let m = SessionManager::new();
     let mut cfg = base_cfg();
     cfg.args = vec![
+        "bash".into(),
         "--noprofile".into(),
         "--norc".into(),
         "-c".into(),
@@ -253,15 +263,20 @@ fn exit_code_captured_and_reaped() {
         "exit 3 应捕获退出码 3"
     );
 
-    // 状态流转：Exited{code:3}（等待 close 回收句柄）
+    // 状态流转：Exited{code:3} 或已自然退出闭环的 Closed（reader 可能已推进）。
     let info = m.get(id).unwrap().info();
     assert!(
-        matches!(info.state, fable_session::SessionState::Exited { exit_code: Some(3), .. }),
-        "状态应为 Exited{{exit_code:Some(3)}}，实际: {:?}",
+        matches!(
+            info.state,
+            fable_session::SessionState::Exited { exit_code: Some(3), .. }
+                | fable_session::SessionState::Closed
+        ),
+        "状态应为 Exited{{exit_code:Some(3)}} 或 Closed，实际: {:?}",
         info.state
     );
 
     m.close(id).unwrap();
+    assert!(m.list().is_empty());
 }
 
 /// 验收项 4：close/kill 语义——对运行中进程 close 应立即回收，不卡死。
@@ -270,6 +285,7 @@ fn close_kills_running_process() {
     let m = SessionManager::new();
     let mut cfg = base_cfg();
     cfg.args = vec![
+        "bash".into(),
         "--noprofile".into(),
         "--norc".into(),
         "-c".into(),
