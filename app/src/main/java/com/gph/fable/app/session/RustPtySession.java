@@ -43,13 +43,33 @@ public final class RustPtySession implements FableSession {
     RustPtySession(FableSessionSpec spec, FableSessionCallbacks callbacks) {
         mCallbacks = callbacks;
         mCwd = spec.getCwd();
-        mHandle = SessionHandle.sessionCreate(spec.getShell(), spec.getArgs(), spec.getEnv(),
+        mHandle = SessionHandle.sessionCreate(spec.getShell(), translateArgs(spec.getArgs()), spec.getEnv(),
             spec.getCwd(), spec.getColumns(), spec.getRows(), mEventCallback);
         if (mHandle == 0) {
             mRunning = false;
             mExited = true;
             Logger.logError(LOG_TAG, "sessionCreate failed: " + SessionHandle.sessionLastError());
         }
+    }
+
+    /**
+     * 把 FableSessionSpec 的 argv0 约定翻译为 libfable-session 的真实参数约定。
+     *
+     * Java 会话层（createSubprocess / execvp）的 args[0] 是 argv0 名：登录 shell 为
+     * "-bash"（bash 见 argv[0][0]=='-' 才读 profile）；libfable-session 的 args 是
+     * 真实参数（工单 25 探针即传 "--login"）。登录 argv0 → 显式 "--login"
+     * （bash/zsh/fish 等价语义）；非登录 argv0（如 failsafe 的 "sh"）→ 丢弃。
+     * $0 显示为 shell 全路径（Java 模式为 "-bash"），差异记录在工单 26 Comments。
+     */
+    static String[] translateArgs(String[] args) {
+        if (args == null || args.length == 0) return new String[0];
+        boolean login = args[0].length() > 0 && args[0].charAt(0) == '-';
+        int extraCount = args.length - 1;
+        String[] out = new String[(login ? 1 : 0) + extraCount];
+        int i = 0;
+        if (login) out[i++] = "--login";
+        for (int j = 1; j < args.length; j++) out[i++] = args[j];
+        return out;
     }
 
     boolean isValid() {
