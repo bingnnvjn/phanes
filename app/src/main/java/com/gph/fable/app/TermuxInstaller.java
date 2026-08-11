@@ -117,6 +117,7 @@ final class TermuxInstaller {
             if (TermuxFileUtils.isTermuxPrefixDirectoryEmpty()) {
                 Logger.logInfo(LOG_TAG, "The termux prefix directory \"" + TERMUX_PREFIX_DIR_PATH + "\" exists but is empty or only contains specific unimportant files.");
             } else {
+                suppressFableMotd(activity);
                 whenDone.run();
                 return;
             }
@@ -261,6 +262,7 @@ final class TermuxInstaller {
                     // Recreate env file since termux prefix was wiped earlier
                     TermuxShellEnvironment.writeEnvironmentToFile(activity);
 
+                    suppressFableMotd(activity);
                     activity.runOnUiThread(whenDone);
 
                 } catch (final Exception e) {
@@ -277,6 +279,26 @@ final class TermuxInstaller {
                 }
             }
         }.start();
+    }
+
+    /**
+     * 工单 26：主终端只显示 Bash 登录提示——截空 `$PREFIX/etc/motd`。
+     * bin/login 登录时 cat 该文件打印 Termux 宣传语（Welcome to Termux! / Docs /
+     * Donate / Community / Working with packages）。幂等；保留文件本身（termux-tools
+     * 的 conffile，删除会被 pkg upgrade 当作缺失恢复，截空后本地修改不被覆盖）。
+     */
+    static void suppressFableMotd(Context context) {
+        try {
+            File motd = new File(TermuxConstants.TERMUX_ETC_PREFIX_DIR_PATH + "/motd");
+            if (motd.isFile() && motd.length() > 0) {
+                try (java.io.FileOutputStream fos = new java.io.FileOutputStream(motd, false)) {
+                    // 截断为 0 字节（空文件不打印任何欢迎语）。
+                }
+                Logger.logInfo(LOG_TAG, "Fable motd suppressed (truncated " + motd.getAbsolutePath() + ")");
+            }
+        } catch (Exception e) {
+            Logger.logError(LOG_TAG, "suppressFableMotd failed: " + e);
+        }
     }
 
     public static boolean checkIfMinOrMaxSdkVersionIsIncompatible(Activity activity,

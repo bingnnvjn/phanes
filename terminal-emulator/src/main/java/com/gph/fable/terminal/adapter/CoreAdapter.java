@@ -65,6 +65,15 @@ public interface CoreAdapter {
     /** 销毁核心与渲染器；之后本实例不可再用。 */
     void destroy();
 
+    /**
+     * 工单 26：查询核心光标视口位置（0 基列/行，核心 2027 列模型）。
+     * 返回 true 且 out[0]/out[1] 有效时，终端查询应答（如 CPR）以它为准；
+     * 默认返回 false（旧路径用自身列模型应答）。
+     */
+    default boolean getCursorPosition(int[] out) {
+        return false;
+    }
+
     boolean supportsSelectionText();
 
     boolean supportsFontSize();

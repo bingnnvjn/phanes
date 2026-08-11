@@ -49,6 +49,11 @@ public final class FableRenderCoreAdapter implements CoreAdapter {
         mHandle = RenderCore.rendererCreate(mCols, mRows);
         // 工单 22：assets 字体拷贝 + JNI 传路径（Rust 侧 mmap + sha256 校验）。
         FontAssets.install(context, mHandle);
+        // 工单 26：rendererCreate 后**立即**开启 DECSET 2027（grapheme clustering），
+        // 先于任何历史字节回放——否则回放内容按每码位算宽（合成 emoji 4-6 列），
+        // 与 2027 的 2 列模型混排，造成"一行半/第二行覆盖"。
+        byte[] graphemeOn = "\u001b[?2027h".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        RenderCore.rendererWrite(mHandle, graphemeOn, graphemeOn.length);
     }
 
     public boolean isValid() {
@@ -302,6 +307,17 @@ public final class FableRenderCoreAdapter implements CoreAdapter {
         if (attached && surface != null && surface.isValid() && widthPx > 0 && heightPx > 0) {
             RenderCore.rendererAttach(newHandle, surface, widthPx, heightPx);
         }
+    }
+
+    @Override
+    public boolean getCursorPosition(int[] out) {
+        long handle;
+        synchronized (mLock) {
+            handle = mHandle;
+        }
+        if (handle == 0 || out == null || out.length < 2) return false;
+        int present = RenderCore.rendererGetCursor(handle, out);
+        return present == 1 && out[0] >= 0 && out[1] >= 0;
     }
 
     @Override

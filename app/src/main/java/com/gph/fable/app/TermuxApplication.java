@@ -28,6 +28,10 @@ public class TermuxApplication extends Application {
 
         Context context = getApplicationContext();
 
+        // 工单 26：主终端只显示 Bash 登录提示——幂等截空 $PREFIX/etc/motd
+        // （覆盖已存在/迁移的 prefix；安装完成路径另有调用）。
+        TermuxInstaller.suppressFableMotd(context);
+
         // 渲染器诊断文件日志（Termux 无法 logcat 跨 uid 读取）。
         FableDiagnostics.init(context);
         // 选择流程诊断回调（选择空白根因定位）。

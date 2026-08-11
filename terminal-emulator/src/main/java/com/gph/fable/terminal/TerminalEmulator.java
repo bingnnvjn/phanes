@@ -2,6 +2,8 @@ package com.gph.fable.terminal;
 
 import android.util.Base64;
 
+import com.gph.fable.terminal.adapter.CoreAdapter;
+
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Locale;
@@ -1759,9 +1761,18 @@ public final class TerminalEmulator {
                         mSession.write(dsr, 0, dsr.length);
                         break;
                     case 6: // Cursor position report (CPR):
-                        // Answer is ESC [ y ; x R, where x,y is
-                        // the cursor location.
-                        mSession.write(String.format(Locale.US, "\033[%d;%dR", mCursorRow + 1, mCursorCol + 1));
+                        // 工单 26：CPR 优先答核心光标（渲染显示 = 核心 DECSET 2027
+                        // 列模型；旧 Java 模拟器按码位算宽，合成 emoji 会差 4 倍，
+                        // 导致 readline 重绘错位"一行半/第二行覆盖"）。
+                        // 核心无光标（回看等）时回退自身列模型。
+                        int[] corePos = new int[2];
+                        CoreAdapter core = (mSession instanceof TerminalSession)
+                            ? ((TerminalSession) mSession).getCoreAdapter() : null;
+                        if (core != null && core.getCursorPosition(corePos)) {
+                            mSession.write(String.format(Locale.US, "\033[%d;%dR", corePos[1] + 1, corePos[0] + 1));
+                        } else {
+                            mSession.write(String.format(Locale.US, "\033[%d;%dR", mCursorRow + 1, mCursorCol + 1));
+                        }
                         break;
                     default:
                         break;

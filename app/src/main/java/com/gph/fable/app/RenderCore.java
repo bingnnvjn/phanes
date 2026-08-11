@@ -39,6 +39,11 @@ public final class RenderCore {
     /** 工单 14：当前字号的单元格像素尺寸，写入 out[0]=宽 out[1]=高。 */
     public static native void rendererGetCellSize(long handle, int[] out);
 
+    /** 工单 26：同步查询核心光标视口位置，写入 out[0]=列 out[1]=行（0 基）；
+     *  返回 1=有光标，0=无光标（out 置 -1）。列模型与核心 DECSET 2027 一致，
+     *  CPR 应答用它，避免与旧 Java 模拟器按码位算宽的双轨错位。 */
+    public static native int rendererGetCursor(long handle, int[] out);
+
     /** 工单 14：push 配色板（ARGB），前景/背景/选择色/光标色。 */
     public static native void rendererSetPalette(long handle, int fgArgb, int bgArgb, int selectionArgb, int cursorArgb);
 
