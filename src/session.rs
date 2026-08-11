@@ -313,9 +313,15 @@ pub(crate) fn spawn_session(
     if cfg.shell.trim().is_empty() {
         bail!("shell 为空");
     }
+    // args[0] 是 argv0 名（Java createSubprocess / execvp 同语义：
+    // 登录 shell 为 "-bash"；program 仍是 cfg.shell）。argv0 与真实参数分离，
+    // 由本地补丁的 CommandBuilder::argv0 支持（上游 portable-pty 0.9.0 无此 API）。
     let mut cmd = CommandBuilder::new(&cfg.shell);
-    for a in &cfg.args {
-        cmd.arg(a);
+    if let Some(argv0) = cfg.args.first() {
+        cmd.argv0(std::ffi::OsString::from(argv0));
+        for a in &cfg.args[1..] {
+            cmd.arg(a);
+        }
     }
     cmd.set_controlling_tty(true);
     for (k, v) in &cfg.env {

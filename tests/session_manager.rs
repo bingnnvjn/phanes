@@ -16,7 +16,9 @@ const BASH: &str = "/data/data/com.termux/files/usr/bin/bash";
 fn base_cfg() -> SessionConfig {
     SessionConfig {
         shell: BASH.to_string(),
-        args: vec!["--noprofile".into(), "--norc".into()],
+        // args[0] 是 argv0 名（与 Java createSubprocess 同语义）；--noprofile/--norc
+        // 仍是真实参数，测试进程不读用户 profile。
+        args: vec!["-bash".into(), "--noprofile".into(), "--norc".into()],
         env: vec![
             ("TERM".into(), "xterm-256color".into()),
             ("HOME".into(), "$HOME".into()),

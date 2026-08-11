@@ -16,3 +16,8 @@ portable-pty = "0.9.0"
 
 [profile.dev]
 opt-level = 1
+
+# 本地补丁：portable-pty 0.9.0 增加 argv0 覆盖（登录 shell "-bash" 语义，
+# 与 Java createSubprocess 完全一致；上游无此 API）。仅改 cmdbuilder.rs。
+[patch.crates-io]
+portable-pty = { path = "vendor/portable-pty" }
