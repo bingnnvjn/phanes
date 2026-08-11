@@ -133,6 +133,8 @@ pub const DATA_CURSOR_BLINKING: i32 = 12;
 pub const DATA_CURSOR_VIEWPORT_HAS_VALUE: i32 = 14;
 pub const DATA_CURSOR_VIEWPORT_X: i32 = 15;
 pub const DATA_CURSOR_VIEWPORT_Y: i32 = 16;
+/** 光标是否落在宽字符尾部（工单 26 光标修复；仅 CURSOR_VIEWPORT_HAS_VALUE 时有效）。 */
+pub const DATA_CURSOR_VIEWPORT_WIDE_TAIL: i32 = 17;
 
 // GhosttyRenderStateOption
 pub const RENDER_STATE_OPTION_DIRTY: i32 = 0;
@@ -150,12 +152,27 @@ pub const ROW_DATA_DIRTY: i32 = 1;
 pub const ROW_DATA_CELLS: i32 = 3;
 
 // GhosttyRenderStateRowCellsData
+/** 原始 GhosttyCell 句柄（经 ghostty_cell_get 查询 WIDE 等属性）。 */
+pub const CELL_DATA_RAW: i32 = 1;
 pub const CELL_DATA_STYLE: i32 = 2;
 pub const CELL_DATA_BG_COLOR: i32 = 5;
 pub const CELL_DATA_FG_COLOR: i32 = 6;
 pub const CELL_DATA_SELECTED: i32 = 7;
 pub const CELL_DATA_HAS_STYLING: i32 = 8;
 pub const CELL_DATA_GRAPHEMES_UTF8: i32 = 9;
+
+// GhosttyCellData（screen.h）：raw cell 经 ghostty_cell_get 查询
+/** 单元格宽属性（GhosttyCellWide）。 */
+pub const GHOSTTY_CELL_DATA_WIDE: i32 = 3;
+
+/** 不透明单元格句柄（screen.h：typedef uint64_t GhosttyCell）。 */
+pub type GhosttyCell = u64;
+
+// GhosttyCellWide
+pub const CELL_WIDE_NARROW: i32 = 0;
+pub const CELL_WIDE_WIDE: i32 = 1;
+pub const CELL_WIDE_SPACER_TAIL: i32 = 2;
+pub const CELL_WIDE_SPACER_HEAD: i32 = 3;
 
 // GhosttySgrUnderline
 pub const SGR_UNDERLINE_NONE: i32 = 0;
@@ -243,6 +260,7 @@ extern "C" {
         data: i32,
         out: *mut c_void,
     ) -> GhosttyResult;
+    pub fn ghostty_cell_get(cell: u64, data: i32, out: *mut c_void) -> GhosttyResult;
 }
 
 /// 调用 C 锚点函数，强制链接器从 tls_shim.a 拉入该目标文件

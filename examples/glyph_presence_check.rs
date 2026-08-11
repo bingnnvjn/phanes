@@ -23,6 +23,7 @@ fn empty_cell() -> Cell {
         strikethrough: false,
         overline: false,
         col_span: 1,
+        wide: fable_render::ffi::CELL_WIDE_NARROW,
     }
 }
 
@@ -58,11 +59,17 @@ fn check_wide_char_scale(atlas: &mut GlyphAtlas) -> bool {
         lines: vec![vec![
             Cell {
                 text: "中".to_string(),
+                wide: fable_render::ffi::CELL_WIDE_WIDE,
                 ..empty_cell()
             },
-            empty_cell(),
+            Cell {
+                text: String::new(),
+                wide: fable_render::ffi::CELL_WIDE_SPACER_TAIL,
+                ..empty_cell()
+            },
             Cell {
                 text: "A".to_string(),
+                wide: fable_render::ffi::CELL_WIDE_NARROW,
                 ..empty_cell()
             },
             empty_cell(),

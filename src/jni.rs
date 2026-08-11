@@ -217,6 +217,29 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetCellSize(
     });
 }
 
+/// 工单 26：同步查询核心光标视口位置。返回 1=有光标（out[0]=列 out[1]=行，
+/// 均以核心 2027 列模型为准，供 CPR 应答），0=无光标（out 置 -1）。
+#[no_mangle]
+pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetCursor(
+    mut env: EnvUnowned,
+    _class: JClass,
+    handle: jlong,
+    out: JIntArray,
+) -> jint {
+    let cursor = with_renderer(handle, |renderer| renderer.cursor_position());
+    with_jni_env(env, |env| {
+        let arr_len = out.len(env).unwrap_or(0);
+        if arr_len >= 2 {
+            let values = match cursor {
+                Some((x, y)) => [x as jint, y as jint],
+                None => [-1, -1],
+            };
+            let _ = out.set_region(env, 0, &values);
+        }
+        Ok(if cursor.is_some() { 1 } else { 0 })
+    })
+}
+
 #[no_mangle]
 pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererSetPalette(
     _env: EnvUnowned,

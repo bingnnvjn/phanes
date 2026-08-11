@@ -150,6 +150,10 @@ pub struct Cell {
     /// 占几列（工单 13 布局：emoji cluster 一律 2 格；核心拆分/1 格宽由
     /// `merge_emoji_runs` 归一）。
     pub col_span: u32,
+    /// 核心宽属性（工单 26：唯一宽度权威，ghostty_cell_get WIDE）：
+    /// 0=NARROW，1=WIDE（宽字符本身，占 2 列），2=SPACER_TAIL（宽字符后占位格，
+    /// 不绘制），3=SPACER_HEAD（软换行行尾宽字符占位格，不绘制）。
+    pub wide: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -370,6 +374,22 @@ pub unsafe fn collect_snapshot(
         let mut row_cells = Vec::new();
         while ghostty_render_state_row_cells_next(cells) {
             let text = cell_text(cells);
+            let mut raw: GhosttyCell = 0;
+            let mut wide: i32 = CELL_WIDE_NARROW;
+            let r_raw = ghostty_render_state_row_cells_get(
+                cells,
+                CELL_DATA_RAW,
+                &mut raw as *mut GhosttyCell as *mut c_void,
+            );
+            if r_raw == GHOSTTY_SUCCESS
+                && ghostty_cell_get(raw, GHOSTTY_CELL_DATA_WIDE, &mut wide as *mut i32 as *mut c_void)
+                    == GHOSTTY_SUCCESS
+            {
+                // wide 取值 0..=3；异常值按 NARROW 处理。
+                if wide < CELL_WIDE_NARROW || wide > CELL_WIDE_SPACER_HEAD {
+                    wide = CELL_WIDE_NARROW;
+                }
+            }
             let mut fg = cell_color(cells, CELL_DATA_FG_COLOR);
             let mut bg = cell_color(cells, CELL_DATA_BG_COLOR);
             let mut selected: bool = false;
@@ -442,6 +462,7 @@ pub unsafe fn collect_snapshot(
                 strikethrough: style.strikethrough,
                 overline: style.overline,
                 col_span: 1,
+                wide,
             });
         }
         lines.push(row_cells);
@@ -503,7 +524,8 @@ mod tests {
     use super::*;
 
     /// 模拟核心（DECSET 2027）行 cells：每个宽字符/cluster 后跟一个空
-    /// 占位格（2 列）；列定位 = cell 下标。col_span 恒 1（merge 已废除）。
+    /// 占位格（2 列）；列定位 = cell 下标。col_span 恒 1（merge 已废除）；
+    /// wide = 核心 WIDE 标记（工单 26：唯一宽度权威）。
     fn core_row(texts: &[&str]) -> Vec<Cell> {
         let mut out = Vec::new();
         for t in texts {
@@ -517,6 +539,7 @@ mod tests {
                 strikethrough: false,
                 overline: false,
                 col_span: 1,
+                wide: CELL_WIDE_WIDE,
             });
             if !t.is_empty() {
                 out.push(Cell {
@@ -529,6 +552,7 @@ mod tests {
                     strikethrough: false,
                     overline: false,
                     col_span: 1,
+                    wide: CELL_WIDE_SPACER_TAIL,
                 });
             }
         }
@@ -744,7 +768,7 @@ mod tests {
         // （中文/emoji/ZWJ cluster）上光标画 2 格宽。
         // cells: 中/␣/🚀/␣/🧑🎓/␣/A（宽字符带占位格，A 窄字符无占位，
         // 共 7 列）；cell_w=10px。
-        let cell = |text: &str| Cell {
+        let cell = |text: &str, wide: i32| Cell {
             text: text.to_string(),
             fg: None,
             bg: None,
@@ -754,15 +778,16 @@ mod tests {
             strikethrough: false,
             overline: false,
             col_span: 1,
+            wide,
         };
         let row = vec![
-            cell("中"),
-            cell(""),
-            cell("🚀"),
-            cell(""),
-            cell("🧑\u{200d}🎓"),
-            cell(""),
-            cell("A"),
+            cell("中", CELL_WIDE_WIDE),
+            cell("", CELL_WIDE_SPACER_TAIL),
+            cell("🚀", CELL_WIDE_WIDE),
+            cell("", CELL_WIDE_SPACER_TAIL),
+            cell("🧑\u{200d}🎓", CELL_WIDE_WIDE),
+            cell("", CELL_WIDE_SPACER_TAIL),
+            cell("A", CELL_WIDE_NARROW),
         ];
         let base = Snapshot {
             cols: 7,
@@ -806,6 +831,131 @@ mod tests {
         // 光标在普通字符 A（列 6）：1 格（60..70）。
         let (x0, x1) = block_rect(&Snapshot { cursor: Some((6, 0)), ..base.clone() });
         assert!((x0 - 60.0).abs() < 0.01 && (x1 - 70.0).abs() < 0.01, "A: {x0}..{x1}");
+    }
+
+    #[test]
+    fn ascii_last_char_cursor_narrow_trailing_padding() {
+        // 真机 bug：打 "ABCD" 后 D 是最后一个窄字符，核心行 cells = cols，
+        // D 之后是行尾空填充格。旧启发式「非空格 + 下一格空 = 宽字符」
+        // 把 D 当宽字符 → 光标画 2 格宽。回归：D 上光标应 1 格窄。
+        let cell = |text: &str| Cell {
+            text: text.to_string(),
+            fg: None,
+            bg: None,
+            selected: false,
+            underline: false,
+            underline_color: None,
+            strikethrough: false,
+            overline: false,
+            col_span: 1,
+            wide: CELL_WIDE_NARROW,
+        };
+        let row = vec![
+            cell("A"),
+            cell("B"),
+            cell("C"),
+            cell("D"),
+            cell(""),
+            cell(""),
+        ];
+        let base = Snapshot {
+            cols: 6,
+            rows: 1,
+            lines: vec![row],
+            cursor: Some((3, 0)),
+            cursor_style: 1,
+            default_fg: Rgb { r: 255, g: 255, b: 255 },
+            default_bg: Rgb { r: 0, g: 0, b: 0 },
+            cursor_color: Rgb { r: 255, g: 255, b: 255 },
+            dirty: 1,
+            dirty_rows: vec![0],
+            selection_color: Rgb { r: 0, g: 0, b: 255 },
+            palette: None,
+            ansi_override: None,
+        };
+        let verts = build_overlay_vertices(&base, &[], 60, 10);
+        let mut rects: Vec<(f32, f32)> = Vec::new();
+        for g in verts.chunks_exact(6) {
+            if g[0].mode < 0.5 {
+                let x0 = (g[0].position[0] + 1.0) / 2.0 * 60.0;
+                let x1 = (g[1].position[0] + 1.0) / 2.0 * 60.0;
+                rects.push((x0.min(x1), x0.max(x1)));
+            }
+        }
+        assert!(!rects.is_empty(), "应有光标矩形");
+        let (x0, x1) = rects[0];
+        assert!(
+            (x0 - 30.0).abs() < 0.01 && (x1 - 40.0).abs() < 0.01,
+            "D 上光标应 1 格窄（30..40），实际 {x0}..{x1}"
+        );
+    }
+
+    #[test]
+    fn ascii_last_char_glyph_not_scaled_wide() {
+        // 真机 bug：D 被旧启发式当宽字符，scale 走 1.15 宽分支放大绘制。
+        // 回归：同一窄字体 D 与 C 字形面积应近似（<1.25x）。
+        let cell = |text: &str| Cell {
+            text: text.to_string(),
+            fg: None,
+            bg: None,
+            selected: false,
+            underline: false,
+            underline_color: None,
+            strikethrough: false,
+            overline: false,
+            col_span: 1,
+            wide: CELL_WIDE_NARROW,
+        };
+        let row = vec![
+            cell("A"),
+            cell("B"),
+            cell("C"),
+            cell("D"),
+            cell(""),
+            cell(""),
+        ];
+        let snapshot = Snapshot {
+            cols: 6,
+            rows: 1,
+            lines: vec![row],
+            cursor: None,
+            cursor_style: 0,
+            default_fg: Rgb { r: 255, g: 255, b: 255 },
+            default_bg: Rgb { r: 0, g: 0, b: 0 },
+            cursor_color: Rgb { r: 255, g: 255, b: 255 },
+            dirty: 1,
+            dirty_rows: vec![0],
+            selection_color: Rgb { r: 0, g: 0, b: 255 },
+            palette: None,
+            ansi_override: None,
+        };
+        let verts = build_row_vertices(0, &snapshot.lines[0], &snapshot, &mut GlyphAtlas::new().expect("atlas"), 60, 20);
+        let mut glyphs: Vec<(f32, f32, f32)> = Vec::new(); // (x0, x1, area)
+        for g in verts.chunks_exact(6) {
+            if g[0].mode >= 0.5 {
+                let xs = [g[0].position[0], g[1].position[0], g[2].position[0], g[3].position[0], g[4].position[0], g[5].position[0]];
+                let ys = [g[0].position[1], g[1].position[1], g[2].position[1], g[3].position[1], g[4].position[1], g[5].position[1]];
+                let x0 = xs.iter().cloned().fold(f32::INFINITY, f32::min);
+                let x1 = xs.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+                let y0 = ys.iter().cloned().fold(f32::INFINITY, f32::min);
+                let y1 = ys.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+                let w = (x1 - x0).abs() / 2.0 * 60.0;
+                let h = (y1 - y0).abs() / 2.0 * 20.0;
+                glyphs.push((x0.min(x1), x0.max(x1), w * h));
+            }
+        }
+        glyphs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        assert_eq!(glyphs.len(), 4, "A B C D 四个字形");
+        let (c0, c1, c_area) = glyphs[2];
+        let (d0, d1, d_area) = glyphs[3];
+        assert!(
+            d_area <= c_area * 1.25,
+            "D 字形不应放大（C={c_area:.1} D={d_area:.1}）"
+        );
+        assert!(
+            d1 <= 40.0 + 0.1,
+            "D 字形右缘不应超出自身列（{d0:.1}..{d1:.1}）"
+        );
     }
 
     #[test]
@@ -1803,16 +1953,12 @@ pub fn build_row_vertices(
     // 工单 22 全局重构：以核心网格为唯一列宽权威。
     // libghostty-vt（DECSET 2027 下）每行 cells 数 = cols，宽字符/cluster
     // 输出「1 非空格 + 1 空占位格」共 2 列；列定位 = cell 下标（核心列）。
-    // 渲染层不再做任何启发式 merge/宽度自算（废除 merge_emoji_runs 与
-    // 手写宽度表），宽度只看「下一格是否空占位格」。
+    // 工单 26：宽度看核心 WIDE 标记（ghostty_cell_get），废除"下一格是否空"
+    // 启发式——该启发式会把行尾最后一个窄字符（其后全是空格）误判为宽字符。
     for (col_idx, cell) in row.iter().enumerate() {
         let x = col_idx as f32 * cell_w;
-        // 宽字符判定：非空格且下一格是空占位格 -> 占 2 列。
-        let is_wide = !cell.text.is_empty()
-            && row
-                .get(col_idx + 1)
-                .map(|next| next.text.is_empty())
-                .unwrap_or(false);
+        // 宽字符判定：核心 WIDE 标记 = 宽字符本身（占 2 列）；占位格不绘制。
+        let is_wide = cell.wide == CELL_WIDE_WIDE;
         let y = row_y;
 
         // 清屏色 = push 配色板背景（否则维持现状深灰）；
@@ -2078,39 +2224,48 @@ pub fn build_overlay_vertices(
             }
             let mut color = rgb_components(cursor_rgb);
             color[3] = 0.9;
-            // 工单 22 全局重构：光标列 = 核心列 = 行 cells 下标（2027 下
-            // 每 cell 一列）。宽字符 = 非空格 + 下一格空占位：光标画 2 格宽
-            // 覆盖整个字；光标停在占位格（第二列）时归到该字起始列。
+            // 工单 26：光标宽度以核心 WIDE 标记为准（唯一宽度权威），
+            // 不再用"下一格是否为空"启发式（会把行尾最后一个窄字符误判为
+            // 宽字符，造成 ABCD 的 D / 单字母 A 变宽光标）。
+            // WIDE → 光标画 2 格宽；SPACER_TAIL/SPACER_HEAD（占位格）→
+            // 归到宽字符起始列画 2 格；其余 → 1 格。
+            let mut cursor_row = cursor_y;
             let mut cursor_col = cursor_x;
             let mut cursor_span = 1u32;
             if let Some(line) = snapshot.lines.get(cursor_y as usize) {
                 let idx = cursor_x as usize;
-                let on_wide = line
-                    .get(idx)
-                    .map(|c| !c.text.is_empty())
-                    .unwrap_or(false)
-                    && line
-                        .get(idx + 1)
-                        .map(|n| n.text.is_empty())
-                        .unwrap_or(false);
-                let on_spacer = line.get(idx).map(|c| c.text.is_empty()).unwrap_or(false);
-                if on_wide {
+                let wide = line.get(idx).map(|c| c.wide).unwrap_or(CELL_WIDE_NARROW);
+                if wide == CELL_WIDE_WIDE {
                     cursor_span = 2;
-                } else if on_spacer && idx > 0 {
-                    // 占位格：归到前一格宽字符。
+                } else if wide == CELL_WIDE_SPACER_TAIL && idx > 0 {
+                    // 占位格：归到宽字符起始列（前一格即宽字符本身）。
                     let prev_wide = line
                         .get(idx - 1)
-                        .map(|c| !c.text.is_empty())
-                        .unwrap_or(false)
-                        && line.get(idx).map(|c| c.text.is_empty()).unwrap_or(false);
+                        .map(|c| c.wide == CELL_WIDE_WIDE)
+                        .unwrap_or(false);
                     if prev_wide {
                         cursor_col = (idx - 1) as u16;
                         cursor_span = 2;
                     }
+                } else if wide == CELL_WIDE_SPACER_HEAD {
+                    // 软换行行尾占位格：宽字符在**下一行**起始列（不是 idx-1）。
+                    // 光标块画到下一行 (0, row+1) 2 格宽；防御：下一行 0 列
+                    // 非宽字符时按 1 格画在当前列。
+                    if let Some(next_line) = snapshot.lines.get(cursor_y as usize + 1) {
+                        if next_line
+                            .first()
+                            .map(|c| c.wide == CELL_WIDE_WIDE)
+                            .unwrap_or(false)
+                        {
+                            cursor_row = cursor_y + 1;
+                            cursor_col = 0;
+                            cursor_span = 2;
+                        }
+                    }
                 }
             }
             let x = cursor_col as f32 * cell_w;
-            let y = cursor_y as f32 * row_h;
+            let y = cursor_row as f32 * row_h;
             let cursor_w = cursor_span as f32 * cell_w;
             match snapshot.cursor_style {
                 0 => {
@@ -3078,6 +3233,9 @@ enum RenderCommand {
     ResetPalette,
     SelectionText(std::sync::mpsc::Sender<String>),
     CellSize(std::sync::mpsc::Sender<(u32, u32)>),
+    /// 工单 26：同步查询当前核心光标视口位置（CPR 应答用核心模型，避免
+    /// 与旧 Java 模拟器 8 列宽模型双轨）。
+    CursorPosition(std::sync::mpsc::Sender<Option<(u16, u16)>>),
     Attach(*mut c_void, u32, u32),
     Detach,
     Render(u32, u32),
@@ -3324,16 +3482,8 @@ impl RendererCore {
             first = false;
             let line = &snapshot.lines[overlay.row as usize];
             for (col, cell) in line.iter().enumerate() {
-                let width = if !cell.text.is_empty()
-                    && line
-                        .get(col + 1)
-                        .map(|n| n.text.is_empty())
-                        .unwrap_or(false)
-                {
-                    2
-                } else {
-                    1
-                };
+                // 工单 26：宽度以核心 WIDE 标记为准（废除"下一格为空"启发式）。
+                let width = if cell.wide == CELL_WIDE_WIDE { 2 } else { 1 };
                 let start = col as u32;
                 let end = start + width;
                 if end <= overlay.start_col || start >= overlay.end_col {
@@ -3343,6 +3493,14 @@ impl RendererCore {
             }
         }
         out
+    }
+
+    /// 工单 26：当前核心光标视口位置（行/列），无光标返回 None。
+    fn cursor_position(&self) -> Option<(u16, u16)> {
+        unsafe {
+            let _ = ghostty_render_state_update(self.state, self.terminal);
+        }
+        self.current_snapshot().cursor
     }
 
     fn clear_color(&self) -> [f32; 4] {
@@ -3506,6 +3664,9 @@ impl RendererCore {
                 }
                 RenderCommand::CellSize(tx) => {
                     let _ = tx.send(self.cell_size());
+                }
+                RenderCommand::CursorPosition(tx) => {
+                    let _ = tx.send(self.cursor_position());
                 }
                 RenderCommand::Attach(window, width, height) => {
                     if let Err(error) = self.attach(window, width, height) {
@@ -3955,6 +4116,16 @@ impl Renderer {
             rx.recv().unwrap_or((0, 0))
         } else {
             (0, 0)
+        }
+    }
+
+    /// 工单 26：同步查询当前核心光标视口位置（mailbox 保序）。
+    pub fn cursor_position(&self) -> Option<(u16, u16)> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        if self.send(RenderCommand::CursorPosition(tx)) {
+            rx.recv().unwrap_or(None)
+        } else {
+            None
         }
     }
 

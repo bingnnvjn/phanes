@@ -187,6 +187,8 @@ struct Cell {
     overline: bool,
     /// 占几列（工单 13：merge_emoji_runs 归一 emoji 为 2 格）。
     col_span: usize,
+    /// 核心宽属性（工单 26：唯一宽度权威；0=窄 1=宽 2/3=占位格）。
+    wide: i32,
 }
 
 impl Default for Cell {
@@ -201,6 +203,7 @@ impl Default for Cell {
             strikethrough: false,
             overline: false,
             col_span: 1,
+            wide: CELL_WIDE_NARROW,
         }
     }
 }
@@ -321,12 +324,41 @@ fn rasterize_grid(
                 }
             }
 
-            // 光标（块状）：光标格画反色底
+            // 光标（块状）：以核心 WIDE 标记为准——宽字符/其占位格画 2 格宽
+            // 反色块，普通字符 1 格（工单 26：废弃"下一格为空"启发式，避免
+            // 行尾最后一个窄字符被误判成宽字符）。
             let is_cursor = cursor == Some((col_idx, row_index));
             if is_cursor {
+                let mut cursor_start = origin_x;
+                let cursor_w = if cell.wide == CELL_WIDE_WIDE {
+                    CELL_W * 2
+                } else if cell.wide == CELL_WIDE_SPACER_TAIL && col_idx > 0 {
+                    // 占位格：归到宽字符起始列画 2 格。
+                    if row
+                        .get(col_idx - 1)
+                        .map(|c| c.wide == CELL_WIDE_WIDE)
+                        .unwrap_or(false)
+                    {
+                        cursor_start = origin_x - CELL_W;
+                        CELL_W * 2
+                    } else {
+                        CELL_W
+                    }
+                } else if cell.wide == CELL_WIDE_SPACER_HEAD {
+                    // 软换行行尾占位格：宽字符在下一行起始列——本行迭代画不了
+                    // 跨行光标，按 1 格画在当前列（GPU 路径已有下一行归位；
+                    // 软件路径仅用于离屏断言，该边缘场景不参与）。
+                    CELL_W
+                } else {
+                    CELL_W
+                };
                 for y in 0..CELL_H {
-                    for x in 0..CELL_W {
-                        let i = ((origin_y + y) * width + origin_x + x) * 4;
+                    for x in 0..cursor_w {
+                        let dx = cursor_start + x;
+                        if dx >= width {
+                            break;
+                        }
+                        let i = ((origin_y + y) * width + dx) * 4;
                         framebuffer[i] = 255 - framebuffer[i];
                         framebuffer[i + 1] = 255 - framebuffer[i + 1];
                         framebuffer[i + 2] = 255 - framebuffer[i + 2];
@@ -944,6 +976,24 @@ fn main() {
                     CELL_DATA_STYLE,
                     &mut style as *mut GhosttyStyle as *mut c_void,
                 );
+                let mut raw: GhosttyCell = 0;
+                let mut wide: i32 = CELL_WIDE_NARROW;
+                let r_raw = ghostty_render_state_row_cells_get(
+                    cells,
+                    CELL_DATA_RAW,
+                    &mut raw as *mut GhosttyCell as *mut c_void,
+                );
+                if r_raw == GHOSTTY_SUCCESS
+                    && ghostty_cell_get(
+                        raw,
+                        GHOSTTY_CELL_DATA_WIDE,
+                        &mut wide as *mut i32 as *mut c_void,
+                    ) == GHOSTTY_SUCCESS
+                {
+                    if wide < CELL_WIDE_NARROW || wide > CELL_WIDE_SPACER_HEAD {
+                        wide = CELL_WIDE_NARROW;
+                    }
+                }
                 line_cells.push(Cell {
                     text,
                     fg,
@@ -957,6 +1007,7 @@ fn main() {
                     strikethrough: style.strikethrough,
                     overline: style.overline,
                     col_span: 1,
+                    wide,
                 });
             }
 
@@ -1516,6 +1567,24 @@ fn main() {
                     CELL_DATA_STYLE,
                     &mut style as *mut GhosttyStyle as *mut c_void,
                 );
+                let mut raw: GhosttyCell = 0;
+                let mut wide: i32 = CELL_WIDE_NARROW;
+                let r_raw = ghostty_render_state_row_cells_get(
+                    cells,
+                    CELL_DATA_RAW,
+                    &mut raw as *mut GhosttyCell as *mut c_void,
+                );
+                if r_raw == GHOSTTY_SUCCESS
+                    && ghostty_cell_get(
+                        raw,
+                        GHOSTTY_CELL_DATA_WIDE,
+                        &mut wide as *mut i32 as *mut c_void,
+                    ) == GHOSTTY_SUCCESS
+                {
+                    if wide < CELL_WIDE_NARROW || wide > CELL_WIDE_SPACER_HEAD {
+                        wide = CELL_WIDE_NARROW;
+                    }
+                }
                 row_cells.push(Cell {
                     text,
                     fg,
@@ -1529,6 +1598,7 @@ fn main() {
                     strikethrough: style.strikethrough,
                     overline: style.overline,
                     col_span: 1,
+                    wide,
                 });
             }
             grid.push(row_cells);
