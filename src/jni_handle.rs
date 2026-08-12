@@ -34,6 +34,12 @@ static EVENT_CALLBACKS: LazyLock<Mutex<HashMap<SessionId, CallbackSlot>>> =
 static LOG_CALLBACK: LazyLock<Mutex<Option<CallbackSlot>>> = LazyLock::new(|| Mutex::new(None));
 static LOG_DISPATCHER_STARTED: AtomicBool = AtomicBool::new(false);
 
+/// 单个 JNI 回调合并的最大输出字节数。Rust reader 仍以 4 KiB 读取；这里合到
+/// 64 KiB 后才跨 JNI，Android 侧还会继续合并为主线程 drain 批次。
+const MAX_JNI_OUTPUT_BATCH_BYTES: usize = 64 * 1024;
+const OUTPUT_COALESCE_WINDOW: Duration = Duration::from_millis(4);
+const IDLE_EVENT_POLL_WINDOW: Duration = Duration::from_millis(250);
+
 /// 回调槽：持有 JavaVM（attach 用）与回调对象全局引用。
 #[derive(Clone)]
 struct CallbackSlot {
@@ -153,6 +159,21 @@ fn dispatch_event(
     Ok(())
 }
 
+/// 在 callbacks 锁保护内调用 Java：sessionClose/sessionSetEventCallback(null) 会先
+/// 取得同一把锁并撤销槽位，所以其返回后不会再有旧 callback 进入 Java。
+fn dispatch_registered_event(
+    env: &mut Env,
+    session_id: SessionId,
+    ev: &Event,
+) -> jni::errors::Result<bool> {
+    let callbacks = EVENT_CALLBACKS.lock().unwrap_or_else(|p| p.into_inner());
+    let Some(slot) = callbacks.get(&session_id) else {
+        return Ok(false);
+    };
+    dispatch_event(env, slot.callback.as_ref(), ev)?;
+    Ok(true)
+}
+
 fn dispatch_log(
     env: &mut Env,
     callback: &jni::objects::Global<JObject<'static>>,
@@ -179,7 +200,28 @@ fn dispatch_log(
     Ok(())
 }
 
-/// 每会话一个事件分发线程：从会话事件流收事件，转发 Kotlin 回调。
+/// 把相邻 output_chunk 合成一个 JNI payload；不是输出事件或达到 64 KiB 时，返回
+/// 应立即送达的上一批。保序且不丢字节。
+fn merge_output_batch(pending: &mut Option<Event>, event: Event) -> Option<Event> {
+    debug_assert!(event.kind == EventKind::OutputChunk);
+    let Some(current) = pending.as_mut() else {
+        *pending = Some(event);
+        return None;
+    };
+    let current_bytes = current.meta.bytes.get_or_insert_with(Vec::new);
+    let incoming = event.meta.bytes.as_deref().unwrap_or_default();
+    if current.session_id == event.session_id
+        && current_bytes.len() + incoming.len() <= MAX_JNI_OUTPUT_BATCH_BYTES
+    {
+        current_bytes.extend_from_slice(incoming);
+        None
+    } else {
+        let previous = pending.replace(event);
+        previous
+    }
+}
+
+/// 每会话一个事件分发线程：连续 4 KiB 输出在最多 4ms/64KiB 内合批，再跨 JNI。
 /// 回调槽被清空或收到 session_closed 后退出。
 fn spawn_event_dispatcher(session_id: SessionId, slot: CallbackSlot) {
     let Some(session) = MANAGER.get(session_id) else {
@@ -194,25 +236,58 @@ fn spawn_event_dispatcher(session_id: SessionId, slot: CallbackSlot) {
         .name(format!("fable-session-events-{session_id}"))
         .spawn(move || {
             let _ = vm.attach_current_thread(|env| -> jni::errors::Result<()> {
+                let mut pending_output = None;
                 loop {
-                    let slot = EVENT_CALLBACKS
+                    let callback_registered = EVENT_CALLBACKS
                         .lock()
-                        .map(|m| m.get(&session_id).cloned())
-                        .unwrap_or(None);
-                    let Some(slot) = slot else { break };
-                    match rx.recv_timeout(Duration::from_millis(250)) {
+                        .map(|m| m.contains_key(&session_id))
+                        .unwrap_or(false);
+                    if !callback_registered {
+                        break;
+                    }
+                    let timeout = if pending_output.is_some() {
+                        OUTPUT_COALESCE_WINDOW
+                    } else {
+                        IDLE_EVENT_POLL_WINDOW
+                    };
+                    match rx.recv_timeout(timeout) {
                         Ok(ev) => {
-                            env.with_local_frame(8, |env| {
-                                dispatch_event(env, slot.callback.as_ref(), &ev)
-                            })?;
+                            if ev.kind == EventKind::OutputChunk {
+                                if let Some(batch) = merge_output_batch(&mut pending_output, ev) {
+                                    if !env.with_local_frame(8, |env| {
+                                        dispatch_registered_event(env, session_id, &batch)
+                                    })? {
+                                        break;
+                                    }
+                                }
+                                continue;
+                            }
+                            if let Some(batch) = pending_output.take() {
+                                if !env.with_local_frame(8, |env| {
+                                    dispatch_registered_event(env, session_id, &batch)
+                                })? {
+                                    break;
+                                }
+                            }
+                            if !env.with_local_frame(8, |env| {
+                                dispatch_registered_event(env, session_id, &ev)
+                            })? {
+                                break;
+                            }
                             if ev.kind == EventKind::SessionClosed {
                                 break;
                             }
                         }
-                        // 超时≠退出：静默期（用户思考/长时间无输出）后回显与命令
-                        // 输出仍须投递；只有会话释放（events_tx drop）才退出。
-                        // 旧实现超时即自杀 → 输入进了 shell 但回显全丢（工单 26 真机问题）。
-                        Err(RecvTimeoutError::Timeout) => continue,
+                        // 4ms 输出合并窗结束后立即回显，静默期仍继续等后续输出。
+                        Err(RecvTimeoutError::Timeout) => {
+                            if let Some(batch) = pending_output.take() {
+                                if !env.with_local_frame(8, |env| {
+                                    dispatch_registered_event(env, session_id, &batch)
+                                })? {
+                                    break;
+                                }
+                            }
+                        }
                         Err(RecvTimeoutError::Disconnected) => break,
                     }
                 }
@@ -229,7 +304,9 @@ fn spawn_event_dispatcher(session_id: SessionId, slot: CallbackSlot) {
     }
 }
 
-/// 全局日志分发线程（只起一个）：转发 LogEntry 到当前注册的日志回调。
+/// 全局日志分发线程（只起一个）：进程级所有权随 libfable-session 直到进程退出。
+/// 不提供 per-session stop；每条日志临时读取当前槽位，sessionSetLogCallback(null)
+/// 立即释放旧 Java 全局引用，线程不会永久持有失效 callback。
 fn spawn_log_dispatcher(vm: Arc<JavaVM>) {
     if LOG_DISPATCHER_STARTED.swap(true, Ordering::SeqCst) {
         return;
@@ -267,6 +344,50 @@ fn register_event_callback(session_id: SessionId, slot: CallbackSlot) {
         .unwrap_or(true);
     if !already {
         spawn_event_dispatcher(session_id, slot);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::event::{EventMeta, now_ms};
+
+    fn output(bytes: &[u8]) -> Event {
+        Event {
+            kind: EventKind::OutputChunk,
+            session_id: 7,
+            timestamp_ms: now_ms(),
+            meta: EventMeta {
+                bytes: Some(bytes.to_vec()),
+                ..EventMeta::default()
+            },
+        }
+    }
+
+    #[test]
+    fn consecutive_output_chunks_coalesce_without_losing_order() {
+        let mut pending = None;
+        assert!(merge_output_batch(&mut pending, output(b"alpha")).is_none());
+        assert!(merge_output_batch(&mut pending, output(b"-beta")).is_none());
+        assert!(merge_output_batch(&mut pending, output(b"-gamma")).is_none());
+
+        let batch = pending.take().expect("应有合并后的输出批次");
+        assert_eq!(batch.kind, EventKind::OutputChunk);
+        assert_eq!(batch.meta.bytes.as_deref(), Some(b"alpha-beta-gamma".as_slice()));
+    }
+
+    #[test]
+    fn output_batch_flushes_before_exceeding_bound() {
+        let first = vec![b'a'; MAX_JNI_OUTPUT_BATCH_BYTES];
+        let mut pending = None;
+        assert!(merge_output_batch(&mut pending, output(&first)).is_none());
+
+        let flushed = merge_output_batch(&mut pending, output(b"b")).expect("满批后应先送旧批");
+        assert_eq!(
+            flushed.meta.bytes.as_ref().map(Vec::len),
+            Some(MAX_JNI_OUTPUT_BATCH_BYTES)
+        );
+        assert_eq!(pending.unwrap().meta.bytes.as_deref(), Some(b"b".as_slice()));
     }
 }
 
@@ -426,6 +547,10 @@ pub extern "system" fn Java_com_gph_fable_app_SessionHandle_sessionClose(
     if handle <= 0 {
         return;
     }
+    // 先撤销全局 Java 引用并与在途 dispatch 串行化，关闭后不再投递旧 callback。
+    let _ = EVENT_CALLBACKS
+        .lock()
+        .map(|mut m| m.remove(&(handle as u64)));
     let _ = MANAGER.close(handle as u64);
 }
 

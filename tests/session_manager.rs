@@ -390,3 +390,69 @@ fn read_output_buffer_matches_event_stream() {
 
     m.close(id).unwrap();
 }
+
+/// 工单 44：4 会话 × 450,000 行 = 1,800,000 行。
+/// 直接验证 reader → 有界事件流在持续输出下保序、零丢失；Android 主线程 batch
+/// 由 MainThreadEventDispatcher JVM 契约另行覆盖，真机 ANR/分配数据走 baseline 协议。
+#[test]
+fn four_sessions_deliver_1_8m_lines_without_loss() {
+    const SESSIONS: usize = 4;
+    const LINES_PER_SESSION: usize = 450_000;
+
+    let m = SessionManager::new();
+    let start = Instant::now();
+    let mut sessions = Vec::new();
+    for _ in 0..SESSIONS {
+        let mut cfg = base_cfg();
+        cfg.args = vec![
+            "bash".into(),
+            "--noprofile".into(),
+            "--norc".into(),
+            "-c".into(),
+            format!("seq 1 {LINES_PER_SESSION}"),
+        ];
+        let id = m.create(cfg).unwrap();
+        sessions.push((id, m.get(id).unwrap(), Vec::new(), false));
+    }
+
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while sessions.iter().any(|(_, _, _, complete)| !complete) {
+        if Instant::now() >= deadline {
+            panic!("4 会话 180 万行输出超时");
+        }
+        let mut progress = false;
+        for (_id, session, events, complete) in &mut sessions {
+            if *complete {
+                continue;
+            }
+            if let Ok(event) = session.try_recv_event() {
+                progress = true;
+                *complete = event.kind == EventKind::SessionClosed;
+                events.push(event);
+            }
+        }
+        if !progress {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    for (id, _session, events, _complete) in &sessions {
+        let text = text_of(events).replace("\r\n", "\n").replace('\r', "");
+        let mut lines = text.lines();
+        for expected in 1..=LINES_PER_SESSION {
+            assert_eq!(
+                lines.next(),
+                Some(expected.to_string().as_str()),
+                "会话 {id} 第 {expected} 行不完整或乱序"
+            );
+        }
+        assert_eq!(lines.next(), None, "会话 {id} 有额外输出");
+        m.close(*id).unwrap();
+    }
+    assert!(m.list().is_empty());
+    println!(
+        "4 会话 {} 行输出完整，耗时 {:?}",
+        SESSIONS * LINES_PER_SESSION,
+        start.elapsed()
+    );
+}
