@@ -4,6 +4,8 @@ apply plugin: 'maven-publish'
 android {
     namespace = "com.gph.fable.shared"
     compileSdk = 36
+    // 工单 34：AGP 9 内置 Kotlin（不引 KGP），termux-shared 迁移 Kotlin。
+    enableKotlin = true
     ndkVersion = System.getenv("JITPACK_NDK_VERSION") ?: "22.1.7171670"
 
     dependencies {
