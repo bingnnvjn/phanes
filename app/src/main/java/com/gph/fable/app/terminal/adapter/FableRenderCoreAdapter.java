@@ -20,7 +20,13 @@ public final class FableRenderCoreAdapter implements CoreAdapter {
 
     private static final String LOG_TAG = "FableRenderCoreAdapter";
 
+    @FunctionalInterface
+    interface RendererFactory {
+        long create(int cols, int rows);
+    }
+
     private final Object mLock = new Object();
+    private final RendererFactory mRendererFactory;
 
     private long mHandle;
     private int mCols;
@@ -36,19 +42,35 @@ public final class FableRenderCoreAdapter implements CoreAdapter {
     private int mSelectionArgb;
     private int mCursorArgb;
     private int[] mAnsiArgb;
-    private Context mContext;
+    /**
+     * 适配器随 TerminalSession 跨 Activity 重建存活；只能保留 application Context，
+     * 供字体 assets 初始化使用，绝不能把 Activity 固定在会话上。
+     */
+    private final Context mApplicationContext;
 
     public FableRenderCoreAdapter(int cols, int rows) {
         this(null, cols, rows);
     }
 
     public FableRenderCoreAdapter(Context context, int cols, int rows) {
-        mContext = context;
+        this(context, cols, rows, RenderCore::rendererCreate);
+    }
+
+    /** 仅包内测试缝：稳定模拟 native rendererCreate 返回 0。 */
+    FableRenderCoreAdapter(int cols, int rows, RendererFactory rendererFactory) {
+        this(null, cols, rows, rendererFactory);
+    }
+
+    private FableRenderCoreAdapter(Context context, int cols, int rows,
+                                   RendererFactory rendererFactory) {
+        mApplicationContext = context == null ? null : context.getApplicationContext();
+        mRendererFactory = rendererFactory == null ? RenderCore::rendererCreate : rendererFactory;
         mCols = Math.max(1, cols);
         mRows = Math.max(1, rows);
-        mHandle = RenderCore.rendererCreate(mCols, mRows);
+        mHandle = mRendererFactory.create(mCols, mRows);
+        if (mHandle == 0) return;
         // 工单 22：assets 字体拷贝 + JNI 传路径（Rust 侧 mmap + sha256 校验）。
-        FontAssets.install(context, mHandle);
+        FontAssets.install(mApplicationContext, mHandle);
         // 工单 26：rendererCreate 后**立即**开启 DECSET 2027（grapheme clustering），
         // 先于任何历史字节回放——否则回放内容按每码位算宽（合成 emoji 4-6 列），
         // 与 2027 的 2 列模型混排，造成"一行半/第二行覆盖"。
@@ -288,25 +310,38 @@ public final class FableRenderCoreAdapter implements CoreAdapter {
 
         // 新核心没有单命令 reset API：重建渲染器句柄（旧线程 Quit+join），
         // 再恢复字号/配色板/Surface 附着。
-        long newHandle = RenderCore.rendererCreate(cols, rows);
+        long newHandle = mRendererFactory.create(cols, rows);
         if (newHandle == 0) return;
-        FontAssets.install(mContext, newHandle);
-        // 工单 22 审查修复：reset 重建渲染器（新核心状态）后重发
-        // DECSET 2027（grapheme clustering），否则字素聚合静默关闭、
-        // 组合 emoji 长空白复发。
-        byte[] graphemeOn = "\u001b[?2027h".getBytes(java.nio.charset.StandardCharsets.UTF_8);
-        RenderCore.rendererWrite(newHandle, graphemeOn, graphemeOn.length);
-        if (fontSizePx > 0f) RenderCore.rendererSetFontSize(newHandle, fontSizePx);
-        if (paletteActive) {
-            RenderCore.rendererSetPalette16(newHandle, fgArgb, bgArgb, selectionArgb, cursorArgb, ansiArgb);
-        }
+        boolean installed;
         synchronized (mLock) {
-            mHandle = newHandle;
+            // create 在锁外，避免 native 创建阻塞 adapter 调用；发布与初始化在锁内。
+            // destroy/reset 任一方改变 mHandle 后，本次 reset 丢弃新代，绝不复活会话。
+            installed = mHandle == oldHandle;
+            if (installed) {
+                mHandle = newHandle;
+                FontAssets.install(mApplicationContext, newHandle);
+                // 工单 22：reset 后必须先恢复 2027，再接收任何迟到会话字节。
+                byte[] graphemeOn = "\u001b[?2027h".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                RenderCore.rendererWrite(newHandle, graphemeOn, graphemeOn.length);
+                if (fontSizePx > 0f) RenderCore.rendererSetFontSize(newHandle, fontSizePx);
+                if (paletteActive) {
+                    RenderCore.rendererSetPalette16(newHandle, fgArgb, bgArgb, selectionArgb,
+                            cursorArgb, ansiArgb);
+                }
+                if (attached && surface != null && surface.isValid()
+                        && widthPx > 0 && heightPx > 0) {
+                    // 与 detach 共享 mLock：只要 reset 仍发布新代，就把恢复的 Surface
+                    // 绑定到这一代；detach 要么先发生（attached=false），要么随后
+                    // 对新代 detach，绝不拿陈旧快照重新挂回旧 Surface。
+                    RenderCore.rendererAttach(newHandle, surface, widthPx, heightPx);
+                }
+            }
+        }
+        if (!installed) {
+            RenderCore.rendererDestroy(newHandle);
+            return;
         }
         RenderCore.rendererDestroy(oldHandle);
-        if (attached && surface != null && surface.isValid() && widthPx > 0 && heightPx > 0) {
-            RenderCore.rendererAttach(newHandle, surface, widthPx, heightPx);
-        }
     }
 
     @Override

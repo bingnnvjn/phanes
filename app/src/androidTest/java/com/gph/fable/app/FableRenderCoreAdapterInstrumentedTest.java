@@ -1,16 +1,26 @@
-package com.gph.fable.app;
+package com.gph.fable.app.terminal.adapter;
 
-import com.gph.fable.app.terminal.adapter.FableRenderCoreAdapter;
+import android.content.Context;
+import android.content.ContextWrapper;
+import android.graphics.SurfaceTexture;
+import android.view.Surface;
+
+import com.gph.fable.app.RenderCore;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import java.nio.charset.StandardCharsets;
+import java.lang.reflect.Field;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -132,6 +142,150 @@ public class FableRenderCoreAdapterInstrumentedTest {
             assertFalse(adapter.getModeCursorBlink());
         } finally {
             adapter.destroy();
+        }
+    }
+
+    /**
+     * 工单 43：JNI handle 是 Rust 注册表 token，而不是裸地址。失效 token、重复 destroy
+     * 与销毁后的写/查/渲染必须全部安全返回。
+     */
+    @Test
+    public void invalidAndRepeatedNativeHandlesAreHarmless() {
+        long invalid = Long.MAX_VALUE;
+        RenderCore.rendererDestroy(invalid);
+        RenderCore.rendererDestroy(invalid);
+        RenderCore.rendererWrite(invalid, new byte[] { 'x' }, 1);
+        RenderCore.rendererResetPalette(invalid);
+        RenderCore.rendererDetach(invalid);
+        assertEquals("", RenderCore.rendererSelectionText(invalid));
+        assertEquals("", RenderCore.rendererGetTitle(invalid));
+        assertEquals(0, RenderCore.rendererGetScrollbackRows(invalid));
+        assertFalse(RenderCore.rendererRender(invalid, 1, 1));
+        assertFalse(RenderCore.rendererForceRender(invalid, 1, 1));
+        assertNull(RenderCore.rendererGetWordBoundsAt(invalid, 0, 0));
+    }
+
+    @Test
+    public void createFailureAndCleanupAreHarmless() {
+        FableRenderCoreAdapter adapter = new FableRenderCoreAdapter(80, 24, (cols, rows) -> 0);
+        assertFalse(adapter.isValid());
+        adapter.destroy();
+        adapter.destroy();
+        adapter.write(new byte[] { 'x' }, 1);
+        adapter.reset();
+        assertFalse(adapter.isValid());
+    }
+
+    @Test
+    public void sessionAdapterSurvivesActivityLikeContextRecreation() throws Exception {
+        Context application = androidx.test.platform.app.InstrumentationRegistry
+                .getInstrumentation().getTargetContext().getApplicationContext();
+        Context oldActivityLikeContext = new ContextWrapper(application) {
+            @Override
+            public Context getApplicationContext() {
+                return application;
+            }
+        };
+        Context newActivityLikeContext = new ContextWrapper(application) {
+            @Override
+            public Context getApplicationContext() {
+                return application;
+            }
+        };
+        FableRenderCoreAdapter adapter = new FableRenderCoreAdapter(oldActivityLikeContext, 80, 24);
+        try {
+            Field field = FableRenderCoreAdapter.class.getDeclaredField("mApplicationContext");
+            field.setAccessible(true);
+            assertEquals(application, field.get(adapter));
+            assertFalse("会话适配器不得保留旧 Activity Context",
+                    oldActivityLikeContext == field.get(adapter));
+            assertFalse("会话适配器不得保留重建后的 Activity Context",
+                    newActivityLikeContext == field.get(adapter));
+            // Session 保留 adapter、Activity 替换后 reset 仍只依赖 application Context。
+            adapter.reset();
+            assertTrue(adapter.isValid());
+        } finally {
+            adapter.destroy();
+        }
+    }
+
+    /**
+     * 工单 43：write/query/reset/destroy 可从不同线程交错。测试同时覆盖 reset
+     * 期间 destroy 不会发布新句柄（不“复活”已销毁的会话）。
+     */
+    @Test
+    public void concurrentCallsResetAndDestroyCompleteWithoutResurrection() throws Exception {
+        FableRenderCoreAdapter adapter = new FableRenderCoreAdapter(80, 24);
+        assertTrue(adapter.isValid());
+        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch done = new CountDownLatch(4);
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        Surface surface = new Surface(new SurfaceTexture(0));
+
+        try {
+            Runnable writer = () -> runStress(start, done, failure, () -> {
+                byte[] bytes = "load\r\n".getBytes(StandardCharsets.UTF_8);
+                for (int i = 0; i < 200; i++) {
+                    adapter.write(bytes, bytes.length);
+                    adapter.resize(80 + (i % 3), 24);
+                    adapter.scroll(i % 2);
+                }
+            });
+            Runnable query = () -> runStress(start, done, failure, () -> {
+                int[] cell = new int[2];
+                int[] cursor = new int[2];
+                for (int i = 0; i < 200; i++) {
+                    adapter.getCellSize(cell);
+                    adapter.getCursorPosition(cursor);
+                    adapter.getTitle();
+                    adapter.getSelectionText();
+                    adapter.getTranscriptText(true, true);
+                }
+            });
+            Runnable resetDestroy = () -> runStress(start, done, failure, () -> {
+                for (int i = 0; i < 8; i++) {
+                    adapter.reset();
+                }
+                adapter.destroy();
+                adapter.destroy();
+            });
+            Runnable attach = () -> runStress(start, done, failure, () -> {
+                for (int i = 0; i < 100; i++) {
+                    adapter.attach(surface, 1, 1);
+                    adapter.detach();
+                }
+            });
+
+            new Thread(writer, "renderer-stress-writer").start();
+            new Thread(query, "renderer-stress-query").start();
+            new Thread(resetDestroy, "renderer-stress-reset-destroy").start();
+            new Thread(attach, "renderer-stress-attach").start();
+            start.countDown();
+
+            assertTrue("并发 JNI 调用不应永久阻塞", done.await(20, TimeUnit.SECONDS));
+            assertNull(failure.get());
+            assertFalse("destroy 后 adapter 不得重新发布新句柄", adapter.isValid());
+
+            // destroy 后继续调用仅是无操作，验证会话/Activity 回收后的迟到回调安全。
+            adapter.write(new byte[] { 'x' }, 1);
+            adapter.reset();
+            adapter.detach();
+            adapter.render(1, 1);
+            assertFalse(adapter.isValid());
+        } finally {
+            surface.release();
+        }
+    }
+
+    private static void runStress(CountDownLatch start, CountDownLatch done,
+                                  AtomicReference<Throwable> failure, Runnable action) {
+        try {
+            assertTrue("stress start", start.await(5, TimeUnit.SECONDS));
+            action.run();
+        } catch (Throwable t) {
+            failure.compareAndSet(null, t);
+        } finally {
+            done.countDown();
         }
     }
 }
