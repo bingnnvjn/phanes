@@ -41,8 +41,8 @@ import com.gph.fable.shared.termux.data.TermuxUrlUtils;
 import com.gph.fable.shared.view.KeyboardUtils;
 import com.gph.fable.shared.view.ViewUtils;
 import com.gph.fable.terminal.KeyHandler;
-import com.gph.fable.terminal.TerminalEmulator;
 import com.gph.fable.terminal.TerminalSession;
+import com.gph.fable.terminal.adapter.CoreAdapter;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -118,7 +118,7 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
 
         mTerminalCursorBlinkerStateAlreadySet = false;
 
-        if (mActivity.getTerminalView().mEmulator != null) {
+        if (mActivity.getTerminalView().getCurrentSession() != null) {
             // Start terminal cursor blinking if enabled
             // If emulator is already set, then start blinker now, otherwise wait for onEmulatorSet()
             // event to start it. This is needed since onEmulatorSet() may not be called after
@@ -154,16 +154,14 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
         setTerminalCursorBlinkerState(true);
     }
 
-    /**
-     * Should be called when {@link com.gph.fable.view.TerminalView#mEmulator} is set
-     */
+    /** Should be called when the first session is attached and sized（onEmulatorSet 事件）。 */
     @Override
     public void onEmulatorSet() {
         if (!mTerminalCursorBlinkerStateAlreadySet) {
             // Start terminal cursor blinking if enabled
             // We need to wait for the first session to be attached that's set in
             // TermuxActivity.onServiceConnected() and then the multiple calls to TerminalView.updateSize()
-            // where the final one eventually sets the mEmulator when width/height is not 0. Otherwise
+            // where the final one eventually reports onEmulatorSet when width/height is not 0. Otherwise
             // blinker will not start again if TermuxActivity is started again after exiting it with
             // double back press. Check TerminalView.setTerminalCursorBlinkerState().
             setTerminalCursorBlinkerState(true);
@@ -188,15 +186,14 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
     @Override
     public void onSingleTapUp(MotionEvent e) {
         TerminalSession session = mActivity.getCurrentSession();
-        TerminalEmulator term = session.getEmulator();
         // 工单 30：mouse tracking 状态以 CoreAdapter 为准（新路径）；旧路径回退旧模拟器。
         boolean mouseTrackingActive = session.isMouseTrackingActive();
 
         if (mActivity.getProperties().shouldOpenTerminalTranscriptURLOnClick()) {
             int[] columnAndRow = mActivity.getTerminalView().getColumnAndRow(e, true);
-            // 工单 31 残项：URL 点击取词仍读旧模拟器屏幕内容（CoreAdapter 暂无
-            // word-at-location API；删旧模拟器时需补缝内容查询）。
-            String wordAtTap = term.getScreen().getWordAtLocation(columnAndRow[0], columnAndRow[1]);
+            // 工单 31：URL 取词走核心缝（软换行整行语义，与旧 getWordAtLocation 对齐）。
+            CoreAdapter adapter = session.getCoreAdapter();
+            String wordAtTap = adapter == null ? "" : adapter.getWordAt(columnAndRow[0], columnAndRow[1]);
             LinkedHashSet<CharSequence> urlSet = TermuxUrlUtils.extractUrls(wordAtTap);
 
             if (!urlSet.isEmpty()) {
@@ -301,7 +298,7 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
     public boolean onKeyUp(int keyCode, KeyEvent e) {
         // If emulator is not set, like if bootstrap installation failed and user dismissed the error
         // dialog, then just exit the activity, otherwise they will be stuck in a broken state.
-        if (keyCode == KeyEvent.KEYCODE_BACK && mActivity.getTerminalView().mEmulator == null) {
+        if (keyCode == KeyEvent.KEYCODE_BACK && mActivity.getTerminalView().getCurrentSession() == null) {
             mActivity.finishActivityIfNotFinishing();
             return true;
         }

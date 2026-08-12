@@ -12,30 +12,23 @@ import com.gph.fable.terminal.session.FableSessionSpec;
 /**
  * A terminal session, consisting of a process coupled to a terminal interface.
  * <p>
- * The subprocess will be executed by the constructor, and when the size is made known by a call to
- * {@link #updateSize(int, int, int, int)} terminal emulation will begin and threads will be spawned to handle the subprocess I/O.
- * All terminal emulation and callback methods will be performed on the main thread.
- * <p>
- * The child process may be exited forcefully by using the {@link #finishIfRunning()} method.
- * <p>
  * 工单 26：PTY/进程/生命周期经会话层抽象缝（{@link FableSession}）委托给
- * Rust（libfable-session）实现（Java 会话层已随工单 27 下线删除）；本类只负责字节与
- * emulator / CoreAdapter 的接线，不再直接持有 PTY fd 与读写线程。
+ * Rust（libfable-session）实现（Java 会话层已随工单 27 下线删除）。
+ * 工单 31：旧 TerminalEmulator 已删除；本类只负责字节与 CoreAdapter 的接线，
+ * 不再创建模拟器，也不再持有任何旧模拟器引用。
  * <p>
- * NOTE: The terminal session may outlive the EmulatorView, so be careful with callbacks!
+ * NOTE: The terminal session may outlive the view, so be careful with callbacks!
  */
-public final class TerminalSession extends TerminalOutput {
+public final class TerminalSession {
 
     public final String mHandle = UUID.randomUUID().toString();
-
-    TerminalEmulator mEmulator;
 
     /** Callback which gets notified when a session finishes or changes title. */
     TerminalSessionClient mClient;
 
     /**
      * CoreAdapter 缝（ADR-0003）：主终端 UI/会话接线只依赖该接口。
-     * 为 null 时保持旧路径（只喂 TerminalEmulator）。
+     * 为 null 时（会话尚未绑定渲染器）输出进入环形缓冲，绑定后回放。
      */
     private CoreAdapter mCoreAdapter;
 
@@ -57,13 +50,16 @@ public final class TerminalSession extends TerminalOutput {
     /** 会话层工厂（工单 26 缝）：由 TermuxService 注入 Rust 实现（唯一实现）。 */
     private final FableSessionFactory mSessionFactory;
 
+    /** 工单 31：最近一次 updateSize 的行列（鼠标事件编码钳制用）。 */
+    private int mColumns;
+    private int mRows;
+
     private static final String LOG_TAG = "TerminalSession";
 
-    /** 会话层回调：字节 → emulator + CoreAdapter；退出 → 清理 + 通知；事件 → 诊断。 */
+    /** 会话层回调：字节 → CoreAdapter；退出 → 清理 + 通知；事件 → 诊断。 */
     private final FableSessionCallbacks mSessionCallbacks = new FableSessionCallbacks() {
         @Override
         public void onOutput(byte[] data, int len) {
-            if (mEmulator == null) return;
             emitBytes(data, len);
         }
 
@@ -121,13 +117,10 @@ public final class TerminalSession extends TerminalOutput {
      */
     public void updateTerminalSessionClient(TerminalSessionClient client) {
         mClient = client;
-
-        if (mEmulator != null)
-            mEmulator.updateTerminalSessionClient(client);
     }
 
     /**
-     * 设置本会话的核心缝实现（fable-render 或旧路径适配器）。
+     * 设置本会话的核心缝实现（fable-render）。
      * 字节交付点（会话层回调 onOutput）与 resize 都会经缝转发；
      * PTY/进程/环境/生命周期逻辑在会话层实现内。
      */
@@ -147,36 +140,31 @@ public final class TerminalSession extends TerminalOutput {
         return mCoreAdapter;
     }
 
-    /** Inform the attached pty of the new size and reflow or initialize the emulator. */
+    /** Inform the attached pty of the new size and initialize/resize the session backend. */
     public void updateSize(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {
-        if (mEmulator == null) {
-            initializeEmulator(columns, rows, cellWidthPixels, cellHeightPixels);
+        mColumns = columns;
+        mRows = rows;
+        if (mFableSession == null) {
+            initializeSession(columns, rows, cellWidthPixels, cellHeightPixels);
         } else {
-            if (mFableSession != null) {
-                mFableSession.resize(columns, rows, cellWidthPixels, cellHeightPixels);
-            }
-            mEmulator.resize(columns, rows, cellWidthPixels, cellHeightPixels);
+            mFableSession.resize(columns, rows, cellWidthPixels, cellHeightPixels);
         }
         if (mCoreAdapter != null) mCoreAdapter.resize(columns, rows);
     }
 
     /**
      * The terminal title as set through escape sequences or null if none set.
-     * 工单 30：新路径（CoreAdapter 已接）标题以核心缝为准（libghostty-vt 解析
-     * OSC 0/2）；旧路径回退旧模拟器。
+     * 工单 30/31：标题以核心缝为准（libghostty-vt 解析 OSC 0/2）。
      */
     public String getTitle() {
-        if (mCoreAdapter != null) return mCoreAdapter.getTitle();
-        return (mEmulator == null) ? null : mEmulator.getTitle();
+        return (mCoreAdapter == null) ? null : mCoreAdapter.getTitle();
     }
 
     /**
-     * Set the terminal emulator's window size and start terminal emulation.
      * 会话后端（PTY/进程）由会话层工厂创建（工单 26 缝）。
+     * 旧 TerminalEmulator 已随工单 31 删除，本方法只建会话后端。
      */
-    public void initializeEmulator(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {
-        mEmulator = new TerminalEmulator(this, columns, rows, cellWidthPixels, cellHeightPixels, mTranscriptRows, mClient);
-
+    public void initializeSession(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {
         FableSessionSpec spec = new FableSessionSpec(mShellPath, mCwd, mArgs, mEnv,
             columns, rows, cellWidthPixels, cellHeightPixels);
         mFableSession = mSessionFactory.create(spec, mSessionCallbacks);
@@ -192,9 +180,15 @@ public final class TerminalSession extends TerminalOutput {
     }
 
     /** Write data to the shell process. */
-    @Override
     public void write(byte[] data, int offset, int count) {
         if (mFableSession != null) mFableSession.write(data, offset, count);
+    }
+
+    /** Write a String to the shell process using UTF-8 encoding. */
+    public void write(String data) {
+        if (data == null) return;
+        byte[] bytes = data.getBytes(StandardCharsets.UTF_8);
+        write(bytes, 0, bytes.length);
     }
 
     /** Write the Unicode code point to the terminal encoded in UTF-8. */
@@ -234,18 +228,13 @@ public final class TerminalSession extends TerminalOutput {
         write(mUtf8InputBuffer, 0, bufferPosition);
     }
 
-    public TerminalEmulator getEmulator() {
-        return mEmulator;
-    }
-
     /** Notify the {@link #mClient} that the screen has changed. */
     protected void notifyScreenUpdate() {
         mClient.onTextChanged(this);
     }
 
-    /** Reset state for terminal emulator state. */
+    /** Reset terminal state via the core adapter. */
     public void reset() {
-        mEmulator.reset();
         if (mCoreAdapter != null) mCoreAdapter.reset();
         notifyScreenUpdate();
     }
@@ -280,24 +269,19 @@ public final class TerminalSession extends TerminalOutput {
         mClient.onSessionFinished(TerminalSession.this);
     }
 
-    /** 字节统一交付点（主线程）：核心未接 → 环形缓冲；否则双写 emulator + 核心缝。 */
+    /** 字节统一交付点（主线程）：核心未接 → 环形缓冲；已接 → 只喂核心缝。 */
     private void emitBytes(byte[] data, int len) {
-        if (mCoreAdapter == null) appendByteHistory(data, len);
-        mEmulator.append(data, len);
-        if (mCoreAdapter != null) mCoreAdapter.write(data, len);
+        if (mCoreAdapter == null) {
+            appendByteHistory(data, len);
+        } else {
+            mCoreAdapter.write(data, len);
+        }
         notifyScreenUpdate();
     }
 
-    @Override
-    public void titleChanged(String oldTitle, String newTitle) {
-        // 工单 30：新路径标题事件经 CoreAdapter 消费标记投递（pollUiEvents），
-        // 旧模拟器解析只作状态同步；旧路径（mCoreAdapter == null）保留原回调。
-        if (mCoreAdapter == null) mClient.onTitleChanged(this);
-    }
-
     /**
-     * 工单 30：轮询核心缝的 title/bell 消费标记并投递客户端回调（UI 定时调用）。
-     * consume 语义 = 查询即清除，mailbox 保序保证不丢事件；旧路径（无缝）为空操作。
+     * 工单 30/31：轮询核心缝的 title/bell 消费标记并投递客户端回调（UI 定时调用）。
+     * consume 语义 = 查询即清除，mailbox 保序保证不丢事件；无缝为空操作。
      */
     public void pollUiEvents() {
         if (mCoreAdapter == null) return;
@@ -305,36 +289,31 @@ public final class TerminalSession extends TerminalOutput {
         if (mCoreAdapter.consumeBell()) mClient.onBell(this);
     }
 
-    // ---------- 工单 30：模式状态统一查询（新路径走 CoreAdapter，旧路径回退旧模拟器） ----------
+    // ---------- 工单 30/31：模式状态统一查询（全部走 CoreAdapter） ----------
 
     /** 任一 mouse tracking 模式（X10/1000/1002/1003）。 */
     public boolean isMouseTrackingActive() {
-        if (mCoreAdapter != null) return mCoreAdapter.getModeMouseTracking();
-        return mEmulator != null && mEmulator.isMouseTrackingActive();
+        return mCoreAdapter != null && mCoreAdapter.getModeMouseTracking();
     }
 
     /** alternate screen（DECSET 1047/1049）。 */
     public boolean isAlternateBufferActive() {
-        if (mCoreAdapter != null) return mCoreAdapter.getModeAlternateScreen();
-        return mEmulator != null && mEmulator.isAlternateBufferActive();
+        return mCoreAdapter != null && mCoreAdapter.getModeAlternateScreen();
     }
 
     /** 光标可见（DECTCEM，DECSET 25）。 */
     public boolean isCursorEnabled() {
-        if (mCoreAdapter != null) return mCoreAdapter.getModeCursorVisible();
-        return mEmulator != null && mEmulator.isCursorEnabled();
+        return mCoreAdapter != null && mCoreAdapter.getModeCursorVisible();
     }
 
     /** 光标键 application mode（DECCKM，DECSET ?1）。 */
     public boolean isCursorKeysApplicationMode() {
-        if (mCoreAdapter != null) return mCoreAdapter.getModeCursorKeysApplication();
-        return mEmulator != null && mEmulator.isCursorKeysApplicationMode();
+        return mCoreAdapter != null && mCoreAdapter.getModeCursorKeysApplication();
     }
 
     /** 小键盘 application mode（DECKPAM，DECSET ?66）。 */
     public boolean isKeypadApplicationMode() {
-        if (mCoreAdapter != null) return mCoreAdapter.getModeKeypadApplication();
-        return mEmulator != null && mEmulator.isKeypadApplicationMode();
+        return mCoreAdapter != null && mCoreAdapter.getModeKeypadApplication();
     }
 
     public synchronized boolean isRunning() {
@@ -346,44 +325,71 @@ public final class TerminalSession extends TerminalOutput {
         return mFableSession == null ? 0 : mFableSession.getExitStatus();
     }
 
-    @Override
+    /** 长按选择菜单"复制"：把文本交给客户端（旧 TerminalOutput 回调，保留同名方法）。 */
     public void onCopyTextToClipboard(String text) {
         mClient.onCopyTextToClipboard(this, text);
     }
 
-    @Override
+    /** 长按选择菜单"粘贴"：请求客户端粘贴（旧 TerminalOutput 回调，保留同名方法）。 */
     public void onPasteTextFromClipboard() {
         mClient.onPasteTextFromClipboard(this);
     }
 
-    @Override
-    public void onBell() {
-        // 工单 30：新路径 bell 经 CoreAdapter 消费标记投递（pollUiEvents）。
-        if (mCoreAdapter == null) mClient.onBell(this);
-    }
-
-    @Override
-    public void onColorsChanged() {
-        // 颜色不在工单 30 切缝清单内：保持既有回调（新路径下 updateBackgroundColor
-        // 走 FableTerminalPalette，不读旧模拟器状态）。
-        mClient.onColorsChanged(this);
+    /**
+     * 工单 30/31：粘贴文本。bracketed paste 模式以 CoreAdapter 状态为准
+     * （核心解析 DECSET 2004）；无缝时只写清洗文本（无 bracketed 包裹）。
+     */
+    public void paste(String text) {
+        String sanitized = sanitizePasteText(text);
+        boolean bracketed = mCoreAdapter != null && mCoreAdapter.getModeBracketedPaste();
+        if (bracketed) write("\u001b[200~");
+        write(sanitized);
+        if (bracketed) write("\u001b[201~");
     }
 
     /**
-     * 工单 30：粘贴文本。新路径 bracketed paste 模式以 CoreAdapter 状态为准
-     * （核心解析 DECSET 2004）；旧路径回退旧模拟器 paste（含其 bracketed 状态）。
+     * 工单 31：发送鼠标事件到核心（X10/SGR 编码，协议模式以核心状态为准）。
+     * 语义与旧 TerminalEmulator#sendMouseEvent 一致。
      */
-    public void paste(String text) {
-        if (mCoreAdapter != null) {
-            // 清洗逻辑与 TerminalEmulator#paste 共用（sanitizePasteText）。
-            String sanitized = TerminalEmulator.sanitizePasteText(text);
-            boolean bracketed = mCoreAdapter.getModeBracketedPaste();
-            if (bracketed) write("\u001b[200~");
-            write(sanitized);
-            if (bracketed) write("\u001b[201~");
-        } else if (mEmulator != null) {
-            mEmulator.paste(text);
+    public void sendMouseEvent(int button, int column, int row, boolean pressed) {
+        if (mCoreAdapter == null) return;
+        byte[] encoded = encodeMouseEvent(button, column, row, pressed);
+        if (encoded != null && encoded.length > 0) write(encoded, 0, encoded.length);
+    }
+
+    private byte[] encodeMouseEvent(int button, int column, int row, boolean pressed) {
+        if (column < 1) column = 1;
+        if (mColumns > 0 && column > mColumns) column = mColumns;
+        if (row < 1) row = 1;
+        if (mRows > 0 && row > mRows) row = mRows;
+
+        if (button == CoreAdapter.MOUSE_LEFT_BUTTON_MOVED && !mCoreAdapter.getModeMouseButtonEvent()) {
+            // 非 button-event 模式不发送拖动。
+            return null;
         }
+        if (mCoreAdapter.getModeMouseSgr()) {
+            return String.format("\033[<%d;%d;%d" + (pressed ? 'M' : 'm'), button, column, row)
+                .getBytes(StandardCharsets.UTF_8);
+        }
+        int encodedButton = pressed ? button : 3; // 3 = 全部释放。
+        // Clip to 8-bit data limits。
+        boolean outOfBounds = column > 255 - 32 || row > 255 - 32;
+        if (outOfBounds) return null;
+        return new byte[] {
+            '\033', '[', 'M',
+            (byte) (32 + encodedButton),
+            (byte) (32 + column),
+            (byte) (32 + row)
+        };
+    }
+
+    /**
+     * 粘贴文本清洗（旧 TerminalEmulator#sanitizePasteText 迁移）：
+     * 先移除 ESC 与 C1 控制字符 [0x80,0x9F]，再把 \n / CRLF 归一为 \r。
+     */
+    static String sanitizePasteText(String text) {
+        text = text.replaceAll("(\u001B|[\u0080-\u009F])", "");
+        return text.replaceAll("\r?\n", "\r");
     }
 
     public int getPid() {

@@ -132,6 +132,76 @@ public interface CoreAdapter {
     default void setCursorBlinkState(boolean cursorVisible) {
     }
 
+    // ---------- 工单 31：内容/几何/输入缝能力（旧模拟器删除后由核心承担） ----------
+
+    /** 鼠标事件按钮码（与旧 TerminalEmulator MOUSE_* 常量一致，X10 编码）。 */
+    int MOUSE_LEFT_BUTTON = 0;
+    int MOUSE_LEFT_BUTTON_MOVED = 32;
+    int MOUSE_WHEELUP_BUTTON = 64;
+    int MOUSE_WHEELDOWN_BUTTON = 65;
+
+    /**
+     * 工单 31：当前可向上回看的历史行数（视口之外；0 = 无历史）。
+     * 供滚动钳制 / 滚轴度量 / fling 边界使用（旧路径读 TerminalBuffer transcript）。
+     */
+    default int getScrollbackRows() {
+        return 0;
+    }
+
+    /**
+     * 工单 31：读取指定外部行的列区间文本 [startCol, endCol)（端排他）。
+     * 行坐标约定与选择一致：0 = 活动屏顶行，负 = 向上历史（视口无关的绝对行）。
+     * 每格文本按列序拼接：空格格返回 " "，宽字符占位格返回 ""。
+     * 越界/无核心返回空串。供词边界展开与 accessibility 使用。
+     */
+    default String getText(int row, int startCol, int endCol) {
+        return "";
+    }
+
+    /**
+     * 工单 31：返回 (column, externalRow) 处单词的列边界 {start, end}（同行展开，
+     * 语义与旧 TerminalBuffer 选词一致：空格/空格为边界）。
+     * 无单词（落在空格/空/越界）返回 null。供长按选择词边界展开。
+     */
+    default int[] getWordBoundsAt(int column, int externalRow) {
+        return null;
+    }
+
+    /**
+     * 工单 31：返回 (column, externalRow) 处的单词文本。软换行连接后的整词
+     * （语义与旧 {@code TerminalBuffer#getWordAtLocation} 一致）；无单词返回空串。
+     * 供 URL 点击取词。
+     */
+    default String getWordAt(int column, int externalRow) {
+        return "";
+    }
+
+    /**
+     * 工单 31：当前 mouse 协议是否 SGR（DECSET 1006）。旧路径编码用
+     * SGR 与否决定输出格式（X10 8-bit 或 SGR）。
+     */
+    default boolean getModeMouseSgr() {
+        return false;
+    }
+
+    /**
+     * 工单 31：当前 mouse 是否 button-event 模式（DECSET 1002，含 any-event 1003）。
+     * 非该模式下左键拖动移动不发送。
+     */
+    default boolean getModeMouseButtonEvent() {
+        return false;
+    }
+
+    /**
+     * 工单 31：完整转录文本（活动屏 + 历史）。
+     * linesJoined=true 时软换行连接为整行（旧 getTranscriptTextWithFullLinesJoined）；
+     * false 时每行独立以 '\n' 连接（旧 getTranscriptTextWithoutJoinedLines）。
+     * trim=true 去首尾空白（旧调用方统一 trim）。无核心返回空串。
+     */
+    default String getTranscriptText(boolean linesJoined, boolean trim) {
+        return "";
+    }
+
     boolean supportsSelectionText();
 
     boolean supportsFontSize();

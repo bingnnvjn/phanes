@@ -4,9 +4,8 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.gph.fable.shared.file.FileUtils;
-import com.gph.fable.terminal.TerminalBuffer;
-import com.gph.fable.terminal.TerminalEmulator;
 import com.gph.fable.terminal.TerminalSession;
+import com.gph.fable.terminal.adapter.CoreAdapter;
 
 import java.lang.reflect.Field;
 
@@ -52,25 +51,10 @@ public class ShellUtils {
     public static String getTerminalSessionTranscriptText(TerminalSession terminalSession, boolean linesJoined, boolean trim) {
         if (terminalSession == null) return null;
 
-        TerminalEmulator terminalEmulator = terminalSession.getEmulator();
-        if (terminalEmulator == null) return null;
-
-        TerminalBuffer terminalBuffer = terminalEmulator.getScreen();
-        if (terminalBuffer == null) return null;
-
-        String transcriptText;
-
-        if (linesJoined)
-            transcriptText = terminalBuffer.getTranscriptTextWithFullLinesJoined();
-        else
-            transcriptText = terminalBuffer.getTranscriptTextWithoutJoinedLines();
-
-        if (transcriptText == null) return null;
-
-        if (trim)
-            transcriptText = transcriptText.trim();
-
-        return transcriptText;
+        // 工单 31：旧模拟器已删除，转录文本走核心缝（全量：活动屏 + 历史）。
+        CoreAdapter adapter = terminalSession.getCoreAdapter();
+        if (adapter == null) return null;
+        return adapter.getTranscriptText(linesJoined, trim);
     }
 
 }

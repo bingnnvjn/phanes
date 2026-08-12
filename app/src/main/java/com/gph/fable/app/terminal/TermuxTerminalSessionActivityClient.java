@@ -29,16 +29,11 @@ import com.gph.fable.app.TermuxService;
 import com.gph.fable.shared.termux.settings.properties.TermuxPropertyConstants;
 import com.gph.fable.shared.termux.terminal.io.BellHandler;
 import com.gph.fable.shared.logger.Logger;
-import com.gph.fable.terminal.TerminalColors;
 import com.gph.fable.terminal.TerminalSession;
 import com.gph.fable.terminal.TerminalSessionClient;
-import com.gph.fable.terminal.TextStyle;
 import com.gph.fable.terminal.adapter.CoreAdapter;
 
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.InputStream;
-import java.util.Properties;
 
 /** The {@link TerminalSessionClient} implementation that may require an {@link Activity} for its interface methods. */
 public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionClientBase {
@@ -584,21 +579,8 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
 
     public void checkForFontAndColors() {
         try {
-            File colorsFile = TermuxConstants.TERMUX_COLOR_PROPERTIES_FILE;
             File fontFile = TermuxConstants.TERMUX_FONT_FILE;
 
-            final Properties props = new Properties();
-            if (colorsFile.isFile()) {
-                try (InputStream in = new FileInputStream(colorsFile)) {
-                    props.load(in);
-                }
-            }
-
-            TerminalColors.COLOR_SCHEME.updateWith(props);
-            TerminalSession session = mActivity.getCurrentSession();
-            if (session != null && session.getEmulator() != null) {
-                session.getEmulator().mColors.reset();
-            }
             updateBackgroundColor();
 
             // 新路径：配色板经 CoreAdapter 缝 push 给所有会话的 fable-render。
@@ -632,11 +614,9 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
             return;
         }
 
-        if (session.getEmulator() != null) {
-            int backgroundColor = session.getEmulator().mColors.mCurrentColors[TextStyle.COLOR_INDEX_BACKGROUND];
-            mActivity.getWindow().getDecorView().setBackgroundColor(backgroundColor);
-            mActivity.applyStatusBarStyle(backgroundColor);
-        }
+        // 工单 31：旧模拟器已删除，无旧路径配色回退；渲染器不可用时维持系统默认。
+        mActivity.getWindow().getDecorView().setBackgroundColor(0xFF000000);
+        mActivity.applyStatusBarStyle(0xFF000000);
     }
 
 }

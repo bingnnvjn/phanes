@@ -420,6 +420,69 @@ public final class FableRenderCoreAdapter implements CoreAdapter {
     }
 
     @Override
+    public int getScrollbackRows() {
+        long handle;
+        synchronized (mLock) {
+            handle = mHandle;
+        }
+        return handle == 0 ? 0 : RenderCore.rendererGetScrollbackRows(handle);
+    }
+
+    @Override
+    public String getText(int row, int startCol, int endCol) {
+        long handle;
+        synchronized (mLock) {
+            handle = mHandle;
+        }
+        return handle == 0 ? "" : RenderCore.rendererGetText(handle, row, startCol, endCol);
+    }
+
+    @Override
+    public int[] getWordBoundsAt(int column, int externalRow) {
+        long handle;
+        synchronized (mLock) {
+            handle = mHandle;
+        }
+        return handle == 0 ? null : RenderCore.rendererGetWordBoundsAt(handle, column, externalRow);
+    }
+
+    @Override
+    public String getWordAt(int column, int externalRow) {
+        long handle;
+        synchronized (mLock) {
+            handle = mHandle;
+        }
+        return handle == 0 ? "" : RenderCore.rendererGetWordAt(handle, column, externalRow);
+    }
+
+    @Override
+    public boolean getModeMouseSgr() {
+        long handle;
+        synchronized (mLock) {
+            handle = mHandle;
+        }
+        return handle != 0 && RenderCore.rendererGetModeMouseSgr(handle);
+    }
+
+    @Override
+    public boolean getModeMouseButtonEvent() {
+        long handle;
+        synchronized (mLock) {
+            handle = mHandle;
+        }
+        return handle != 0 && RenderCore.rendererGetModeMouseButtonEvent(handle);
+    }
+
+    @Override
+    public String getTranscriptText(boolean linesJoined, boolean trim) {
+        long handle;
+        synchronized (mLock) {
+            handle = mHandle;
+        }
+        return handle == 0 ? "" : RenderCore.rendererGetTranscriptText(handle, linesJoined, trim);
+    }
+
+    @Override
     public void destroy() {
         long handle;
         synchronized (mLock) {

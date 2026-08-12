@@ -7,7 +7,6 @@ import androidx.annotation.NonNull;
 import com.gph.fable.shared.termux.TermuxConstants;
 import com.gph.fable.shared.theme.NightMode;
 import com.gph.fable.shared.theme.ThemeUtils;
-import com.gph.fable.terminal.TerminalColors;
 import com.gph.fable.terminal.adapter.CoreAdapter;
 
 import java.io.File;
@@ -23,8 +22,7 @@ import java.util.Properties;
  * - 无该文件：内置明/暗各一套，随系统明暗（外壳主题）走。
  *
  * 经 CoreAdapter 缝的 {@code setPalette} push 给 fable-render（工单 14 API）；
- * 旧路径（TerminalView/TerminalEmulator）仍由 TermuxTerminalSessionActivityClient
- * 的 checkForFontAndColors 处理，本类只作用于新路径。
+ * 旧路径（TerminalView/TerminalEmulator）已随工单 31 删除。
  */
 public final class FableTerminalPalette {
 
@@ -38,7 +36,7 @@ public final class FableTerminalPalette {
     public static final int LIGHT_SELECTION = 0xFFBBDEFB;
     public static final int LIGHT_CURSOR = 0xFF000000;
 
-    /** 内置深色 ANSI 16 色（与 TerminalColorScheme 默认一致）。 */
+    /** 内置深色 ANSI 16 色（与旧 TerminalColorScheme 默认一致）。 */
     private static final int[] DARK_ANSI = {
         0xFF000000, 0xFFCD0000, 0xFF00CD00, 0xFFCDCD00,
         0xFF6495ED, 0xFFCD00CD, 0xFF00CDCD, 0xFFE5E5E5,
@@ -144,8 +142,46 @@ public final class FableTerminalPalette {
 
     private static int parse(String value, int fallback) {
         if (value == null) return fallback;
-        int color = TerminalColors.parse(value.trim());
+        int color = parseColor(value.trim());
         return color == 0 ? fallback : color;
+    }
+
+    /**
+     * 工单 31：颜色解析（旧 TerminalColors#parse 迁移）。支持 XQueryColor 格式：
+     * #RGB/#RRGGBB/#RRRGGGBBB/#RRRRGGGGBBBB 与 rgb:<r>/<g>/<b>（1-4 位十六进制）。
+     * 成功返回 0xFFRRGGBB，失败返回 0。
+     */
+    private static int parseColor(String c) {
+        try {
+            int skipInitial, skipBetween;
+            if (c.charAt(0) == '#') {
+                skipInitial = 1;
+                skipBetween = 0;
+            } else if (c.startsWith("rgb:")) {
+                skipInitial = 4;
+                skipBetween = 1;
+            } else {
+                return 0;
+            }
+            int charsForColors = c.length() - skipInitial - 2 * skipBetween;
+            if (charsForColors % 3 != 0) return 0;
+            int componentLength = charsForColors / 3;
+            double mult = 255 / (Math.pow(2, componentLength * 4) - 1);
+
+            int currentPosition = skipInitial;
+            String rString = c.substring(currentPosition, currentPosition + componentLength);
+            currentPosition += componentLength + skipBetween;
+            String gString = c.substring(currentPosition, currentPosition + componentLength);
+            currentPosition += componentLength + skipBetween;
+            String bString = c.substring(currentPosition, currentPosition + componentLength);
+
+            int r = (int) (Integer.parseInt(rString, 16) * mult);
+            int g = (int) (Integer.parseInt(gString, 16) * mult);
+            int b = (int) (Integer.parseInt(bString, 16) * mult);
+            return 0xFF << 24 | r << 16 | g << 8 | b;
+        } catch (NumberFormatException | IndexOutOfBoundsException e) {
+            return 0;
+        }
     }
 
     /** 背景亮则黑光标，背景暗则白光标（与 TerminalColorScheme 一致）。 */

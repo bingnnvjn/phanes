@@ -13,8 +13,6 @@ import android.view.View;
 
 import androidx.annotation.Nullable;
 
-import com.gph.fable.terminal.TerminalBuffer;
-import com.gph.fable.terminal.WcWidth;
 import com.gph.fable.view.R;
 import com.gph.fable.view.TerminalView;
 
@@ -97,17 +95,12 @@ public class TextSelectionCursorController implements CursorController {
         mSelX1 = mSelX2 = columnAndRow[0];
         mSelY1 = mSelY2 = columnAndRow[1];
 
-        // 工单 31 残项：长按词边界展开仍读旧模拟器屏幕内容（CoreAdapter 无逐格文本
-        // 查询；删旧模拟器时需补缝内容 API，见工单 22 Comments"双模型"遗留）。
-        TerminalBuffer screen = terminalView.mEmulator.getScreen();
-        if (!" ".equals(screen.getSelectedText(mSelX1, mSelY1, mSelX1, mSelY1))) {
-            // Selecting something other than whitespace. Expand to word.
-            while (mSelX1 > 0 && !"".equals(screen.getSelectedText(mSelX1 - 1, mSelY1, mSelX1 - 1, mSelY1))) {
-                mSelX1--;
-            }
-            while (mSelX2 < terminalView.mEmulator.mColumns - 1 && !"".equals(screen.getSelectedText(mSelX2 + 1, mSelY1, mSelX2 + 1, mSelY1))) {
-                mSelX2++;
-            }
+        // 工单 31：词边界展开走核心缝（CoreAdapter.getWordBoundsAt，语义与旧
+        // TerminalBuffer 选词一致：空格/空为边界，同行展开）。
+        int[] bounds = terminalView.getWordBoundsAt(mSelX1, mSelY1);
+        if (bounds != null) {
+            mSelX1 = bounds[0];
+            mSelX2 = Math.max(bounds[0], bounds[1] - 1);
         }
     }
     
@@ -196,10 +189,10 @@ public class TextSelectionCursorController implements CursorController {
 
             @Override
             public void onGetContentRect(ActionMode mode, View view, Rect outRect) {
-                int x1 = Math.round(mSelX1 * terminalView.mRenderer.getFontWidth());
-                int x2 = Math.round(mSelX2 * terminalView.mRenderer.getFontWidth());
-                int y1 = Math.round((mSelY1 - 1 - terminalView.getTopRow()) * terminalView.mRenderer.getFontLineSpacing());
-                int y2 = Math.round((mSelY2 + 1 - terminalView.getTopRow()) * terminalView.mRenderer.getFontLineSpacing());
+                int x1 = Math.round(mSelX1 * terminalView.getCellWidthPx());
+                int x2 = Math.round(mSelX2 * terminalView.getCellWidthPx());
+                int y1 = Math.round((mSelY1 - 1 - terminalView.getTopRow()) * terminalView.getCellHeightPx());
+                int y2 = Math.round((mSelY2 + 1 - terminalView.getTopRow()) * terminalView.getCellHeightPx());
 
                 if (x1 > x2) {
                     int tmp = x1;
@@ -222,8 +215,7 @@ public class TextSelectionCursorController implements CursorController {
 
     @Override
     public void updatePosition(TextSelectionHandleView handle, int x, int y) {
-        TerminalBuffer screen = terminalView.mEmulator.getScreen();
-        final int scrollRows = screen.getActiveRows() - terminalView.mEmulator.mRows;
+        final int scrollRows = terminalView.getScrollbackRows();
         if (handle == mStartHandle) {
             mSelX1 = terminalView.getCursorX(x);
             mSelY1 = terminalView.getCursorY(y);
@@ -234,8 +226,8 @@ public class TextSelectionCursorController implements CursorController {
             if (mSelY1 < -scrollRows) {
                 mSelY1 = -scrollRows;
 
-            } else if (mSelY1 > terminalView.mEmulator.mRows - 1) {
-                mSelY1 = terminalView.mEmulator.mRows - 1;
+            } else if (mSelY1 > terminalView.getRows() - 1) {
+                mSelY1 = terminalView.getRows() - 1;
 
             }
 
@@ -255,7 +247,7 @@ public class TextSelectionCursorController implements CursorController {
                     if (topRow < -scrollRows) {
                         topRow = -scrollRows;
                     }
-                } else if (mSelY1 >= topRow + terminalView.mEmulator.mRows) {
+                } else if (mSelY1 >= topRow + terminalView.getRows()) {
                     topRow++;
                     if (topRow > 0) {
                         topRow = 0;
@@ -265,7 +257,7 @@ public class TextSelectionCursorController implements CursorController {
                 terminalView.setTopRow(topRow);
             }
 
-            mSelX1 = getValidCurX(screen, mSelY1, mSelX1);
+            mSelX1 = getValidCurX(mSelY1, mSelX1);
 
         } else {
             mSelX2 = terminalView.getCursorX(x);
@@ -276,8 +268,8 @@ public class TextSelectionCursorController implements CursorController {
 
             if (mSelY2 < -scrollRows) {
                 mSelY2 = -scrollRows;
-            } else if (mSelY2 > terminalView.mEmulator.mRows - 1) {
-                mSelY2 = terminalView.mEmulator.mRows - 1;
+            } else if (mSelY2 > terminalView.getRows() - 1) {
+                mSelY2 = terminalView.getRows() - 1;
             }
 
             if (mSelY1 > mSelY2) {
@@ -287,7 +279,7 @@ public class TextSelectionCursorController implements CursorController {
                 mSelX2 = mSelX1;
             }
 
-            if (!terminalView.mEmulator.isAlternateBufferActive()) {
+            if (!terminalView.isAlternateBufferActive()) {
                 int topRow = terminalView.getTopRow();
 
                 if (mSelY2 <= topRow) {
@@ -295,7 +287,7 @@ public class TextSelectionCursorController implements CursorController {
                     if (topRow < -scrollRows) {
                         topRow = -scrollRows;
                     }
-                } else if (mSelY2 >= topRow + terminalView.mEmulator.mRows) {
+                } else if (mSelY2 >= topRow + terminalView.getRows()) {
                     topRow++;
                     if (topRow > 0) {
                         topRow = 0;
@@ -305,40 +297,22 @@ public class TextSelectionCursorController implements CursorController {
                 terminalView.setTopRow(topRow);
             }
 
-            mSelX2 = getValidCurX(screen, mSelY2, mSelX2);
+            mSelX2 = getValidCurX(mSelY2, mSelX2);
         }
 
         terminalView.invalidate();
     }
 
-    private int getValidCurX(TerminalBuffer screen, int cy, int cx) {
-        String line = screen.getSelectedText(0, cy, cx, cy);
-        if (!TextUtils.isEmpty(line)) {
-            int col = 0;
-            for (int i = 0, len = line.length(); i < len; i++) {
-                char ch1 = line.charAt(i);
-                if (ch1 == 0) {
-                    break;
-                }
-
-                int wc;
-                if (Character.isHighSurrogate(ch1) && i + 1 < len) {
-                    char ch2 = line.charAt(++i);
-                    wc = WcWidth.width(Character.toCodePoint(ch1, ch2));
-                } else {
-                    wc = WcWidth.width(ch1);
-                }
-
-                final int cend = col + wc;
-                if (cx > col && cx < cend) {
-                    return cend;
-                }
-                if (cend == col) {
-                    return col;
-                }
-                col = cend;
-            }
-        }
+    /**
+     * 工单 31：宽字符吸附。核心 2027 模型 = 头格（有文本）+ 空占位格；
+     * 落在占位格（本格为空且前一格有文本）时吸附到字符末尾。
+     */
+    private int getValidCurX(int cy, int cx) {
+        if (cx <= 0) return cx;
+        String current = terminalView.getCoreText(cy, cx, cx + 1);
+        if (!TextUtils.isEmpty(current)) return cx;
+        String previous = terminalView.getCoreText(cy, cx - 1, cx);
+        if (!TextUtils.isEmpty(previous)) return cx + 1;
         return cx;
     }
 
@@ -379,11 +353,8 @@ public class TextSelectionCursorController implements CursorController {
 
     /** Get the currently selected text. */
     public String getSelectedText() {
-        // 新路径（CoreAdapter）优先；旧路径/核心文本为空时回退 emulator 直读，
-        // 覆盖 transcript 跨行选择与 overlay 尚未同步的窗口期。
-        String coreText = terminalView.getCoreSelectionText();
-        if (coreText != null && !coreText.isEmpty()) return coreText;
-        return terminalView.mEmulator.getSelectedText(mSelX1, mSelY1, mSelX2, mSelY2);
+        // 工单 31：旧模拟器已删除，选择文本只经核心缝（overlay 随 onDraw 同步）。
+        return terminalView.getCoreSelectionText();
     }
 
     /** Get the selected text stored before "MORE" button was pressed on the context menu. */

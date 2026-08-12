@@ -30,15 +30,15 @@ public final class FableInputTerminalView extends TerminalView {
 
     /**
      * 绑定/解绑当前会话的核心缝实现。绑定时把当前字号推给核心，
-     * 并按核心单元格尺寸重排（旧路径下为 null，保持 TerminalView 原行为）。
+     * 并按核心单元格尺寸重排（工单 31 起无旧路径回退）。
      */
     public void setCoreAdapter(CoreAdapter coreAdapter) {
         mCoreAdapter = coreAdapter;
         mLastSyncedTopRow = mTopRow;
         mSelectionSyncSignature = Long.MIN_VALUE;
         if (coreAdapter != null) {
-            if (coreAdapter.supportsFontSize() && mRenderer != null) {
-                coreAdapter.setFontSize(mRenderer.mTextSize);
+            if (coreAdapter.supportsFontSize()) {
+                coreAdapter.setFontSize(mTextSize);
             }
             clearSelectionOverlays();
             updateSize();
@@ -60,16 +60,16 @@ public final class FableInputTerminalView extends TerminalView {
     @Override
     public void setTextSize(int textSize) {
         super.setTextSize(textSize);
-        if (mCoreAdapter != null && mCoreAdapter.supportsFontSize() && mRenderer != null) {
+        if (mCoreAdapter != null && mCoreAdapter.supportsFontSize()) {
             // 直接生效保持缩放跟手（曾用 50ms 合并窗口导致不跟手，已回退）。
-            mCoreAdapter.setFontSize(mRenderer.mTextSize);
+            mCoreAdapter.setFontSize(mTextSize);
             updateSize();
         }
     }
 
     @Override
     public void updateSize() {
-        if (mCoreAdapter == null || !mCoreAdapter.supportsFontSize() || mRenderer == null) {
+        if (mCoreAdapter == null || !mCoreAdapter.supportsFontSize()) {
             super.updateSize();
             return;
         }
@@ -85,9 +85,13 @@ public final class FableInputTerminalView extends TerminalView {
         int newColumns = Math.max(4, viewWidth / cellWidth);
         int newRows = Math.max(4, viewHeight / cellHeight);
 
-        if (mEmulator == null || newColumns != mEmulator.mColumns || newRows != mEmulator.mRows) {
+        mCellWidthPx = cellWidth;
+        mCellHeightPx = cellHeight;
+
+        if (mColumns == 0 || newColumns != mColumns || newRows != mRows) {
             mTermSession.updateSize(newColumns, newRows, cellWidth, cellHeight);
-            mEmulator = mTermSession.getEmulator();
+            mColumns = newColumns;
+            mRows = newRows;
             if (mClient != null) mClient.onEmulatorSet();
 
             mTopRow = 0;
@@ -127,7 +131,7 @@ public final class FableInputTerminalView extends TerminalView {
             super.onDraw(canvas);
             return;
         }
-        if (mEmulator == null) {
+        if (mTermSession == null) {
             canvas.drawColor(0xFF000000);
             return;
         }
@@ -139,25 +143,23 @@ public final class FableInputTerminalView extends TerminalView {
 
     // ---------- 坐标换算：与 fable-render 同一套"拉伸网格"对齐 ----------
     // 渲染器按 surface 宽高 / 行列数均分格子（cell_w = W/cols, row_h = H/rows）；
-    // 旧路径 TerminalView 用 mRenderer 字体度量换算，两套网格逐行漂移，
-    // 导致选择手柄/触摸行与蓝色高亮条越往下差越多（fable-v1/15 真机反馈）。
-    // 新路径统一用拉伸网格；覆盖后不再经过旧路径 getCursorY 的 -40 换算，
-    // 旧路径（adapter 为 null）保持原行为不变。
+    // 旧路径（TerminalRenderer 字体度量换算）已随工单 31 删除；统一用拉伸网格，
+    // 覆盖后不再经过旧 getCursorY 的 -40 换算。
 
     private float colWidthPx() {
-        return (mEmulator == null || mEmulator.mColumns <= 0)
+        return (mColumns <= 0)
                 ? 0f
-                : getWidth() / (float) mEmulator.mColumns;
+                : getWidth() / (float) mColumns;
     }
 
     private float rowHeightPx() {
-        return (mEmulator == null || mEmulator.mRows <= 0)
+        return (mRows <= 0)
                 ? 0f
-                : getHeight() / (float) mEmulator.mRows;
+                : getHeight() / (float) mRows;
     }
 
     private boolean usingRenderGrid() {
-        return mCoreAdapter != null && mEmulator != null;
+        return mCoreAdapter != null && mColumns > 0;
     }
 
     private int screenColumnAt(float x) {
@@ -191,7 +193,7 @@ public final class FableInputTerminalView extends TerminalView {
     @Override
     public int getPointX(int cx) {
         if (!usingRenderGrid()) return super.getPointX(cx);
-        if (mEmulator.mColumns > 0 && cx > mEmulator.mColumns) cx = mEmulator.mColumns;
+        if (mColumns > 0 && cx > mColumns) cx = mColumns;
         return pixelXAt(cx);
     }
 
@@ -212,7 +214,7 @@ public final class FableInputTerminalView extends TerminalView {
     }
 
     private void syncAdapterState() {
-        if (mCoreAdapter == null || mEmulator == null) return;
+        if (mCoreAdapter == null || mColumns <= 0) return;
 
         if (mCoreAdapter.supportsScrollback() && mTopRow != mLastSyncedTopRow) {
             mCoreAdapter.scroll(mTopRow - mLastSyncedTopRow);
@@ -241,7 +243,7 @@ public final class FableInputTerminalView extends TerminalView {
         // 缝约定：选择行是视口相对坐标（0 = 当前视口顶行，向上回看为负）。
         // 旧路径 TerminalBuffer 外部坐标同样以 0 = 屏幕顶行为基准，因此
         // 屏幕行 → 视口行 = row - mTopRow（mTopRow <= 0，回看时取正）。
-        int viewportRows = mEmulator.mRows;
+        int viewportRows = mRows;
         int y1 = active ? selectors[0] - mTopRow : -1;
         int y2 = active ? selectors[1] - mTopRow : -1;
         int x1 = active ? selectors[2] : 0;
@@ -255,7 +257,7 @@ public final class FableInputTerminalView extends TerminalView {
         for (int row = 0; row < viewportRows; row++) {
             if (active && row >= y1 && row <= y2 && x2 > x1) {
                 int startCol = (row == y1) ? Math.max(0, x1) : 0;
-                int endCol = (row == y2) ? Math.min(mEmulator.mColumns, x2 + 1) : mEmulator.mColumns;
+                int endCol = (row == y2) ? Math.min(mColumns, x2 + 1) : mColumns;
                 mCoreAdapter.setSelection(row, startCol, endCol);
             } else {
                 mCoreAdapter.setSelection(row, 0, 0);
@@ -264,8 +266,8 @@ public final class FableInputTerminalView extends TerminalView {
     }
 
     private void clearSelectionOverlays() {
-        if (mCoreAdapter == null || mEmulator == null) return;
-        for (int row = 0; row < mEmulator.mRows; row++) {
+        if (mCoreAdapter == null || mRows <= 0) return;
+        for (int row = 0; row < mRows; row++) {
             mCoreAdapter.setSelection(row, 0, 0);
         }
     }

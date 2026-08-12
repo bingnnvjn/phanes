@@ -46,7 +46,6 @@ import com.gph.fable.shared.data.DataUtils;
 import com.gph.fable.shared.shell.command.ExecutionCommand;
 import com.gph.fable.shared.shell.command.ExecutionCommand.Runner;
 import com.gph.fable.shared.shell.command.ExecutionCommand.ShellCreateMode;
-import com.gph.fable.terminal.TerminalEmulator;
 import com.gph.fable.terminal.TerminalSession;
 import com.gph.fable.terminal.TerminalSessionClient;
 
@@ -753,8 +752,7 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
 
     /** This should be called when {@link TermuxActivity#onServiceConnected} is called to set the
      * {@link TermuxService#mTermuxTerminalSessionActivityClient} variable and update the {@link TerminalSession}
-     * and {@link TerminalEmulator} clients in case they were passed {@link TermuxTerminalSessionServiceClient}
-     * earlier.
+     * clients in case they were passed {@link TermuxTerminalSessionServiceClient} earlier.
      *
      * @param termuxTerminalSessionActivityClient The {@link TermuxTerminalSessionActivityClient} object that fully
      * implements the {@link TerminalSessionClient} interface.
@@ -767,8 +765,7 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
     }
 
     /** This should be called when {@link TermuxActivity} has been destroyed and in {@link #onUnbind(Intent)}
-     * so that the {@link TermuxService} and {@link TerminalSession} and {@link TerminalEmulator}
-     * clients do not hold an activity references.
+     * so that the {@link TermuxService} and {@link TerminalSession} clients do not hold activity references.
      */
     public synchronized void unsetTermuxTerminalSessionClient() {
         for (int i = 0; i < mShellManager.mTermuxSessions.size(); i++)

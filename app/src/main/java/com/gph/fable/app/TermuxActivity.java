@@ -467,7 +467,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
             }
         }
 
-        // Update the {@link TerminalSession} and {@link TerminalEmulator} clients.
+        // Update the {@link TerminalSession} clients.
         mTermuxService.setTermuxTerminalSessionClient(mTermuxTerminalSessionActivityClient);
     }
 

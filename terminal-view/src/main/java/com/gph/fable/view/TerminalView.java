@@ -40,7 +40,6 @@ import androidx.annotation.RequiresApi;
 import java.util.function.Consumer;
 
 import com.gph.fable.terminal.KeyHandler;
-import com.gph.fable.terminal.TerminalEmulator;
 import com.gph.fable.terminal.TerminalSession;
 import com.gph.fable.terminal.adapter.CoreAdapter;
 import com.gph.fable.view.textselection.TextSelectionCursorController;
@@ -63,19 +62,30 @@ public class TerminalView extends View {
     /** Log terminal view key and IME events. */
     private static boolean TERMINAL_VIEW_KEY_LOGGING_ENABLED = false;
 
-    /** The currently displayed terminal session, whose emulator is {@link #mEmulator}. */
+    /** The currently displayed terminal session. */
     public TerminalSession mTermSession;
-    /** Our terminal emulator whose session is {@link #mTermSession}. */
-    public TerminalEmulator mEmulator;
+
+    /** 工单 31：最近一次 updateSize 的行列（本地几何缓存；旧 mEmulator 已删除）。 */
+    int mColumns;
+    int mRows;
+
+    /** 默认单元格像素尺寸（无核心缝时的回退度量，主路径由 CoreAdapter.getCellSize 覆盖）。 */
+    private static final float DEFAULT_CELL_WIDTH_PX = 12f;
+    private static final float DEFAULT_CELL_HEIGHT_PX = 20f;
+
+    /** 当前单元格像素尺寸（FableInputTerminalView 从 CoreAdapter 同步）。 */
+    float mCellWidthPx = DEFAULT_CELL_WIDTH_PX;
+    float mCellHeightPx = DEFAULT_CELL_HEIGHT_PX;
+
+    /** 当前字号（dp；旧 mRenderer 已删除）。 */
+    int mTextSize;
+    Typeface mTypeface = Typeface.MONOSPACE;
 
     /**
-     * 工单 30：新路径核心缝（fable-render）。null = 旧路径降级（TerminalRenderer 自绘）。
-     * 主终端 UI 的标题/铃声/模式/选择/滚动/光标状态一律以本缝为准；
-     * 旧模拟器只作旧路径状态与内容回退，不再被新路径读取。
+     * 工单 30/31：核心缝（fable-render）。主终端 UI 的标题/铃声/模式/选择/滚动/
+     * 光标状态一律以本缝为准；旧模拟器/旧渲染器已随工单 31 删除。
      */
     CoreAdapter mCoreAdapter;
-
-    public TerminalRenderer mRenderer;
 
     public TerminalViewClient mClient;
 
@@ -166,11 +176,11 @@ public class TerminalView extends View {
             @Override
             public boolean onUp(MotionEvent event) {
                 mScrollRemainder = 0.0f;
-                if (mEmulator != null && isMouseTrackingActive() && !event.isFromSource(InputDevice.SOURCE_MOUSE) && !isSelectingText() && !scrolledWithFinger) {
+                if (mTermSession != null && isMouseTrackingActive() && !event.isFromSource(InputDevice.SOURCE_MOUSE) && !isSelectingText() && !scrolledWithFinger) {
                     // Quick event processing when mouse tracking is active - do not wait for check of double tapping
                     // for zooming.
-                    sendMouseEventCode(event, TerminalEmulator.MOUSE_LEFT_BUTTON, true);
-                    sendMouseEventCode(event, TerminalEmulator.MOUSE_LEFT_BUTTON, false);
+                    sendMouseEventCode(event, CoreAdapter.MOUSE_LEFT_BUTTON, true);
+                    sendMouseEventCode(event, CoreAdapter.MOUSE_LEFT_BUTTON, false);
                     return true;
                 }
                 scrolledWithFinger = false;
@@ -179,7 +189,7 @@ public class TerminalView extends View {
 
             @Override
             public boolean onSingleTapUp(MotionEvent event) {
-                if (mEmulator == null) return true;
+                if (mTermSession == null) return true;
 
                 if (isSelectingText()) {
                     stopTextSelectionMode();
@@ -192,18 +202,18 @@ public class TerminalView extends View {
 
             @Override
             public boolean onScroll(MotionEvent e, float distanceX, float distanceY) {
-                if (mEmulator == null) return true;
+                if (mTermSession == null) return true;
                 if (isMouseTrackingActive() && e.isFromSource(InputDevice.SOURCE_MOUSE)) {
                     // If moving with mouse pointer while pressing button, report that instead of scroll.
                     // This means that we never report moving with button press-events for touch input,
                     // since we cannot just start sending these events without a starting press event,
                     // which we do not do for touch input, only mouse in onTouchEvent().
-                    sendMouseEventCode(e, TerminalEmulator.MOUSE_LEFT_BUTTON_MOVED, true);
+                    sendMouseEventCode(e, CoreAdapter.MOUSE_LEFT_BUTTON_MOVED, true);
                 } else {
                     scrolledWithFinger = true;
                     distanceY += mScrollRemainder;
-                    int deltaRows = (int) (distanceY / mRenderer.mFontLineSpacing);
-                    mScrollRemainder = distanceY - deltaRows * mRenderer.mFontLineSpacing;
+                    int deltaRows = (int) (distanceY / mCellHeightPx);
+                    mScrollRemainder = distanceY - deltaRows * mCellHeightPx;
                     doScroll(e, deltaRows);
                 }
                 return true;
@@ -211,7 +221,7 @@ public class TerminalView extends View {
 
             @Override
             public boolean onScale(float focusX, float focusY, float scale) {
-                if (mEmulator == null || isSelectingText()) return true;
+                if (mTermSession == null || isSelectingText()) return true;
                 mScaleFactor *= scale;
                 mScaleFactor = mClient.onScale(mScaleFactor);
                 return true;
@@ -219,16 +229,16 @@ public class TerminalView extends View {
 
             @Override
             public boolean onFling(final MotionEvent e2, float velocityX, float velocityY) {
-                if (mEmulator == null) return true;
+                if (mTermSession == null) return true;
                 // Do not start scrolling until last fling has been taken care of:
                 if (!mScroller.isFinished()) return true;
 
                 final boolean mouseTrackingAtStartOfFling = isMouseTrackingActive();
                 float SCALE = 0.25f;
                 if (mouseTrackingAtStartOfFling) {
-                    mScroller.fling(0, 0, 0, -(int) (velocityY * SCALE), 0, 0, -mEmulator.mRows / 2, mEmulator.mRows / 2);
+                    mScroller.fling(0, 0, 0, -(int) (velocityY * SCALE), 0, 0, -mRows / 2, mRows / 2);
                 } else {
-                    mScroller.fling(0, mTopRow, 0, -(int) (velocityY * SCALE), 0, 0, -mEmulator.getScreen().getActiveTranscriptRows(), 0);
+                    mScroller.fling(0, mTopRow, 0, -(int) (velocityY * SCALE), 0, 0, -getScrollbackRows(), 0);
                 }
 
                 post(new Runnable() {
@@ -332,16 +342,13 @@ public class TerminalView extends View {
 
     /** 自动滚动禁用（新路径 = 视图本地状态；旧路径 = 旧模拟器状态）。 */
     private boolean isAutoScrollDisabled() {
-        if (mCoreAdapter != null) return mAutoScrollDisabled;
-        return mEmulator != null && mEmulator.isAutoScrollDisabled();
+        return mAutoScrollDisabled;
     }
 
     /** 工单 30：推送光标闪烁相位（新路径走 CoreAdapter，旧路径走旧模拟器）。 */
     private void setCursorBlinkPhase(boolean cursorVisible) {
         if (mCoreAdapter != null) {
             mCoreAdapter.setCursorBlinkState(cursorVisible);
-        } else if (mEmulator != null) {
-            mEmulator.setCursorBlinkState(cursorVisible);
         }
     }
 
@@ -366,7 +373,8 @@ public class TerminalView extends View {
         mTopRow = 0;
 
         mTermSession = session;
-        mEmulator = null;
+        mColumns = 0;
+        mRows = 0;
         mCombiningAccent = 0;
 
         updateSize();
@@ -431,7 +439,7 @@ public class TerminalView extends View {
                 }
                 super.commitText(text, newCursorPosition);
 
-                if (mEmulator == null) return true;
+                if (mTermSession == null) return true;
 
                 Editable content = getEditable();
                 sendTextToTerminal(content);
@@ -461,7 +469,7 @@ public class TerminalView extends View {
                             codePoint = Character.toCodePoint(firstChar, text.charAt(i));
                         } else {
                             // At end of string, with no low surrogate following the high:
-                            codePoint = TerminalEmulator.UNICODE_REPLACEMENT_CHAR;
+                            codePoint = 0xFFFD;
                         }
                     } else {
                         codePoint = firstChar;
@@ -511,17 +519,17 @@ public class TerminalView extends View {
 
     @Override
     protected int computeVerticalScrollRange() {
-        return mEmulator == null ? 1 : mEmulator.getScreen().getActiveRows();
+        return mTermSession == null ? 1 : getScrollbackRows() + mRows;
     }
 
     @Override
     protected int computeVerticalScrollExtent() {
-        return mEmulator == null ? 1 : mEmulator.mRows;
+        return mTermSession == null ? 1 : mRows;
     }
 
     @Override
     protected int computeVerticalScrollOffset() {
-        return mEmulator == null ? 1 : mEmulator.getScreen().getActiveRows() + mTopRow - mEmulator.mRows;
+        return mTermSession == null ? 1 : getScrollbackRows() + mTopRow;
     }
 
     public void onScreenUpdated() {
@@ -529,19 +537,17 @@ public class TerminalView extends View {
     }
 
     public void onScreenUpdated(boolean skipScrolling) {
-        if (mEmulator == null) return;
+        if (mTermSession == null) return;
 
-        // 工单 31 残项：滚动钳制/滚轴度量仍用旧模拟器 transcript 行数（CoreAdapter
-        // 无 scrollback 行数查询；渲染器内部自行钳制，此处只影响视图本地 mTopRow）。
-        int rowsInHistory = mEmulator.getScreen().getActiveTranscriptRows();
+        // 滚动钳制/滚轴度量以核心 scrollback 行数为准（工单 31）。
+        int rowsInHistory = getScrollbackRows();
         if (mTopRow < -rowsInHistory) mTopRow = -rowsInHistory;
 
         if (isSelectingText() || isAutoScrollDisabled()) {
 
             // Do not scroll when selecting text.
-            // 新路径（CoreAdapter）：滚动回看由渲染器承担，无旧模拟器滚动计数。
-            int rowShift = isCoreAdapterActive() ? 0 : mEmulator.getScrollCounter();
-            if (-mTopRow + rowShift > rowsInHistory) {
+            // 新路径（CoreAdapter）：滚动回看由渲染器承担，无滚动计数。
+            if (-mTopRow > rowsInHistory) {
                 // .. unless we're hitting the end of history transcript, in which
                 // case we abort text selection and scroll to end.
                 if (isSelectingText())
@@ -553,8 +559,6 @@ public class TerminalView extends View {
                 }
             } else {
                 skipScrolling = true;
-                mTopRow -= rowShift;
-                decrementYTextSelectionCursors(rowShift);
             }
         }
 
@@ -568,8 +572,6 @@ public class TerminalView extends View {
             }
             mTopRow = 0;
         }
-
-        if (!isCoreAdapterActive()) mEmulator.clearScrollCounter();
 
         invalidate();
         if (mAccessibilityEnabled) setContentDescription(getText());
@@ -589,12 +591,12 @@ public class TerminalView extends View {
      * @param textSize the new font size, in density-independent pixels.
      */
     public void setTextSize(int textSize) {
-        mRenderer = new TerminalRenderer(textSize, mRenderer == null ? Typeface.MONOSPACE : mRenderer.mTypeface);
+        mTextSize = textSize;
         updateSize();
     }
 
     public void setTypeface(Typeface newTypeface) {
-        mRenderer = new TerminalRenderer(mRenderer.mTextSize, newTypeface);
+        mTypeface = newTypeface;
         updateSize();
         invalidate();
     }
@@ -621,8 +623,8 @@ public class TerminalView extends View {
      * @return Array with the column and row.
      */
     public int[] getColumnAndRow(MotionEvent event, boolean relativeToScroll) {
-        int column = (int) (event.getX() / mRenderer.mFontWidth);
-        int row = (int) ((event.getY() - mRenderer.mFontLineSpacingAndAscent) / mRenderer.mFontLineSpacing);
+        int column = (int) (event.getX() / mCellWidthPx);
+        int row = (int) ((event.getY() - mCellHeightPx) / mCellHeightPx);
         if (relativeToScroll) {
             row += mTopRow;
         }
@@ -634,7 +636,7 @@ public class TerminalView extends View {
         int[] columnAndRow = getColumnAndRow(e, false);
         int x = columnAndRow[0] + 1;
         int y = columnAndRow[1] + 1;
-        if (pressed && (button == TerminalEmulator.MOUSE_WHEELDOWN_BUTTON || button == TerminalEmulator.MOUSE_WHEELUP_BUTTON)) {
+        if (pressed && (button == CoreAdapter.MOUSE_WHEELDOWN_BUTTON || button == CoreAdapter.MOUSE_WHEELUP_BUTTON)) {
             if (mMouseStartDownTime == e.getDownTime()) {
                 x = mMouseScrollStartX;
                 y = mMouseScrollStartY;
@@ -644,7 +646,7 @@ public class TerminalView extends View {
                 mMouseScrollStartY = y;
             }
         }
-        mEmulator.sendMouseEvent(button, x, y, pressed);
+        mTermSession.sendMouseEvent(button, x, y, pressed);
     }
 
     /** Perform a scroll, either from dragging the screen or by scrolling a mouse wheel. */
@@ -653,13 +655,13 @@ public class TerminalView extends View {
         int amount = Math.abs(rowsDown);
         for (int i = 0; i < amount; i++) {
             if (isMouseTrackingActive()) {
-                sendMouseEventCode(event, up ? TerminalEmulator.MOUSE_WHEELUP_BUTTON : TerminalEmulator.MOUSE_WHEELDOWN_BUTTON, true);
+                sendMouseEventCode(event, up ? CoreAdapter.MOUSE_WHEELUP_BUTTON : CoreAdapter.MOUSE_WHEELDOWN_BUTTON, true);
             } else if (isAlternateBufferActive()) {
                 // Send up and down key events for scrolling, which is what some terminals do to make scroll work in
                 // e.g. less, which shifts to the alt screen without mouse handling.
                 handleKeyCode(up ? KeyEvent.KEYCODE_DPAD_UP : KeyEvent.KEYCODE_DPAD_DOWN, 0);
             } else {
-                mTopRow = Math.min(0, Math.max(-(mEmulator.getScreen().getActiveTranscriptRows()), mTopRow + (up ? -1 : 1)));
+                mTopRow = Math.min(0, Math.max(-getScrollbackRows(), mTopRow + (up ? -1 : 1)));
                 if (!awakenScrollBars()) invalidate();
             }
         }
@@ -668,7 +670,7 @@ public class TerminalView extends View {
     /** Overriding {@link View#onGenericMotionEvent(MotionEvent)}. */
     @Override
     public boolean onGenericMotionEvent(MotionEvent event) {
-        if (mEmulator != null && event.isFromSource(InputDevice.SOURCE_MOUSE) && event.getAction() == MotionEvent.ACTION_SCROLL) {
+        if (mTermSession != null && event.isFromSource(InputDevice.SOURCE_MOUSE) && event.getAction() == MotionEvent.ACTION_SCROLL) {
             // Handle mouse wheel scrolling.
             boolean up = event.getAxisValue(MotionEvent.AXIS_VSCROLL) > 0.0f;
             doScroll(event, up ? -3 : 3);
@@ -681,7 +683,7 @@ public class TerminalView extends View {
     @Override
     @TargetApi(23)
     public boolean onTouchEvent(MotionEvent event) {
-        if (mEmulator == null) return true;
+        if (mTermSession == null) return true;
         final int action = event.getAction();
 
         if (isSelectingText()) {
@@ -706,10 +708,10 @@ public class TerminalView extends View {
                 switch (event.getAction()) {
                     case MotionEvent.ACTION_DOWN:
                     case MotionEvent.ACTION_UP:
-                        sendMouseEventCode(event, TerminalEmulator.MOUSE_LEFT_BUTTON, event.getAction() == MotionEvent.ACTION_DOWN);
+                        sendMouseEventCode(event, CoreAdapter.MOUSE_LEFT_BUTTON, event.getAction() == MotionEvent.ACTION_DOWN);
                         break;
                     case MotionEvent.ACTION_MOVE:
-                        sendMouseEventCode(event, TerminalEmulator.MOUSE_LEFT_BUTTON_MOVED, true);
+                        sendMouseEventCode(event, CoreAdapter.MOUSE_LEFT_BUTTON_MOVED, true);
                         break;
                 }
             }
@@ -846,7 +848,7 @@ public class TerminalView extends View {
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         if (TERMINAL_VIEW_KEY_LOGGING_ENABLED)
             mClient.logInfo(LOG_TAG, "onKeyDown(keyCode=" + keyCode + ", isSystem()=" + event.isSystem() + ", event=" + event + ")");
-        if (mEmulator == null) return true;
+        if (mTermSession == null) return true;
         if (isSelectingText()) {
             stopTextSelectionMode();
         }
@@ -1007,7 +1009,7 @@ public class TerminalView extends View {
                 if (shiftDown) {
                     long time = SystemClock.uptimeMillis();
                     MotionEvent motionEvent = MotionEvent.obtain(time, time, MotionEvent.ACTION_DOWN, 0, 0, 0);
-                    doScroll(motionEvent, keyCode == KeyEvent.KEYCODE_PAGE_UP ? -mEmulator.mRows : mEmulator.mRows);
+                    doScroll(motionEvent, keyCode == KeyEvent.KEYCODE_PAGE_UP ? -mRows : mRows);
                     motionEvent.recycle();
                     return true;
                 }
@@ -1030,7 +1032,7 @@ public class TerminalView extends View {
 
         // Do not return for KEYCODE_BACK and send it to the client since user may be trying
         // to exit the activity.
-        if (mEmulator == null && keyCode != KeyEvent.KEYCODE_BACK) return true;
+        if (mTermSession == null && keyCode != KeyEvent.KEYCODE_BACK) return true;
 
         if (mClient.onKeyUp(keyCode, event)) {
             invalidate();
@@ -1058,17 +1060,17 @@ public class TerminalView extends View {
         int viewHeight = getHeight();
         if (viewWidth == 0 || viewHeight == 0 || mTermSession == null) return;
 
-        // Set to 80 and 24 if you want to enable vttest.
-        int newColumns = Math.max(4, (int) (viewWidth / mRenderer.mFontWidth));
-        int newRows = Math.max(4, (viewHeight - mRenderer.mFontLineSpacingAndAscent) / mRenderer.mFontLineSpacing);
+        // 主路径（FableInputTerminalView 已接核心缝）以 CoreAdapter.getCellSize 为准；
+        // 本实现为无核心缝时的回退（默认单元格度量）。
+        int newColumns = Math.max(4, (int) (viewWidth / mCellWidthPx));
+        int newRows = Math.max(4, (int) (viewHeight / mCellHeightPx));
 
-        if (mEmulator == null || (newColumns != mEmulator.mColumns || newRows != mEmulator.mRows)) {
-            mTermSession.updateSize(newColumns, newRows, (int) mRenderer.getFontWidth(), mRenderer.getFontLineSpacing());
-            mEmulator = mTermSession.getEmulator();
+        if (mColumns == 0 || newColumns != mColumns || newRows != mRows) {
+            mTermSession.updateSize(newColumns, newRows, (int) mCellWidthPx, (int) mCellHeightPx);
+            mColumns = newColumns;
+            mRows = newRows;
             mClient.onEmulatorSet();
 
-            // Update mTerminalCursorBlinkerRunnable inner class mEmulator on session change
-            if (mTerminalCursorBlinkerRunnable != null)
             mTopRow = 0;
             scrollTo(0, 0);
             invalidate();
@@ -1077,18 +1079,10 @@ public class TerminalView extends View {
 
     @Override
     protected void onDraw(Canvas canvas) {
-        if (mEmulator == null) {
+        if (mTermSession == null) {
             canvas.drawColor(0XFF000000);
         } else {
-            // render the terminal view and highlight any selected text
-            int[] sel = mDefaultSelectors;
-            if (mTextSelectionCursorController != null) {
-                mTextSelectionCursorController.getSelectors(sel);
-            }
-
-            mRenderer.render(mEmulator, canvas, mTopRow, sel[0], sel[1], sel[2], sel[3]);
-
-            // render the text selection handles
+            // 正文由 fable-render（SurfaceView）绘制；本视图只画选择手柄。
             renderTextSelection();
         }
     }
@@ -1098,26 +1092,32 @@ public class TerminalView extends View {
     }
 
     private CharSequence getText() {
-        return mEmulator.getScreen().getSelectedText(0, mTopRow, mEmulator.mColumns, mTopRow + mEmulator.mRows);
+        if (mCoreAdapter == null || mTermSession == null || mRows <= 0) return "";
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < mRows; i++) {
+            if (i > 0) builder.append('\n');
+            builder.append(mCoreAdapter.getText(mTopRow + i, 0, mColumns));
+        }
+        return builder;
     }
 
     public int getCursorX(float x) {
-        return (int) (x / mRenderer.mFontWidth);
+        return (int) (x / mCellWidthPx);
     }
 
     public int getCursorY(float y) {
-        return (int) (((y - 40) / mRenderer.mFontLineSpacing) + mTopRow);
+        return (int) (((y - mCellHeightPx) / mCellHeightPx) + mTopRow);
     }
 
     public int getPointX(int cx) {
-        if (cx > mEmulator.mColumns) {
-            cx = mEmulator.mColumns;
+        if (cx > mColumns) {
+            cx = mColumns;
         }
-        return Math.round(cx * mRenderer.mFontWidth);
+        return Math.round(cx * mCellWidthPx);
     }
 
     public int getPointY(int cy) {
-        return Math.round((cy - mTopRow) * mRenderer.mFontLineSpacing);
+        return Math.round((cy - mTopRow) * mCellHeightPx);
     }
 
     public int getTopRow() {
@@ -1338,10 +1338,7 @@ public class TerminalView extends View {
         // Stop any existing cursor blinker callbacks
         stopTerminalCursorBlinker();
 
-        if (mEmulator == null) return;
-
-        // 旧路径需要同步旧模拟器的"闪烁启用"标志；新路径相位只经 CoreAdapter 推送。
-        if (!isCoreAdapterActive()) mEmulator.setCursorBlinkingEnabled(false);
+        if (mTermSession == null) return;
 
         if (start) {
             // If cursor blinker is not enabled or is not valid
@@ -1360,7 +1357,6 @@ public class TerminalView extends View {
             if (mTerminalCursorBlinkerHandler == null)
                 mTerminalCursorBlinkerHandler = new Handler(Looper.getMainLooper());
             mTerminalCursorBlinkerRunnable = new TerminalCursorBlinkerRunnable(mTerminalCursorBlinkerRate);
-            if (!isCoreAdapterActive()) mEmulator.setCursorBlinkingEnabled(true);
             mTerminalCursorBlinkerRunnable.run();
         }
     }
@@ -1456,11 +1452,40 @@ public class TerminalView extends View {
      * 新路径为视图本地状态（onScreenUpdated 据此保持视口）；旧路径回退旧模拟器。
      */
     public void toggleAutoScrollDisabled() {
-        if (isCoreAdapterActive()) {
-            mAutoScrollDisabled = !mAutoScrollDisabled;
-        } else if (mEmulator != null) {
-            mEmulator.toggleAutoScrollDisabled();
-        }
+        mAutoScrollDisabled = !mAutoScrollDisabled;
+    }
+
+    /** 工单 31：当前可向上回看的历史行数（核心缝；无缝为 0）。 */
+    public int getScrollbackRows() {
+        return mCoreAdapter == null ? 0 : Math.max(0, mCoreAdapter.getScrollbackRows());
+    }
+
+    /** 工单 31：外部行（0 = 活动屏顶，负 = 历史）列区间文本（核心缝；无缝为空串）。 */
+    public String getCoreText(int row, int startCol, int endCol) {
+        return mCoreAdapter == null ? "" : mCoreAdapter.getText(row, startCol, endCol);
+    }
+
+    /** 工单 31：单词列边界（核心缝；无词返回 null）。 */
+    public int[] getWordBoundsAt(int column, int externalRow) {
+        return mCoreAdapter == null ? null : mCoreAdapter.getWordBoundsAt(column, externalRow);
+    }
+
+    /** 当前视图行列（本地几何缓存，工单 31 起由 updateSize 维护）。 */
+    public int getRows() {
+        return mRows;
+    }
+
+    public int getColumns() {
+        return mColumns;
+    }
+
+    /** 当前单元格像素尺寸（主路径从 CoreAdapter.getCellSize 同步）。 */
+    public float getCellWidthPx() {
+        return mCellWidthPx;
+    }
+
+    public float getCellHeightPx() {
+        return mCellHeightPx;
     }
 
     /**

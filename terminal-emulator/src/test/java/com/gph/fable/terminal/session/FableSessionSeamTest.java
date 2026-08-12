@@ -312,15 +312,13 @@ public class FableSessionSeamTest {
     }
 
     @Test
-    public void outputRoutesToEmulatorAndCoreAdapter() {
+    public void outputRoutesToCoreAdapter() {
         mSession = newSession(mFactory = new FakeFactory());
         mSession.updateSize(10, 5, CELL_W, CELL_H);
 
         mFactory.lastSession.emitOutput("hello\r\nworld\r\n");
 
-        // 字节同时到达旧路径 emulator 与新路径核心缝。
-        assertEquals("hello", emulatorSelection(0, 0, 5, 0));
-        assertEquals("world", emulatorSelection(0, 1, 5, 1));
+        // 工单 31：旧模拟器已删除，字节只到核心缝。
         assertEquals("hello\r\nworld\r\n", mCore.writes.toString(StandardCharsets.UTF_8));
     }
 
@@ -360,8 +358,7 @@ public class FableSessionSeamTest {
         assertTrue(mCore.destroyed);
         assertFalse(mSession.isRunning());
         assertEquals(3, mSession.getExitStatus());
-        // 退出描述只进旧路径 emulator（核心已销毁，与工单 15 行为一致）。
-        assertTrue(emulatorSelection(0, 0, 10, 4).contains("[Process completed (code 3)"));
+        // 工单 31：旧模拟器已删除，退出描述在核心销毁后进入环形缓冲（不投递核心）。
         assertFalse(mCore.writes.toString(StandardCharsets.UTF_8).contains("Process completed"));
     }
 
@@ -388,7 +385,4 @@ public class FableSessionSeamTest {
         assertNull(mSession.getCwd());
     }
 
-    private String emulatorSelection(int startCol, int startRow, int endCol, int endRow) {
-        return mSession.getEmulator().getScreen().getSelectedText(startCol, startRow, endCol, endRow);
-    }
 }

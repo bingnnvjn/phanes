@@ -21,13 +21,13 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 /**
- * 工单 30：TerminalSession 的 UI 状态接线契约（JVM）。
+ * 工单 30/31：TerminalSession 的 UI 状态接线契约（JVM）。
  *
- * 新路径（CoreAdapter 已接）下：
+ * CoreAdapter 已接下：
  * - getTitle() 委托核心缝；
- * - title/bell 事件经 pollUiEvents() 消费核心标记投递，旧模拟器回调被门控；
+ * - title/bell 事件经 pollUiEvents() 消费核心标记投递；
  * - paste() 的 bracketed paste 模式以核心缝状态为准。
- * 旧路径（无缝）保持既有回调与旧模拟器 paste 行为。
+ * 旧模拟器路径已随工单 31 删除。
  */
 public class TerminalSessionUiStateTest {
 
@@ -362,15 +362,6 @@ public class TerminalSessionUiStateTest {
                 "\u001b]0;poll-title\u0007".length());
         adapter.write(new byte[] { 0x07 }, 1);
 
-        // 旧模拟器驱动的 title/bell 回调被门控（不再双投递）；颜色不在切缝清单，
-        // 保持既有回调。
-        session.titleChanged("", "poll-title");
-        session.onBell();
-        session.onColorsChanged();
-        assertEquals(0, client.titleChangedCount);
-        assertEquals(0, client.bellCount);
-        assertEquals(1, client.colorsChangedCount);
-
         // UI 轮询消费核心标记：事件投递、标记清除。
         session.pollUiEvents();
         assertEquals(1, client.titleChangedCount);
@@ -378,25 +369,6 @@ public class TerminalSessionUiStateTest {
 
         session.pollUiEvents();
         assertEquals("消费后不再重复投递", 1, client.titleChangedCount);
-        assertEquals(1, client.bellCount);
-    }
-
-    @Test
-    public void titleBellOldPathStillDelivered() {
-        RecordingClient client = new RecordingClient();
-        TerminalSession session = newSession(client, new RecordingFactory());
-
-        // 无缝（旧路径）：旧模拟器回调原样投递。
-        session.titleChanged("", "old-title");
-        session.onBell();
-        session.onColorsChanged();
-        assertEquals(1, client.titleChangedCount);
-        assertEquals(1, client.bellCount);
-        assertEquals(1, client.colorsChangedCount);
-
-        // 无缝下 pollUiEvents 为空操作（没有消费标记可读）。
-        session.pollUiEvents();
-        assertEquals(1, client.titleChangedCount);
         assertEquals(1, client.bellCount);
     }
 
@@ -428,19 +400,4 @@ public class TerminalSessionUiStateTest {
                 new String(factory.session.writes.get(2), StandardCharsets.UTF_8));
     }
 
-    @Test
-    public void pasteOldPathDelegatesToEmulator() {
-        RecordingClient client = new RecordingClient();
-        RecordingFactory factory = new RecordingFactory();
-        TerminalSession session = newSession(client, factory);
-
-        // 初始化旧模拟器（无缝路径）。
-        session.updateSize(20, 5, CELL_W, CELL_H);
-        assertTrue(session.getEmulator() != null);
-
-        session.paste("a\nb");
-        assertFalse(factory.session.writes.isEmpty());
-        assertEquals("a\rb",
-                new String(factory.session.writes.get(0), StandardCharsets.UTF_8));
-    }
 }

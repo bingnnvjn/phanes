@@ -107,10 +107,12 @@ public final class FableTerminalView extends FrameLayout {
         mCurrentRender = render;
 
         boolean changed = mInputView.attachSession(session);
-        // 先 attachSession（mEmulator 指向新会话）再绑缝，避免 setCoreAdapter 的
+        // 先 attachSession（输入视图指向新会话）再绑缝，避免 setCoreAdapter 的
         // updateSize 把还挂着的旧会话 PTY 临时 resize。
         CoreAdapter adapter = session.getCoreAdapter();
-        mInputView.setCoreAdapter(isRenderable(adapter) ? adapter : null);
+        // 工单 31：旧路径（TerminalView 自绘）已删除；渲染器异常时也绑适配器，
+        // 缝方法在句柄无效时安全忽略，视图不再降级到旧画法。
+        mInputView.setCoreAdapter(adapter);
         // 新路径：attach 时把 colors.properties/内置明暗配色板 push 给渲染器。
         FableTerminalPalette.apply(getContext(), isRenderable(adapter) ? adapter : null);
         render.show();
@@ -178,7 +180,8 @@ public final class FableTerminalView extends FrameLayout {
                 adapter.write(graphemeOn, graphemeOn.length);
             }
             if (!isRenderable(adapter)) {
-                // 渲染器不可用（异常环境）：降级旧路径，由内嵌输入视图自绘。
+                // 渲染器不可用（异常环境）：无 SurfaceView，输入视图保持可用，正文缺失
+                //（旧路径已随工单 31 删除）。
                 surfaceView = null;
                 callback = null;
                 return;

@@ -77,6 +77,27 @@ public final class RenderCore {
     /** 工单 30：推送光标闪烁相位（true = 可见相位；渲染层与核心光标可见性 AND）。 */
     public static native void rendererSetCursorBlinkState(long handle, boolean cursorVisible);
 
+    /** 工单 31：当前 mouse 是否 SGR 格式（DECSET 1006）。 */
+    public static native boolean rendererGetModeMouseSgr(long handle);
+
+    /** 工单 31：当前 mouse 是否 button-event（1002）或 any-event（1003）。 */
+    public static native boolean rendererGetModeMouseButtonEvent(long handle);
+
+    /** 工单 31：当前可向上回看的历史行数（视口之外）。 */
+    public static native int rendererGetScrollbackRows(long handle);
+
+    /** 工单 31：外部行列区间文本（0 = 活动屏顶，负 = 历史；端排他）。 */
+    public static native String rendererGetText(long handle, int row, int startCol, int endCol);
+
+    /** 工单 31：单词列边界 {start,end}（无词返回 null）。 */
+    public static native int[] rendererGetWordBoundsAt(long handle, int column, int row);
+
+    /** 工单 31：取词（软换行整行语义；无词返回空串）。 */
+    public static native String rendererGetWordAt(long handle, int column, int row);
+
+    /** 工单 31：完整转录文本（活动屏 + 历史）。 */
+    public static native String rendererGetTranscriptText(long handle, boolean linesJoined, boolean trim);
+
     /** 工单 14：push 配色板（ARGB），前景/背景/选择色/光标色。 */
     public static native void rendererSetPalette(long handle, int fgArgb, int bgArgb, int selectionArgb, int cursorArgb);
 
