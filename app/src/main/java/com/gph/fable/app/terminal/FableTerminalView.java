@@ -10,8 +10,8 @@ import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
 import com.gph.fable.app.terminal.adapter.FableRenderCoreAdapter;
-import com.gph.fable.terminal.TerminalSession;
-import com.gph.fable.terminal.adapter.CoreAdapter;
+import com.gph.fable.core.TerminalSession;
+import com.gph.fable.core.adapter.CoreAdapter;
 import com.gph.fable.view.FableInputTerminalView;
 
 import java.util.HashMap;

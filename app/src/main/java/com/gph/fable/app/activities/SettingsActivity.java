@@ -19,9 +19,9 @@ import com.gph.fable.shared.models.ReportInfo;
 import com.gph.fable.app.models.UserAction;
 import com.gph.fable.shared.android.AndroidUtils;
 import com.gph.fable.shared.termux.TermuxConstants;
-import com.gph.fable.shared.termux.TermuxUtils;
+import com.gph.fable.shared.termux.FableUtils;
 import com.gph.fable.shared.activity.media.AppCompatActivityUtils;
-import com.gph.fable.shared.termux.theme.TermuxThemeUtils;
+import com.gph.fable.shared.termux.theme.FableThemeUtils;
 import com.gph.fable.shared.view.SystemBarInsets;
 
 import android.os.Environment;
@@ -32,8 +32,8 @@ public class SettingsActivity extends AppCompatActivity implements PreferenceFra
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        String themeMode = TermuxThemeUtils.getThemeMode(this, null);
-        TermuxThemeUtils.setAppNightMode(themeMode);
+        String themeMode = FableThemeUtils.getThemeMode(this, null);
+        FableThemeUtils.setAppNightMode(themeMode);
         AppCompatActivityUtils.setNightMode(this, themeMode, true);
 
         setContentView(R.layout.activity_settings);
@@ -105,7 +105,7 @@ public class SettingsActivity extends AppCompatActivity implements PreferenceFra
                             StringBuilder aboutString = new StringBuilder();
                             aboutString.append(context.getString(R.string.about_fable_header)).append("\n\n");
                             aboutString.append(context.getString(R.string.about_fable_description)).append("\n\n");
-                            aboutString.append(TermuxUtils.getAppInfoMarkdownString(context, TermuxUtils.AppInfoMode.TERMUX_PACKAGE));
+                            aboutString.append(FableUtils.getAppInfoMarkdownString(context, FableUtils.AppInfoMode.TERMUX_PACKAGE));
                             aboutString.append("\n\n").append(AndroidUtils.getDeviceInfoMarkdownString(context, true));
 
                             String userActionName = UserAction.ABOUT.getName();

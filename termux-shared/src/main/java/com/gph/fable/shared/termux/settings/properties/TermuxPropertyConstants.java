@@ -1,7 +1,7 @@
 package com.gph.fable.shared.termux.settings.properties;
 
 import com.google.common.collect.ImmutableBiMap;
-import com.gph.fable.shared.termux.shell.am.TermuxAmSocketServer;
+import com.gph.fable.shared.termux.shell.am.FableAmSocketServer;
 import com.gph.fable.shared.theme.NightMode;
 import com.gph.fable.shared.file.FileUtils;
 import com.gph.fable.shared.file.filesystem.FileType;
@@ -66,7 +66,7 @@ import java.util.Set;
  *      - Add `*KEY_TERMINAL_MARGIN_HORIZONTAL*` and `*KEY_TERMINAL_MARGIN_VERTICAL*`.
  *
  * - 0.14.0 (2021-09-02)
- *      - Add `getTermuxFloatPropertiesFile()`.
+ *      - Add `getFableFloatPropertiesFile()`.
  *
  * - 0.15.0 (2021-09-05)
  *      - Add `KEY_EXTRA_KEYS_TEXT_ALL_CAPS`.
@@ -131,7 +131,7 @@ public final class TermuxPropertyConstants {
 
 
 
-    /** Defines the key for whether the {@link TermuxAmSocketServer} should be run at app startup */
+    /** Defines the key for whether the {@link FableAmSocketServer} should be run at app startup */
     public static final String KEY_RUN_TERMUX_AM_SOCKET_SERVER =  "run-termux-am-socket-server"; // Default: "run-termux-am-socket-server"
 
 

@@ -41,14 +41,14 @@ public class Android15ManifestTest {
     @Test
     public void termux_service_declares_special_use_type_and_subtype() throws IOException {
         String manifest = manifestText();
-        int serviceStart = manifest.indexOf("android:name=\".app.TermuxService\"");
+        int serviceStart = manifest.indexOf("android:name=\".app.FableService\"");
         int serviceEnd = manifest.indexOf("</service>", serviceStart);
-        Assert.assertTrue("TermuxService declaration not found", serviceStart >= 0);
+        Assert.assertTrue("FableService declaration not found", serviceStart >= 0);
         String service = manifest.substring(serviceStart, serviceEnd);
 
-        Assert.assertTrue("TermuxService missing foregroundServiceType=\"specialUse\"",
+        Assert.assertTrue("FableService missing foregroundServiceType=\"specialUse\"",
             service.contains("android:foregroundServiceType=\"specialUse\""));
-        Assert.assertTrue("TermuxService missing PROPERTY_SPECIAL_USE_FGS_SUBTYPE",
+        Assert.assertTrue("FableService missing PROPERTY_SPECIAL_USE_FGS_SUBTYPE",
             service.contains("android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"));
     }
 
@@ -73,11 +73,11 @@ public class Android15ManifestTest {
      */
     @Test
     public void activity_root_layout_keeps_fits_system_windows() throws IOException {
-        File layout = new File("src/main/res/layout/activity_termux.xml");
+        File layout = new File("src/main/res/layout/activity_fable.xml");
         Assert.assertTrue("Layout not found at " + layout.getAbsolutePath(), layout.isFile());
         String text = new String(Files.readAllBytes(layout.toPath()), StandardCharsets.UTF_8);
 
-        Assert.assertTrue("activity_termux.xml root must keep android:fitsSystemWindows=\"true\"",
+        Assert.assertTrue("activity_fable.xml root must keep android:fitsSystemWindows=\"true\"",
             text.contains("android:fitsSystemWindows=\"true\""));
     }
 

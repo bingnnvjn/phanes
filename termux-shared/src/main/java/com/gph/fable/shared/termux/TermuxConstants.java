@@ -927,7 +927,7 @@ public final class TermuxConstants {
 
 
         /** Termux app core activity name. */
-        public static final String TERMUX_ACTIVITY_NAME = TERMUX_PACKAGE_NAME + ".app.TermuxActivity"; // Default: "com.gph.fable.app.TermuxActivity"
+        public static final String TERMUX_ACTIVITY_NAME = TERMUX_PACKAGE_NAME + ".app.FableActivity"; // Default: "com.gph.fable.app.FableActivity"
 
         /**
          * Termux app core activity.
@@ -949,7 +949,7 @@ public final class TermuxConstants {
             public static final String EXTRA_RELOAD_STYLE = TermuxConstants.TERMUX_PACKAGE_NAME + ".app.reload_style"; // Default: "com.gph.fable.app.reload_style"
 
             /**  Intent {@code boolean} extra for whether to recreate activity for the TERMUX_ACTIVITY.ACTION_RELOAD_STYLE intent. */
-            public static final String EXTRA_RECREATE_ACTIVITY = TERMUX_APP.TERMUX_ACTIVITY_NAME + ".EXTRA_RECREATE_ACTIVITY"; // Default: "com.gph.fable.app.TermuxActivity.EXTRA_RECREATE_ACTIVITY"
+            public static final String EXTRA_RECREATE_ACTIVITY = TERMUX_APP.TERMUX_ACTIVITY_NAME + ".EXTRA_RECREATE_ACTIVITY"; // Default: "com.gph.fable.app.FableActivity.EXTRA_RECREATE_ACTIVITY"
 
 
             /** Intent action to make termux request storage permissions */
@@ -968,7 +968,7 @@ public final class TermuxConstants {
 
 
         /** Termux app core service name. */
-        public static final String TERMUX_SERVICE_NAME = TERMUX_PACKAGE_NAME + ".app.TermuxService"; // Default: "com.gph.fable.app.TermuxService"
+        public static final String TERMUX_SERVICE_NAME = TERMUX_PACKAGE_NAME + ".app.FableService"; // Default: "com.gph.fable.app.FableService"
 
         /**
          * Termux app core service.

@@ -4,7 +4,7 @@
     <string name="application_name">Fable</string>
     <string name="shared_user_label">Fable 用户</string>
 
-    <!-- Termux RUN_COMMAND 权限 -->
+    <!-- Fable RUN_COMMAND 权限 -->
     <string name="permission_run_command_label">在 Fable 环境中运行命令</string>
     <string name="permission_run_command_description">在 Fable 环境中执行任意命令并访问文件</string>
 
@@ -65,9 +65,9 @@
 
     <string name="action_report_issue">报告问题</string>
     <string name="msg_generating_report">正在生成报告</string>
-    <string name="msg_add_termux_debug_info">在报告中附加 Fable 调试信息？</string>
+    <string name="msg_add_fable_debug_info">在报告中附加 Fable 调试信息？</string>
 
-    <string name="error_styling_not_installed">未安装 Termux:Styling 插件应用。</string>
+    <string name="error_styling_not_installed">未安装样式插件应用。</string>
     <string name="action_styling_install">安装</string>
 
     <!-- Fable 通知 -->
@@ -88,15 +88,15 @@
     <string name="notification_wake_lock_held">（已持有唤醒锁）</string>
 
     <!-- 工单 05：通知渠道名（用户可见，随 locale 翻译） -->
-    <string name="termux_app_notification_channel_name">Fable 前台服务</string>
-    <string name="termux_run_command_notification_channel_name">Fable 命令执行</string>
+    <string name="fable_app_notification_channel_name">Fable 前台服务</string>
+    <string name="fable_run_command_notification_channel_name">Fable 命令执行</string>
 
-    <!-- TermuxService -->
+    <!-- FableService -->
     <string name="error_display_over_other_apps_permission_not_granted_to_start_terminal">Fable 需要“显示在其他应用上层”权限才能在 Android 10 及以上从后台启动终端会话。请在 设置 → 应用 → Fable → 高级 中授予。</string>
-    <string name="error_termux_service_invalid_execution_command_runner">传给 TermuxService 的执行命令运行器无效：`%1$s`</string>
-    <string name="error_termux_service_unsupported_execution_command_runner">不支持的 TermuxService 执行命令运行器：`%1$s`</string>
-    <string name="error_termux_service_unsupported_execution_command_shell_create_mode">不支持的执行命令 shell 创建模式：`%1$s`</string>
-    <string name="error_termux_service_execution_command_shell_name_unset">未设置 shell 名称，但传入了 `%1$s` shell 创建模式</string>
+    <string name="error_fable_service_invalid_execution_command_runner">传给 FableService 的执行命令运行器无效：`%1$s`</string>
+    <string name="error_fable_service_unsupported_execution_command_runner">不支持的 FableService 执行命令运行器：`%1$s`</string>
+    <string name="error_fable_service_unsupported_execution_command_shell_create_mode">不支持的执行命令 shell 创建模式：`%1$s`</string>
+    <string name="error_fable_service_execution_command_shell_name_unset">未设置 shell 名称，但传入了 `%1$s` shell 创建模式</string>
 
     <!-- RunCommandService -->
     <string name="error_run_command_service_invalid_intent_action">传给 RunCommandService 的 Intent 动作无效：`%1$s`</string>
@@ -110,80 +110,80 @@
     <string name="action_file_received_open_directory">打开目录</string>
 
     <!-- 其他 -->
-    <string name="error_termux_service_start_failed_general">启动 TermuxService 失败。请查看 logcat 中的异常信息。</string>
-    <string name="error_termux_service_start_failed_bg">应用在后台时因 Android 后台限制无法启动 TermuxService。</string>
+    <string name="error_fable_service_start_failed_general">启动 FableService 失败。请查看 logcat 中的异常信息。</string>
+    <string name="error_fable_service_start_failed_bg">应用在后台时因 Android 后台限制无法启动 FableService。</string>
 
     <!-- 设置 -->
-    <string name="title_activity_termux_settings">Fable 设置</string>
+    <string name="title_activity_fable_settings">Fable 设置</string>
 
     <!-- Fable 应用偏好 -->
-    <string name="termux_preferences_title">Fable</string>
-    <string name="termux_preferences_summary">Fable 应用偏好</string>
+    <string name="fable_preferences_title">Fable</string>
+    <string name="fable_preferences_summary">Fable 应用偏好</string>
 
         <!-- 调试偏好 -->
-        <string name="termux_debugging_preferences_title">调试</string>
-        <string name="termux_debugging_preferences_summary">调试偏好</string>
+        <string name="fable_debugging_preferences_title">调试</string>
+        <string name="fable_debugging_preferences_summary">调试偏好</string>
 
             <!-- 日志分类 -->
-            <string name="termux_logging_header">日志</string>
+            <string name="fable_logging_header">日志</string>
 
                 <!-- 日志级别 -->
-                <string name="termux_log_level_title">日志级别</string>
+                <string name="fable_log_level_title">日志级别</string>
 
                 <!-- 终端视图按键日志 -->
-                <string name="termux_terminal_view_key_logging_enabled_title">终端视图按键日志</string>
-                <string name="termux_terminal_view_key_logging_enabled_off">日志中不包含终端视图按键条目。（默认）</string>
-                <string name="termux_terminal_view_key_logging_enabled_on">Logcat 日志将包含终端视图按键条目。这些日志非常冗长，正常使用时应关闭，否则会造成性能问题。</string>
+                <string name="fable_terminal_view_key_logging_enabled_title">终端视图按键日志</string>
+                <string name="fable_terminal_view_key_logging_enabled_off">日志中不包含终端视图按键条目。（默认）</string>
+                <string name="fable_terminal_view_key_logging_enabled_on">Logcat 日志将包含终端视图按键条目。这些日志非常冗长，正常使用时应关闭，否则会造成性能问题。</string>
 
                 <!-- 插件错误通知 -->
-                <string name="termux_plugin_error_notifications_enabled_title">插件错误通知</string>
-                <string name="termux_plugin_error_notifications_enabled_off">不显示插件错误的提示与通知。</string>
-                <string name="termux_plugin_error_notifications_enabled_on">显示插件错误的提示与通知。（默认）</string>
+                <string name="fable_plugin_error_notifications_enabled_title">插件错误通知</string>
+                <string name="fable_plugin_error_notifications_enabled_off">不显示插件错误的提示与通知。</string>
+                <string name="fable_plugin_error_notifications_enabled_on">显示插件错误的提示与通知。（默认）</string>
 
                 <!-- 崩溃报告通知 -->
-                <string name="termux_crash_report_notifications_enabled_title">崩溃报告通知</string>
-                <string name="termux_crash_report_notifications_enabled_off">不显示崩溃报告通知。</string>
-                <string name="termux_crash_report_notifications_enabled_on">显示崩溃报告通知。（默认）</string>
+                <string name="fable_crash_report_notifications_enabled_title">崩溃报告通知</string>
+                <string name="fable_crash_report_notifications_enabled_off">不显示崩溃报告通知。</string>
+                <string name="fable_crash_report_notifications_enabled_on">显示崩溃报告通知。（默认）</string>
 
 
         <!-- 终端 I/O 偏好 -->
-        <string name="termux_terminal_io_preferences_title">终端 I/O</string>
-        <string name="termux_terminal_io_preferences_summary">终端 I/O 偏好</string>
+        <string name="fable_terminal_io_preferences_title">终端 I/O</string>
+        <string name="fable_terminal_io_preferences_summary">终端 I/O 偏好</string>
 
             <!-- 键盘分类 -->
-            <string name="termux_keyboard_header">键盘</string>
+            <string name="fable_keyboard_header">键盘</string>
 
                 <!-- 软键盘 -->
-                <string name="termux_soft_keyboard_enabled_title">启用软键盘</string>
-                <string name="termux_soft_keyboard_enabled_off">软键盘将被禁用。</string>
-                <string name="termux_soft_keyboard_enabled_on">软键盘将被启用。（默认）</string>
+                <string name="fable_soft_keyboard_enabled_title">启用软键盘</string>
+                <string name="fable_soft_keyboard_enabled_off">软键盘将被禁用。</string>
+                <string name="fable_soft_keyboard_enabled_on">软键盘将被启用。（默认）</string>
 
                 <!-- 仅无硬件键盘时启用软键盘 -->
-                <string name="termux_soft_keyboard_enabled_only_if_no_hardware_title">仅无硬件键盘时启用软键盘</string>
-                <string name="termux_soft_keyboard_enabled_only_if_no_hardware_off">即使连接了硬件键盘也启用软键盘。（默认）</string>
-                <string name="termux_soft_keyboard_enabled_only_if_no_hardware_on">仅在没有连接硬件键盘时启用软键盘。</string>
+                <string name="fable_soft_keyboard_enabled_only_if_no_hardware_title">仅无硬件键盘时启用软键盘</string>
+                <string name="fable_soft_keyboard_enabled_only_if_no_hardware_off">即使连接了硬件键盘也启用软键盘。（默认）</string>
+                <string name="fable_soft_keyboard_enabled_only_if_no_hardware_on">仅在没有连接硬件键盘时启用软键盘。</string>
 
 
         <!-- 终端视图偏好 -->
-        <string name="termux_terminal_view_preferences_title">终端视图</string>
-        <string name="termux_terminal_view_preferences_summary">终端视图偏好</string>
+        <string name="fable_terminal_view_preferences_title">终端视图</string>
+        <string name="fable_terminal_view_preferences_summary">终端视图偏好</string>
 
             <!-- 外观 -->
-            <string name="termux_appearance_header">外观</string>
-            <string name="termux_theme_mode_title">主题</string>
-            <string name="termux_theme_mode_summary">应用外壳主题（设置、抽屉与工具栏）</string>
+            <string name="fable_appearance_header">外观</string>
+            <string name="fable_theme_mode_title">主题</string>
+            <string name="fable_theme_mode_summary">应用外壳主题（设置、抽屉与工具栏）</string>
 
             <!-- 视图分类 -->
-            <string name="termux_terminal_view_view_header">视图</string>
+            <string name="fable_terminal_view_view_header">视图</string>
 
                 <!-- 字号 -->
-                <string name="termux_terminal_view_font_size_title">字号</string>
-                <string name="termux_terminal_view_font_size_summary">终端字号（8–24）</string>
+                <string name="fable_terminal_view_font_size_title">字号</string>
+                <string name="fable_terminal_view_font_size_summary">终端字号（8–24）</string>
 
                 <!-- 终端边距调整 -->
-                <string name="termux_terminal_view_terminal_margin_adjustment_title">终端边距调整</string>
-                <string name="termux_terminal_view_terminal_margin_adjustment_off">终端边距调整将被禁用。</string>
-                <string name="termux_terminal_view_terminal_margin_adjustment_on">终端边距调整将被启用。建议启用，以修复软键盘遮挡部分扩展键/终端视图的问题。如果导致屏幕闪烁，请关闭。（默认）</string>
+                <string name="fable_terminal_view_terminal_margin_adjustment_title">终端边距调整</string>
+                <string name="fable_terminal_view_terminal_margin_adjustment_off">终端边距调整将被禁用。</string>
+                <string name="fable_terminal_view_terminal_margin_adjustment_on">终端边距调整将被启用。建议启用，以修复软键盘遮挡部分扩展键/终端视图的问题。如果导致屏幕闪烁，请关闭。（默认）</string>
 
     <!-- 关于 -->
     <string name="about_preference_title">关于</string>

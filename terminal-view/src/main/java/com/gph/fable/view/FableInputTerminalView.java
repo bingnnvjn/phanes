@@ -6,8 +6,8 @@ import android.util.Log;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
 
-import com.gph.fable.terminal.TerminalSession;
-import com.gph.fable.terminal.adapter.CoreAdapter;
+import com.gph.fable.core.TerminalSession;
+import com.gph.fable.core.adapter.CoreAdapter;
 
 /**
  * 主终端输入视图（工单 15）：继续承担 IME/硬件键/手势/长按选择的既有逻辑，

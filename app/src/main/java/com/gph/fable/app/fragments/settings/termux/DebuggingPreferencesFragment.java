@@ -13,7 +13,7 @@ import androidx.preference.PreferenceManager;
 
 import com.gph.fable.R;
 import com.gph.fable.app.fragments.settings.FablePreferenceFragment;
-import com.gph.fable.shared.termux.settings.preferences.TermuxAppSharedPreferences;
+import com.gph.fable.shared.termux.settings.preferences.FableAppSharedPreferences;
 import com.gph.fable.shared.logger.Logger;
 
 @Keep
@@ -27,7 +27,7 @@ public class DebuggingPreferencesFragment extends FablePreferenceFragment {
         PreferenceManager preferenceManager = getPreferenceManager();
         preferenceManager.setPreferenceDataStore(DebuggingPreferencesDataStore.getInstance(context));
 
-        setPreferencesFromResource(R.xml.termux_debugging_preferences, rootKey);
+        setPreferencesFromResource(R.xml.fable_debugging_preferences, rootKey);
 
         configureLoggingPreferences(context);
     }
@@ -38,7 +38,7 @@ public class DebuggingPreferencesFragment extends FablePreferenceFragment {
 
         ListPreference logLevelListPreference = findPreference("log_level");
         if (logLevelListPreference != null) {
-            TermuxAppSharedPreferences preferences = TermuxAppSharedPreferences.build(context, true);
+            FableAppSharedPreferences preferences = FableAppSharedPreferences.build(context, true);
             if (preferences == null) return;
 
             setLogLevelListPreferenceData(logLevelListPreference, context, preferences.getLogLevel());
@@ -67,13 +67,13 @@ public class DebuggingPreferencesFragment extends FablePreferenceFragment {
 class DebuggingPreferencesDataStore extends PreferenceDataStore {
 
     private final Context mContext;
-    private final TermuxAppSharedPreferences mPreferences;
+    private final FableAppSharedPreferences mPreferences;
 
     private static DebuggingPreferencesDataStore mInstance;
 
     private DebuggingPreferencesDataStore(Context context) {
         mContext = context;
-        mPreferences = TermuxAppSharedPreferences.build(context, true);
+        mPreferences = FableAppSharedPreferences.build(context, true);
     }
 
     public static synchronized DebuggingPreferencesDataStore getInstance(Context context) {

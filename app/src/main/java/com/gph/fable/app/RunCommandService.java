@@ -12,8 +12,8 @@ import android.os.IBinder;
 import com.gph.fable.R;
 import com.gph.fable.shared.data.DataUtils;
 import com.gph.fable.shared.data.IntentUtils;
-import com.gph.fable.shared.termux.plugins.TermuxPluginUtils;
-import com.gph.fable.shared.termux.file.TermuxFileUtils;
+import com.gph.fable.shared.termux.plugins.FablePluginUtils;
+import com.gph.fable.shared.termux.file.FableFileUtils;
 import com.gph.fable.shared.file.filesystem.FileType;
 import com.gph.fable.shared.errors.Errno;
 import com.gph.fable.shared.errors.Error;
@@ -28,7 +28,7 @@ import com.gph.fable.shared.shell.command.ExecutionCommand.Runner;
 
 /**
  * A service that receives {@link RUN_COMMAND_SERVICE#ACTION_RUN_COMMAND} intent from third party apps and
- * plugins that contains info on command execution and forwards the extras to {@link TermuxService}
+ * plugins that contains info on command execution and forwards the extras to {@link FableService}
  * for the actual execution.
  *
  * Check https://github.com/termux/termux-app/wiki/RUN_COMMAND-Intent for more info.
@@ -75,7 +75,7 @@ public class RunCommandService extends Service {
         if (!RUN_COMMAND_SERVICE.ACTION_RUN_COMMAND.equals(intent.getAction())) {
             errmsg = this.getString(R.string.error_run_command_service_invalid_intent_action, intent.getAction());
             executionCommand.setStateFailed(Errno.ERRNO_FAILED.getCode(), errmsg);
-            TermuxPluginUtils.processPluginExecutionCommandError(this, LOG_TAG, executionCommand, false);
+            FablePluginUtils.processPluginExecutionCommandError(this, LOG_TAG, executionCommand, false);
             return stopService();
         }
 
@@ -110,7 +110,7 @@ public class RunCommandService extends Service {
         if (Runner.runnerOf(executionCommand.runner) == null) {
             errmsg = this.getString(R.string.error_run_command_service_invalid_execution_command_runner, executionCommand.runner);
             executionCommand.setStateFailed(Errno.ERRNO_FAILED.getCode(), errmsg);
-            TermuxPluginUtils.processPluginExecutionCommandError(this, LOG_TAG, executionCommand, false);
+            FablePluginUtils.processPluginExecutionCommandError(this, LOG_TAG, executionCommand, false);
             return stopService();
         }
 
@@ -137,10 +137,10 @@ public class RunCommandService extends Service {
         // user knows someone tried to run a command in termux context, since it may be malicious
         // app or imported (tasker) plugin project and not the user himself. If a pending intent is
         // also sent, then its creator is also logged and shown.
-        errmsg = TermuxPluginUtils.checkIfAllowExternalAppsPolicyIsViolated(this, LOG_TAG);
+        errmsg = FablePluginUtils.checkIfAllowExternalAppsPolicyIsViolated(this, LOG_TAG);
         if (errmsg != null) {
             executionCommand.setStateFailed(Errno.ERRNO_FAILED.getCode(), errmsg);
-            TermuxPluginUtils.processPluginExecutionCommandError(this, LOG_TAG, executionCommand, true);
+            FablePluginUtils.processPluginExecutionCommandError(this, LOG_TAG, executionCommand, true);
             return stopService();
         }
 
@@ -150,12 +150,12 @@ public class RunCommandService extends Service {
         if (executionCommand.executable == null || executionCommand.executable.isEmpty()) {
             errmsg  = this.getString(R.string.error_run_command_service_mandatory_extra_missing, RUN_COMMAND_SERVICE.EXTRA_COMMAND_PATH);
             executionCommand.setStateFailed(Errno.ERRNO_FAILED.getCode(), errmsg);
-            TermuxPluginUtils.processPluginExecutionCommandError(this, LOG_TAG, executionCommand, false);
+            FablePluginUtils.processPluginExecutionCommandError(this, LOG_TAG, executionCommand, false);
             return stopService();
         }
 
         // Get canonical path of executable
-        executionCommand.executable = TermuxFileUtils.getCanonicalPath(executionCommand.executable, null, true);
+        executionCommand.executable = FableFileUtils.getCanonicalPath(executionCommand.executable, null, true);
 
         // If executable is not a regular file, or is not readable or executable, then just return
         // Setting of missing read and execute permissions is not done
@@ -164,7 +164,7 @@ public class RunCommandService extends Service {
             false);
         if (error != null) {
             executionCommand.setStateFailed(error);
-            TermuxPluginUtils.processPluginExecutionCommandError(this, LOG_TAG, executionCommand, false);
+            FablePluginUtils.processPluginExecutionCommandError(this, LOG_TAG, executionCommand, false);
             return stopService();
         }
 
@@ -173,19 +173,19 @@ public class RunCommandService extends Service {
         // If workingDirectory is not null or empty
         if (executionCommand.workingDirectory != null && !executionCommand.workingDirectory.isEmpty()) {
             // Get canonical path of workingDirectory
-            executionCommand.workingDirectory = TermuxFileUtils.getCanonicalPath(executionCommand.workingDirectory, null, true);
+            executionCommand.workingDirectory = FableFileUtils.getCanonicalPath(executionCommand.workingDirectory, null, true);
 
             // If workingDirectory is not a directory, or is not readable or writable, then just return
             // Creation of missing directory and setting of read, write and execute permissions are only done if workingDirectory is
             // under allowed termux working directory paths.
             // We try to set execute permissions, but ignore if they are missing, since only read and write permissions are required
             // for working directories.
-            error = TermuxFileUtils.validateDirectoryFileExistenceAndPermissions("working", executionCommand.workingDirectory,
+            error = FableFileUtils.validateDirectoryFileExistenceAndPermissions("working", executionCommand.workingDirectory,
                 true, true, true,
                 false, true);
             if (error != null) {
                 executionCommand.setStateFailed(error);
-                TermuxPluginUtils.processPluginExecutionCommandError(this, LOG_TAG, executionCommand, false);
+                FablePluginUtils.processPluginExecutionCommandError(this, LOG_TAG, executionCommand, false);
                 return stopService();
             }
         }
@@ -194,7 +194,7 @@ public class RunCommandService extends Service {
         // use it instead of the canonical path above since otherwise arguments would be passed to
         // coreutils/busybox instead and command would fail. Broken symlinks would already have been
         // validated so it should be fine to use it.
-        executableExtra = TermuxFileUtils.getExpandedTermuxPath(executableExtra);
+        executableExtra = FableFileUtils.getExpandedFablePath(executableExtra);
         if (FileUtils.getFileType(executableExtra, false) == FileType.SYMLINK) {
             Logger.logVerbose(LOG_TAG, "The executableExtra path \"" + executableExtra + "\" is a symlink so using it instead of the canonical path \"" + executionCommand.executable + "\"");
             executionCommand.executable = executableExtra;
@@ -206,7 +206,7 @@ public class RunCommandService extends Service {
 
         // Create execution intent with the action TERMUX_SERVICE#ACTION_SERVICE_EXECUTE to be sent to the TERMUX_SERVICE
         Intent execIntent = new Intent(TERMUX_SERVICE.ACTION_SERVICE_EXECUTE, executionCommand.executableUri);
-        execIntent.setClass(this, TermuxService.class);
+        execIntent.setClass(this, FableService.class);
         execIntent.putExtra(TERMUX_SERVICE.EXTRA_ARGUMENTS, executionCommand.arguments);
         execIntent.putExtra(TERMUX_SERVICE.EXTRA_STDIN, executionCommand.stdin);
         if (executionCommand.workingDirectory != null && !executionCommand.workingDirectory.isEmpty()) execIntent.putExtra(TERMUX_SERVICE.EXTRA_WORKDIR, executionCommand.workingDirectory);
@@ -261,7 +261,7 @@ public class RunCommandService extends Service {
         // Build the notification
         Notification.Builder builder =  NotificationUtils.geNotificationBuilder(this,
             TermuxConstants.TERMUX_RUN_COMMAND_NOTIFICATION_CHANNEL_ID, Notification.PRIORITY_LOW,
-            getString(R.string.termux_run_command_notification_channel_name), null, null,
+            getString(R.string.fable_run_command_notification_channel_name), null, null,
             null, null, NotificationUtils.NOTIFICATION_MODE_SILENT);
         if (builder == null)  return null;
 
@@ -281,7 +281,7 @@ public class RunCommandService extends Service {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
 
         NotificationUtils.setupNotificationChannel(this, TermuxConstants.TERMUX_RUN_COMMAND_NOTIFICATION_CHANNEL_ID,
-            getString(R.string.termux_run_command_notification_channel_name), NotificationManager.IMPORTANCE_LOW);
+            getString(R.string.fable_run_command_notification_channel_name), NotificationManager.IMPORTANCE_LOW);
     }
 
 }

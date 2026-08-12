@@ -39,9 +39,9 @@ import androidx.annotation.RequiresApi;
 
 import java.util.function.Consumer;
 
-import com.gph.fable.terminal.KeyHandler;
-import com.gph.fable.terminal.TerminalSession;
-import com.gph.fable.terminal.adapter.CoreAdapter;
+import com.gph.fable.core.KeyHandler;
+import com.gph.fable.core.TerminalSession;
+import com.gph.fable.core.adapter.CoreAdapter;
 import com.gph.fable.view.textselection.TextSelectionCursorController;
 
 /** View displaying and interacting with a {@link TerminalSession}. */
@@ -1302,14 +1302,14 @@ public class TerminalView extends View {
      * display timeout with double tap and not power button.
      *
      * It should also be called on the
-     * {@link com.gph.fable.terminal.TerminalSessionClient#onTerminalCursorStateChange(boolean)}
+     * {@link com.gph.fable.core.TerminalSessionClient#onTerminalCursorStateChange(boolean)}
      * callback when cursor is enabled or disabled so that blinker is disabled if cursor is not
      * to be shown. It should also be checked if activity is visible if blinker is to be started
      * before calling this.
      *
      * It should also be called after terminal is reset with {@link TerminalSession#reset()} in case
      * cursor blinker was disabled before reset due to call to
-     * {@link com.gph.fable.terminal.TerminalSessionClient#onTerminalCursorStateChange(boolean)}.
+     * {@link com.gph.fable.core.TerminalSessionClient#onTerminalCursorStateChange(boolean)}.
      *
      * How cursor blinker starting works is by registering a {@link Runnable} with the looper of
      * the main thread of the app which when run, toggles the cursor blinking state and re-registers
@@ -1573,7 +1573,7 @@ public class TerminalView extends View {
 
         if (mTextSelectionCursorController != null) {
             // Might solve the following exception
-            // android.view.WindowLeaked: Activity com.gph.fable.app.TermuxActivity has leaked window android.widget.PopupWindow
+            // android.view.WindowLeaked: Activity com.gph.fable.app.FableActivity has leaked window android.widget.PopupWindow
             stopTextSelectionMode();
 
             getViewTreeObserver().removeOnTouchModeChangeListener(mTextSelectionCursorController);

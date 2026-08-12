@@ -5,7 +5,7 @@ import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
 import android.view.View;
 
-import com.gph.fable.terminal.TerminalSession;
+import com.gph.fable.core.TerminalSession;
 
 /**
  * The interface for communication between {@link TerminalView} and its client. It allows for getting

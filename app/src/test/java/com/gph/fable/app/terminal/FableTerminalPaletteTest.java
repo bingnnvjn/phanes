@@ -6,7 +6,7 @@ import static org.junit.Assert.assertTrue;
 
 import android.view.Surface;
 
-import com.gph.fable.terminal.adapter.CoreAdapter;
+import com.gph.fable.core.adapter.CoreAdapter;
 
 import org.junit.Rule;
 import org.junit.Test;

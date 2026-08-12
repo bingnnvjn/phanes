@@ -22,7 +22,7 @@ public class ShellCommandShellEnvironment {
     /** Environment variable for the package name running the {@link ExecutionCommand}. */
     public static final String ENV_SHELL_CMD__PACKAGE_NAME = SHELL_CMD_ENV_PREFIX + "PACKAGE_NAME";
 
-    /** Environment variable for the {@link ExecutionCommand#id}/TermuxShellManager.SHELL_ID name.
+    /** Environment variable for the {@link ExecutionCommand#id}/FableShellManager.SHELL_ID name.
      * This will be common for all runners. */
     public static final String ENV_SHELL_CMD__SHELL_ID = SHELL_CMD_ENV_PREFIX + "SHELL_ID";
 

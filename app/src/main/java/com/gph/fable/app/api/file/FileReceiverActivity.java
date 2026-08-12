@@ -21,9 +21,9 @@ import com.gph.fable.shared.termux.interact.TextInputDialogUtils;
 import com.gph.fable.shared.termux.TermuxConstants;
 import com.gph.fable.shared.termux.TermuxConstants.TERMUX_APP;
 import com.gph.fable.shared.termux.TermuxConstants.TERMUX_APP.TERMUX_SERVICE;
-import com.gph.fable.app.TermuxService;
+import com.gph.fable.app.FableService;
 import com.gph.fable.shared.logger.Logger;
-import com.gph.fable.shared.termux.settings.properties.TermuxAppSharedProperties;
+import com.gph.fable.shared.termux.settings.properties.FableAppSharedProperties;
 import com.gph.fable.shared.termux.settings.properties.TermuxPropertyConstants;
 
 import java.io.ByteArrayInputStream;
@@ -178,7 +178,7 @@ public class FileReceiverActivity extends AppCompatActivity {
                 final Uri scriptUri = UriUtils.getFileUri(EDITOR_PROGRAM);
 
                 Intent executeIntent = new Intent(TERMUX_SERVICE.ACTION_SERVICE_EXECUTE, scriptUri);
-                executeIntent.setClass(FileReceiverActivity.this, TermuxService.class);
+                executeIntent.setClass(FileReceiverActivity.this, FableService.class);
                 executeIntent.putExtra(TERMUX_SERVICE.EXTRA_ARGUMENTS, new String[]{outFile.getAbsolutePath()});
                 startService(executeIntent);
                 finish();
@@ -188,7 +188,7 @@ public class FileReceiverActivity extends AppCompatActivity {
 
                 Intent executeIntent = new Intent(TERMUX_SERVICE.ACTION_SERVICE_EXECUTE);
                 executeIntent.putExtra(TERMUX_SERVICE.EXTRA_WORKDIR, TERMUX_RECEIVEDIR);
-                executeIntent.setClass(FileReceiverActivity.this, TermuxService.class);
+                executeIntent.setClass(FileReceiverActivity.this, FableService.class);
                 startService(executeIntent);
                 finish();
             },
@@ -241,7 +241,7 @@ public class FileReceiverActivity extends AppCompatActivity {
         final Uri urlOpenerProgramUri = UriUtils.getFileUri(URL_OPENER_PROGRAM);
 
         Intent executeIntent = new Intent(TERMUX_SERVICE.ACTION_SERVICE_EXECUTE, urlOpenerProgramUri);
-        executeIntent.setClass(FileReceiverActivity.this, TermuxService.class);
+        executeIntent.setClass(FileReceiverActivity.this, FableService.class);
         executeIntent.putExtra(TERMUX_SERVICE.EXTRA_ARGUMENTS, new String[]{url});
         startService(executeIntent);
         finish();
@@ -257,7 +257,7 @@ public class FileReceiverActivity extends AppCompatActivity {
         new Thread() {
             @Override
             public void run() {
-                TermuxAppSharedProperties properties = TermuxAppSharedProperties.getProperties();
+                FableAppSharedProperties properties = FableAppSharedProperties.getProperties();
 
                 String errmsg;
                 boolean state;

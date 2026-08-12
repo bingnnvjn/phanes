@@ -40,7 +40,7 @@ import io.noties.markwon.recycler.SimpleEntry;
 /**
  * An activity to show reports in markdown format as per CommonMark spec based on config passed as {@link ReportInfo}.
  * Add Following to `AndroidManifest.xml` to use in an app:
- * {@code `<activity android:name="com.gph.fable.shared.activities.ReportActivity" android:theme="@style/Theme.AppCompat.TermuxReportActivity" android:documentLaunchMode="intoExisting" />` }
+ * {@code `<activity android:name="com.gph.fable.shared.activities.ReportActivity" android:theme="@style/Theme.AppCompat.FableReportActivity" android:documentLaunchMode="intoExisting" />` }
  * and
  * {@code `<receiver android:name="com.gph.fable.shared.activities.ReportActivity$ReportActivityBroadcastReceiver"  android:exported="false" />` }
  * Receiver **must not** be `exported="true"`!!!

@@ -9,7 +9,7 @@ import androidx.preference.PreferenceManager;
 
 import com.gph.fable.R;
 import com.gph.fable.app.fragments.settings.FablePreferenceFragment;
-import com.gph.fable.shared.termux.settings.preferences.TermuxAppSharedPreferences;
+import com.gph.fable.shared.termux.settings.preferences.FableAppSharedPreferences;
 
 @Keep
 public class TerminalIOPreferencesFragment extends FablePreferenceFragment {
@@ -22,7 +22,7 @@ public class TerminalIOPreferencesFragment extends FablePreferenceFragment {
         PreferenceManager preferenceManager = getPreferenceManager();
         preferenceManager.setPreferenceDataStore(TerminalIOPreferencesDataStore.getInstance(context));
 
-        setPreferencesFromResource(R.xml.termux_terminal_io_preferences, rootKey);
+        setPreferencesFromResource(R.xml.fable_terminal_io_preferences, rootKey);
     }
 
 }
@@ -30,13 +30,13 @@ public class TerminalIOPreferencesFragment extends FablePreferenceFragment {
 class TerminalIOPreferencesDataStore extends PreferenceDataStore {
 
     private final Context mContext;
-    private final TermuxAppSharedPreferences mPreferences;
+    private final FableAppSharedPreferences mPreferences;
 
     private static TerminalIOPreferencesDataStore mInstance;
 
     private TerminalIOPreferencesDataStore(Context context) {
         mContext = context;
-        mPreferences = TermuxAppSharedPreferences.build(context, true);
+        mPreferences = FableAppSharedPreferences.build(context, true);
     }
 
     public static synchronized TerminalIOPreferencesDataStore getInstance(Context context) {

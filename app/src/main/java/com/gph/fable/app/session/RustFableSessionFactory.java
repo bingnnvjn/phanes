@@ -4,10 +4,10 @@ import android.util.Log;
 
 import com.gph.fable.app.SessionHandle;
 import com.gph.fable.shared.logger.Logger;
-import com.gph.fable.terminal.session.FableSession;
-import com.gph.fable.terminal.session.FableSessionCallbacks;
-import com.gph.fable.terminal.session.FableSessionFactory;
-import com.gph.fable.terminal.session.FableSessionSpec;
+import com.gph.fable.core.session.FableSession;
+import com.gph.fable.core.session.FableSessionCallbacks;
+import com.gph.fable.core.session.FableSessionFactory;
+import com.gph.fable.core.session.FableSessionSpec;
 
 /**
  * 会话层抽象缝的 Rust 工厂（工单 26）：创建 {@link RustPtySession}

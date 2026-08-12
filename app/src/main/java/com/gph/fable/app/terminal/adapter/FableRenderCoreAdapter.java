@@ -6,7 +6,7 @@ import android.view.Surface;
 import com.gph.fable.app.FontAssets;
 import com.gph.fable.app.RenderCore;
 import com.gph.fable.app.terminal.FableDiagnostics;
-import com.gph.fable.terminal.adapter.CoreAdapter;
+import com.gph.fable.core.adapter.CoreAdapter;
 
 /**
  * CoreAdapter 的新路径实现：fable-render（libghostty-vt 核心 + Rust wgpu 渲染器，

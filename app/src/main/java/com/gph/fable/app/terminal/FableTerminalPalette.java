@@ -7,7 +7,7 @@ import androidx.annotation.NonNull;
 import com.gph.fable.shared.termux.TermuxConstants;
 import com.gph.fable.shared.theme.NightMode;
 import com.gph.fable.shared.theme.ThemeUtils;
-import com.gph.fable.terminal.adapter.CoreAdapter;
+import com.gph.fable.core.adapter.CoreAdapter;
 
 import java.io.File;
 import java.io.FileInputStream;

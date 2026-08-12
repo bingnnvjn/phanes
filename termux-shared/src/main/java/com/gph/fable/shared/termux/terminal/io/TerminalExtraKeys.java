@@ -10,7 +10,7 @@ import com.google.android.material.button.MaterialButton;
 import com.gph.fable.shared.termux.extrakeys.ExtraKeyButton;
 import com.gph.fable.shared.termux.extrakeys.ExtraKeysView;
 import com.gph.fable.shared.termux.extrakeys.SpecialButton;
-import com.gph.fable.terminal.TerminalSession;
+import com.gph.fable.core.TerminalSession;
 import com.gph.fable.view.TerminalView;
 
 import static com.gph.fable.shared.termux.extrakeys.ExtraKeysConstants.PRIMARY_KEY_CODES_FOR_STRINGS;

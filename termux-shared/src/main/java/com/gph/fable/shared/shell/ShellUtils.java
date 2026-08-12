@@ -4,8 +4,8 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.gph.fable.shared.file.FileUtils;
-import com.gph.fable.terminal.TerminalSession;
-import com.gph.fable.terminal.adapter.CoreAdapter;
+import com.gph.fable.core.TerminalSession;
+import com.gph.fable.core.adapter.CoreAdapter;
 
 import java.lang.reflect.Field;
 

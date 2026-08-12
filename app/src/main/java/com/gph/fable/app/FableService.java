@@ -1,0 +1,961 @@
+package com.gph.fable.app;
+
+import android.annotation.SuppressLint;
+import android.app.Notification;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.app.Service;
+import android.content.Context;
+import android.content.Intent;
+import android.content.res.Resources;
+import android.net.wifi.WifiManager;
+import android.os.Binder;
+import android.os.Build;
+import android.os.Handler;
+import android.os.IBinder;
+import android.os.PowerManager;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+
+import com.gph.fable.R;
+import com.gph.fable.app.event.SystemEventReceiver;
+import com.gph.fable.app.terminal.FableTerminalSessionActivityClient;
+import com.gph.fable.app.terminal.FableTerminalSessionServiceClient;
+import com.gph.fable.shared.termux.plugins.FablePluginUtils;
+import com.gph.fable.shared.data.IntentUtils;
+import com.gph.fable.shared.net.uri.UriUtils;
+import com.gph.fable.shared.errors.Errno;
+import com.gph.fable.shared.shell.ShellUtils;
+import com.gph.fable.shared.shell.command.runner.app.AppShell;
+import com.gph.fable.shared.termux.settings.properties.FableAppSharedProperties;
+import com.gph.fable.shared.termux.shell.command.environment.FableShellEnvironment;
+import com.gph.fable.shared.termux.shell.FableShellUtils;
+import com.gph.fable.shared.termux.TermuxConstants;
+import com.gph.fable.shared.termux.TermuxConstants.TERMUX_APP.TERMUX_ACTIVITY;
+import com.gph.fable.shared.termux.TermuxConstants.TERMUX_APP.TERMUX_SERVICE;
+import com.gph.fable.shared.termux.settings.preferences.FableAppSharedPreferences;
+import com.gph.fable.shared.termux.shell.FableShellManager;
+import com.gph.fable.shared.termux.shell.command.runner.terminal.FableShellSession;
+import com.gph.fable.app.session.RustFableSessionFactory;
+import com.gph.fable.shared.termux.terminal.FableTerminalSessionClientBase;
+import com.gph.fable.shared.logger.Logger;
+import com.gph.fable.shared.notification.NotificationUtils;
+import com.gph.fable.shared.android.PermissionUtils;
+import com.gph.fable.shared.data.DataUtils;
+import com.gph.fable.shared.shell.command.ExecutionCommand;
+import com.gph.fable.shared.shell.command.ExecutionCommand.Runner;
+import com.gph.fable.shared.shell.command.ExecutionCommand.ShellCreateMode;
+import com.gph.fable.core.TerminalSession;
+import com.gph.fable.core.TerminalSessionClient;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * A service holding a list of {@link FableShellSession} in {@link FableShellManager#mFableShellSessions} and background {@link AppShell}
+ * in {@link FableShellManager#mFableTasks}, showing a foreground notification while running so that it is not terminated.
+ * The user interacts with the session through {@link FableActivity}, but this service may outlive
+ * the activity when the user or the system disposes of the activity. In that case the user may
+ * restart {@link FableActivity} later to yet again access the sessions.
+ * <p/>
+ * In order to keep both terminal sessions and spawned processes (who may outlive the terminal sessions) alive as long
+ * as wanted by the user this service is a foreground service, {@link Service#startForeground(int, Notification)}.
+ * <p/>
+ * Optionally may hold a wake and a wifi lock, in which case that is shown in the notification - see
+ * {@link #buildNotification()}.
+ */
+public final class FableService extends Service implements AppShell.AppShellClient, FableShellSession.FableShellSessionClient {
+
+    /** This service is only bound from inside the same process and never uses IPC. */
+    class LocalBinder extends Binder {
+        public final FableService service = FableService.this;
+    }
+
+    private final IBinder mBinder = new LocalBinder();
+
+    private final Handler mHandler = new Handler();
+
+
+    /** The full implementation of the {@link TerminalSessionClient} interface to be used by {@link TerminalSession}
+     * that holds activity references for activity related functions.
+     * Note that the service may often outlive the activity, so need to clear this reference.
+     */
+    private FableTerminalSessionActivityClient mFableTerminalSessionActivityClient;
+
+    /** The basic implementation of the {@link TerminalSessionClient} interface to be used by {@link TerminalSession}
+     * that does not hold activity references and only a service reference.
+     */
+    private final FableTerminalSessionServiceClient mFableTerminalSessionServiceClient = new FableTerminalSessionServiceClient(this);
+
+    /**
+     * Termux app shared properties manager, loaded from termux.properties
+     */
+    private FableAppSharedProperties mProperties;
+
+    /**
+     * Fable app shell manager
+     */
+    private FableShellManager mShellManager;
+
+    /** The wake lock and wifi lock are always acquired and released together. */
+    private PowerManager.WakeLock mWakeLock;
+    private WifiManager.WifiLock mWifiLock;
+
+    /** If the user has executed the {@link TERMUX_SERVICE#ACTION_STOP_SERVICE} intent. */
+    boolean mWantsToStop = false;
+
+    private static final String LOG_TAG = "FableService";
+
+    @Override
+    public void onCreate() {
+        Logger.logVerbose(LOG_TAG, "onCreate");
+
+        // Get Fable app SharedProperties without loading from disk since FableApplication handles
+        // load and FableActivity handles reloads
+        mProperties = FableAppSharedProperties.getProperties();
+
+        mShellManager = FableShellManager.getShellManager();
+
+        runStartForeground();
+
+        SystemEventReceiver.registerPackageUpdateEvents(this);
+    }
+
+    @SuppressLint("Wakelock")
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        Logger.logDebug(LOG_TAG, "onStartCommand");
+
+        // Run again in case service is already started and onCreate() is not called
+        runStartForeground();
+
+        String action = null;
+        if (intent != null) {
+            Logger.logVerboseExtended(LOG_TAG, "Intent Received:\n" + IntentUtils.getIntentString(intent));
+            action = intent.getAction();
+        }
+
+        if (action != null) {
+            switch (action) {
+                case TERMUX_SERVICE.ACTION_STOP_SERVICE:
+                    Logger.logDebug(LOG_TAG, "ACTION_STOP_SERVICE intent received");
+                    actionStopService();
+                    break;
+                case TERMUX_SERVICE.ACTION_WAKE_LOCK:
+                    Logger.logDebug(LOG_TAG, "ACTION_WAKE_LOCK intent received");
+                    actionAcquireWakeLock();
+                    break;
+                case TERMUX_SERVICE.ACTION_WAKE_UNLOCK:
+                    Logger.logDebug(LOG_TAG, "ACTION_WAKE_UNLOCK intent received");
+                    actionReleaseWakeLock(true);
+                    break;
+                case TERMUX_SERVICE.ACTION_SERVICE_EXECUTE:
+                    Logger.logDebug(LOG_TAG, "ACTION_SERVICE_EXECUTE intent received");
+                    actionServiceExecute(intent);
+                    break;
+                default:
+                    Logger.logError(LOG_TAG, "Invalid action: \"" + action + "\"");
+                    break;
+            }
+        }
+
+        // If this service really do get killed, there is no point restarting it automatically - let the user do on next
+        // start of {@link Term):
+        return Service.START_NOT_STICKY;
+    }
+
+    @Override
+    public void onDestroy() {
+        Logger.logVerbose(LOG_TAG, "onDestroy");
+
+        FableShellUtils.clearFableTMPDIR(true);
+
+        actionReleaseWakeLock(false);
+        if (!mWantsToStop)
+            killAllFableExecutionCommands();
+
+        FableShellManager.onAppExit(this);
+
+        SystemEventReceiver.unregisterPackageUpdateEvents(this);
+
+        runStopForeground();
+    }
+
+    @Override
+    public IBinder onBind(Intent intent) {
+        Logger.logVerbose(LOG_TAG, "onBind");
+        return mBinder;
+    }
+
+    @Override
+    public boolean onUnbind(Intent intent) {
+        Logger.logVerbose(LOG_TAG, "onUnbind");
+
+        // Since we cannot rely on {@link FableActivity.onDestroy()} to always complete,
+        // we unset clients here as well if it failed, so that we do not leave service and session
+        // clients with references to the activity.
+        if (mFableTerminalSessionActivityClient != null)
+            unsetFableTerminalSessionClient();
+        return false;
+    }
+
+    /** Make service run in foreground mode. */
+    private void runStartForeground() {
+        setupNotificationChannel();
+        startForeground(TermuxConstants.TERMUX_APP_NOTIFICATION_ID, buildNotification());
+    }
+
+    /** Make service leave foreground mode. */
+    private void runStopForeground() {
+        stopForeground(true);
+    }
+
+    /** Request to stop service. */
+    private void requestStopService() {
+        Logger.logDebug(LOG_TAG, "Requesting to stop service");
+        runStopForeground();
+        stopSelf();
+    }
+
+    /** Process action to stop service. */
+    private void actionStopService() {
+        mWantsToStop = true;
+        killAllFableExecutionCommands();
+        requestStopService();
+    }
+
+    /** Kill all FableShellSessions and FableTasks by sending SIGKILL to their processes.
+     *
+     * For FableShellSessions, all sessions will be killed, whether user manually exited Fable or if
+     * onDestroy() was directly called because of unintended shutdown. The processing of results
+     * will only be done if user manually exited Fable or if the session was started by a plugin
+     * which **expects** the result back via a pending intent.
+     *
+     * For FableTasks, only tasks that were started by a plugin which **expects** the result
+     * back via a pending intent will be killed, whether user manually exited Fable or if
+     * onDestroy() was directly called because of unintended shutdown. The processing of results
+     * will always be done for the tasks that are killed. The remaining processes will keep on
+     * running until the Fable app process is killed by android, like by OOM, so we let them run
+     * as long as they can.
+     *
+     * Some plugin execution commands may not have been processed and added to mFableShellSessions and
+     * mFableTasks lists before the service is killed, so we maintain a separate
+     * mPendingPluginExecutionCommands list for those, so that we can notify the pending intent
+     * creators that execution was cancelled.
+     *
+     * Note that if user didn't manually exit Fable and if onDestroy() was directly called because
+     * of unintended shutdown, like android deciding to kill the service, then there will be no
+     * guarantee that onDestroy() will be allowed to finish and Fable app process may be killed before
+     * it has finished. This means that in those cases some results may not be sent back to their
+     * creators for plugin commands but we still try to process whatever results can be processed
+     * despite the unreliable behaviour of onDestroy().
+     *
+     * Note that if don't kill the processes started by plugins which **expect** the result back
+     * and notify their creators that they have been killed, then they may get stuck waiting for
+     * the results forever like in case of commands started by Termux:Tasker or RUN_COMMAND intent,
+     * since once FableService has been killed, no result will be sent back. They may still get
+     * stuck if termux app process gets killed, so for this case reasonable timeout values should
+     * be used, like in Tasker for the Termux:Tasker actions.
+     *
+     * We make copies of each list since items are removed inside the loop.
+     */
+    private synchronized void killAllFableExecutionCommands() {
+        boolean processResult;
+
+        Logger.logDebug(LOG_TAG, "Killing FableShellSessions=" + mShellManager.mFableShellSessions.size() +
+            ", FableTasks=" + mShellManager.mFableTasks.size() +
+            ", PendingPluginExecutionCommands=" + mShellManager.mPendingPluginExecutionCommands.size());
+
+        List<FableShellSession> fableShellSessions = new ArrayList<>(mShellManager.mFableShellSessions);
+        List<AppShell> fableTasks = new ArrayList<>(mShellManager.mFableTasks);
+        List<ExecutionCommand> pendingPluginExecutionCommands = new ArrayList<>(mShellManager.mPendingPluginExecutionCommands);
+
+        for (int i = 0; i < fableShellSessions.size(); i++) {
+            ExecutionCommand executionCommand = fableShellSessions.get(i).getExecutionCommand();
+            processResult = mWantsToStop || executionCommand.isPluginExecutionCommandWithPendingResult();
+            fableShellSessions.get(i).killIfExecuting(this, processResult);
+            if (!processResult)
+                mShellManager.mFableShellSessions.remove(fableShellSessions.get(i));
+        }
+
+
+        for (int i = 0; i < fableTasks.size(); i++) {
+            ExecutionCommand executionCommand = fableTasks.get(i).getExecutionCommand();
+            if (executionCommand.isPluginExecutionCommandWithPendingResult())
+                fableTasks.get(i).killIfExecuting(this, true);
+            else
+                mShellManager.mFableTasks.remove(fableTasks.get(i));
+        }
+
+        for (int i = 0; i < pendingPluginExecutionCommands.size(); i++) {
+            ExecutionCommand executionCommand = pendingPluginExecutionCommands.get(i);
+            if (!executionCommand.shouldNotProcessResults() && executionCommand.isPluginExecutionCommandWithPendingResult()) {
+                if (executionCommand.setStateFailed(Errno.ERRNO_CANCELLED.getCode(), this.getString(com.gph.fable.shared.R.string.error_execution_cancelled))) {
+                    FablePluginUtils.processPluginExecutionCommandResult(this, LOG_TAG, executionCommand);
+                }
+            }
+        }
+    }
+
+
+
+    /** Process action to acquire Power and Wi-Fi WakeLocks. */
+    @SuppressLint({"WakelockTimeout", "BatteryLife"})
+    private void actionAcquireWakeLock() {
+        if (mWakeLock != null) {
+            Logger.logDebug(LOG_TAG, "Ignoring acquiring WakeLocks since they are already held");
+            return;
+        }
+
+        Logger.logDebug(LOG_TAG, "Acquiring WakeLocks");
+
+        PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        mWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, TermuxConstants.TERMUX_APP_NAME.toLowerCase() + ":service-wakelock");
+        mWakeLock.acquire();
+
+        // http://tools.android.com/tech-docs/lint-in-studio-2-3#TOC-WifiManager-Leak
+        WifiManager wm = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+        mWifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, TermuxConstants.TERMUX_APP_NAME.toLowerCase());
+        mWifiLock.acquire();
+
+        if (!PermissionUtils.checkIfBatteryOptimizationsDisabled(this)) {
+            PermissionUtils.requestDisableBatteryOptimizations(this);
+        }
+
+        updateNotification();
+
+        Logger.logDebug(LOG_TAG, "WakeLocks acquired successfully");
+
+    }
+
+    /** Process action to release Power and Wi-Fi WakeLocks. */
+    private void actionReleaseWakeLock(boolean updateNotification) {
+        if (mWakeLock == null && mWifiLock == null) {
+            Logger.logDebug(LOG_TAG, "Ignoring releasing WakeLocks since none are already held");
+            return;
+        }
+
+        Logger.logDebug(LOG_TAG, "Releasing WakeLocks");
+
+        if (mWakeLock != null) {
+            mWakeLock.release();
+            mWakeLock = null;
+        }
+
+        if (mWifiLock != null) {
+            mWifiLock.release();
+            mWifiLock = null;
+        }
+
+        if (updateNotification)
+            updateNotification();
+
+        Logger.logDebug(LOG_TAG, "WakeLocks released successfully");
+    }
+
+    /** Process {@link TERMUX_SERVICE#ACTION_SERVICE_EXECUTE} intent to execute a shell command in
+     * a foreground FableShellSession or in a background FableTask. */
+    private void actionServiceExecute(Intent intent) {
+        if (intent == null) {
+            Logger.logError(LOG_TAG, "Ignoring null intent to actionServiceExecute");
+            return;
+        }
+
+        ExecutionCommand executionCommand = new ExecutionCommand(FableShellManager.getNextShellId());
+
+        executionCommand.executableUri = intent.getData();
+        executionCommand.isPluginExecutionCommand = true;
+
+        // If EXTRA_RUNNER is passed, use that, otherwise check EXTRA_BACKGROUND and default to Runner.TERMINAL_SESSION
+        executionCommand.runner = IntentUtils.getStringExtraIfSet(intent, TERMUX_SERVICE.EXTRA_RUNNER,
+            (intent.getBooleanExtra(TERMUX_SERVICE.EXTRA_BACKGROUND, false) ? Runner.APP_SHELL.getName() : Runner.TERMINAL_SESSION.getName()));
+        if (Runner.runnerOf(executionCommand.runner) == null) {
+            String errmsg = this.getString(R.string.error_fable_service_invalid_execution_command_runner, executionCommand.runner);
+            executionCommand.setStateFailed(Errno.ERRNO_FAILED.getCode(), errmsg);
+            FablePluginUtils.processPluginExecutionCommandError(this, LOG_TAG, executionCommand, false);
+            return;
+        }
+
+        if (executionCommand.executableUri != null) {
+            Logger.logVerbose(LOG_TAG, "uri: \"" + executionCommand.executableUri + "\", path: \"" + executionCommand.executableUri.getPath() + "\", fragment: \"" + executionCommand.executableUri.getFragment() + "\"");
+
+            // Get full path including fragment (anything after last "#")
+            executionCommand.executable = UriUtils.getUriFilePathWithFragment(executionCommand.executableUri);
+            executionCommand.arguments = IntentUtils.getStringArrayExtraIfSet(intent, TERMUX_SERVICE.EXTRA_ARGUMENTS, null);
+            if (Runner.APP_SHELL.equalsRunner(executionCommand.runner))
+                executionCommand.stdin = IntentUtils.getStringExtraIfSet(intent, TERMUX_SERVICE.EXTRA_STDIN, null);
+            executionCommand.backgroundCustomLogLevel = IntentUtils.getIntegerExtraIfSet(intent, TERMUX_SERVICE.EXTRA_BACKGROUND_CUSTOM_LOG_LEVEL, null);
+        }
+
+        executionCommand.workingDirectory = IntentUtils.getStringExtraIfSet(intent, TERMUX_SERVICE.EXTRA_WORKDIR, null);
+        executionCommand.isFailsafe = intent.getBooleanExtra(TERMUX_ACTIVITY.EXTRA_FAILSAFE_SESSION, false);
+        executionCommand.sessionAction = intent.getStringExtra(TERMUX_SERVICE.EXTRA_SESSION_ACTION);
+        executionCommand.shellName = IntentUtils.getStringExtraIfSet(intent, TERMUX_SERVICE.EXTRA_SHELL_NAME, null);
+        executionCommand.shellCreateMode = IntentUtils.getStringExtraIfSet(intent, TERMUX_SERVICE.EXTRA_SHELL_CREATE_MODE, null);
+        executionCommand.commandLabel = IntentUtils.getStringExtraIfSet(intent, TERMUX_SERVICE.EXTRA_COMMAND_LABEL, "Execution Intent Command");
+        executionCommand.commandDescription = IntentUtils.getStringExtraIfSet(intent, TERMUX_SERVICE.EXTRA_COMMAND_DESCRIPTION, null);
+        executionCommand.commandHelp = IntentUtils.getStringExtraIfSet(intent, TERMUX_SERVICE.EXTRA_COMMAND_HELP, null);
+        executionCommand.pluginAPIHelp = IntentUtils.getStringExtraIfSet(intent, TERMUX_SERVICE.EXTRA_PLUGIN_API_HELP, null);
+        executionCommand.resultConfig.resultPendingIntent = intent.getParcelableExtra(TERMUX_SERVICE.EXTRA_PENDING_INTENT);
+        executionCommand.resultConfig.resultDirectoryPath = IntentUtils.getStringExtraIfSet(intent, TERMUX_SERVICE.EXTRA_RESULT_DIRECTORY, null);
+        if (executionCommand.resultConfig.resultDirectoryPath != null) {
+            executionCommand.resultConfig.resultSingleFile = intent.getBooleanExtra(TERMUX_SERVICE.EXTRA_RESULT_SINGLE_FILE, false);
+            executionCommand.resultConfig.resultFileBasename = IntentUtils.getStringExtraIfSet(intent, TERMUX_SERVICE.EXTRA_RESULT_FILE_BASENAME, null);
+            executionCommand.resultConfig.resultFileOutputFormat = IntentUtils.getStringExtraIfSet(intent, TERMUX_SERVICE.EXTRA_RESULT_FILE_OUTPUT_FORMAT, null);
+            executionCommand.resultConfig.resultFileErrorFormat = IntentUtils.getStringExtraIfSet(intent, TERMUX_SERVICE.EXTRA_RESULT_FILE_ERROR_FORMAT, null);
+            executionCommand.resultConfig.resultFilesSuffix = IntentUtils.getStringExtraIfSet(intent, TERMUX_SERVICE.EXTRA_RESULT_FILES_SUFFIX, null);
+        }
+
+        if (executionCommand.shellCreateMode == null)
+            executionCommand.shellCreateMode = ShellCreateMode.ALWAYS.getMode();
+
+        // Add the execution command to pending plugin execution commands list
+        mShellManager.mPendingPluginExecutionCommands.add(executionCommand);
+
+        if (Runner.APP_SHELL.equalsRunner(executionCommand.runner))
+            executeFableTaskCommand(executionCommand);
+        else if (Runner.TERMINAL_SESSION.equalsRunner(executionCommand.runner))
+            executeFableShellSessionCommand(executionCommand);
+        else {
+            String errmsg = getString(R.string.error_fable_service_unsupported_execution_command_runner, executionCommand.runner);
+            executionCommand.setStateFailed(Errno.ERRNO_FAILED.getCode(), errmsg);
+            FablePluginUtils.processPluginExecutionCommandError(this, LOG_TAG, executionCommand, false);
+        }
+    }
+
+
+
+
+
+    /** Execute a shell command in background FableTask. */
+    private void executeFableTaskCommand(ExecutionCommand executionCommand) {
+        if (executionCommand == null) return;
+
+        Logger.logDebug(LOG_TAG, "Executing background \"" + executionCommand.getCommandIdAndLabelLogString() + "\" FableTask command");
+
+        // Transform executable path to shell/session name, e.g. "/bin/do-something.sh" => "do-something.sh".
+        if (executionCommand.shellName == null && executionCommand.executable != null)
+            executionCommand.shellName = ShellUtils.getExecutableBasename(executionCommand.executable);
+
+        AppShell newFableTask = null;
+        ShellCreateMode shellCreateMode = processShellCreateMode(executionCommand);
+        if (shellCreateMode == null) return;
+        if (ShellCreateMode.NO_SHELL_WITH_NAME.equals(shellCreateMode)) {
+            newFableTask = getFableTaskForShellName(executionCommand.shellName);
+            if (newFableTask != null)
+                Logger.logVerbose(LOG_TAG, "Existing FableTask with \"" + executionCommand.shellName + "\" shell name found for shell create mode \"" + shellCreateMode.getMode() + "\"");
+            else
+                Logger.logVerbose(LOG_TAG, "No existing FableTask with \"" + executionCommand.shellName + "\" shell name found for shell create mode \"" + shellCreateMode.getMode() + "\"");
+        }
+
+        if (newFableTask == null)
+            newFableTask = createFableTask(executionCommand);
+    }
+
+    /** Create a FableTask. */
+    @Nullable
+    public AppShell createFableTask(String executablePath, String[] arguments, String stdin, String workingDirectory) {
+        return createFableTask(new ExecutionCommand(FableShellManager.getNextShellId(), executablePath,
+            arguments, stdin, workingDirectory, Runner.APP_SHELL.getName(), false));
+    }
+
+    /** Create a FableTask. */
+    @Nullable
+    public synchronized AppShell createFableTask(ExecutionCommand executionCommand) {
+        if (executionCommand == null) return null;
+
+        Logger.logDebug(LOG_TAG, "Creating \"" + executionCommand.getCommandIdAndLabelLogString() + "\" FableTask");
+
+        if (!Runner.APP_SHELL.equalsRunner(executionCommand.runner)) {
+            Logger.logDebug(LOG_TAG, "Ignoring wrong runner \"" + executionCommand.runner + "\" command passed to createFableTask()");
+            return null;
+        }
+
+        executionCommand.setShellCommandShellEnvironment = true;
+
+        if (Logger.getLogLevel() >= Logger.LOG_LEVEL_VERBOSE)
+            Logger.logVerboseExtended(LOG_TAG, executionCommand.toString());
+
+        AppShell newFableTask = AppShell.execute(this, executionCommand, this,
+            new FableShellEnvironment(), null,false);
+        if (newFableTask == null) {
+            Logger.logError(LOG_TAG, "Failed to execute new FableTask command for:\n" + executionCommand.getCommandIdAndLabelLogString());
+            // If the execution command was started for a plugin, then process the error
+            if (executionCommand.isPluginExecutionCommand)
+                FablePluginUtils.processPluginExecutionCommandError(this, LOG_TAG, executionCommand, false);
+            else {
+                Logger.logError(LOG_TAG, "Set log level to debug or higher to see error in logs");
+                Logger.logErrorPrivateExtended(LOG_TAG, executionCommand.toString());
+            }
+            return null;
+        }
+
+        mShellManager.mFableTasks.add(newFableTask);
+
+        // Remove the execution command from the pending plugin execution commands list since it has
+        // now been processed
+        if (executionCommand.isPluginExecutionCommand)
+            mShellManager.mPendingPluginExecutionCommands.remove(executionCommand);
+
+        updateNotification();
+
+        return newFableTask;
+    }
+
+    /** Callback received when a FableTask finishes. */
+    @Override
+    public void onAppShellExited(final AppShell fableTask) {
+        mHandler.post(() -> {
+            if (fableTask != null) {
+                ExecutionCommand executionCommand = fableTask.getExecutionCommand();
+
+                Logger.logVerbose(LOG_TAG, "The onFableTaskExited() callback called for \"" + executionCommand.getCommandIdAndLabelLogString() + "\" FableTask command");
+
+                // If the execution command was started for a plugin, then process the results
+                if (executionCommand != null && executionCommand.isPluginExecutionCommand)
+                    FablePluginUtils.processPluginExecutionCommandResult(this, LOG_TAG, executionCommand);
+
+                mShellManager.mFableTasks.remove(fableTask);
+            }
+
+            updateNotification();
+        });
+    }
+
+
+
+
+
+    /** Execute a shell command in a foreground {@link FableShellSession}. */
+    private void executeFableShellSessionCommand(ExecutionCommand executionCommand) {
+        if (executionCommand == null) return;
+
+        Logger.logDebug(LOG_TAG, "Executing foreground \"" + executionCommand.getCommandIdAndLabelLogString() + "\" FableShellSession command");
+
+        // Transform executable path to shell/session name, e.g. "/bin/do-something.sh" => "do-something.sh".
+        if (executionCommand.shellName == null && executionCommand.executable != null)
+            executionCommand.shellName = ShellUtils.getExecutableBasename(executionCommand.executable);
+
+        FableShellSession newFableShellSession = null;
+        ShellCreateMode shellCreateMode = processShellCreateMode(executionCommand);
+        if (shellCreateMode == null) return;
+        if (ShellCreateMode.NO_SHELL_WITH_NAME.equals(shellCreateMode)) {
+            newFableShellSession = getFableShellSessionForShellName(executionCommand.shellName);
+            if (newFableShellSession != null)
+                Logger.logVerbose(LOG_TAG, "Existing FableShellSession with \"" + executionCommand.shellName + "\" shell name found for shell create mode \"" + shellCreateMode.getMode() + "\"");
+            else
+                Logger.logVerbose(LOG_TAG, "No existing FableShellSession with \"" + executionCommand.shellName + "\" shell name found for shell create mode \"" + shellCreateMode.getMode() + "\"");
+        }
+
+        if (newFableShellSession == null)
+            newFableShellSession = createFableShellSession(executionCommand);
+        if (newFableShellSession == null) return;
+
+        handleSessionAction(DataUtils.getIntFromString(executionCommand.sessionAction,
+            TERMUX_SERVICE.VALUE_EXTRA_SESSION_ACTION_SWITCH_TO_NEW_SESSION_AND_OPEN_ACTIVITY),
+            newFableShellSession.getTerminalSession());
+    }
+
+    /**
+     * Create a {@link FableShellSession}.
+     * Currently called by {@link FableTerminalSessionActivityClient#addNewSession(boolean, String)} to add a new {@link FableShellSession}.
+     */
+    @Nullable
+    public FableShellSession createFableShellSession(String executablePath, String[] arguments, String stdin,
+                                             String workingDirectory, boolean isFailSafe, String sessionName) {
+        ExecutionCommand executionCommand = new ExecutionCommand(FableShellManager.getNextShellId(),
+            executablePath, arguments, stdin, workingDirectory, Runner.TERMINAL_SESSION.getName(), isFailSafe);
+        executionCommand.shellName = sessionName;
+        return createFableShellSession(executionCommand);
+    }
+
+    /** Create a {@link FableShellSession}. */
+    @Nullable
+    public synchronized FableShellSession createFableShellSession(ExecutionCommand executionCommand) {
+        if (executionCommand == null) return null;
+
+        Logger.logDebug(LOG_TAG, "Creating \"" + executionCommand.getCommandIdAndLabelLogString() + "\" FableShellSession");
+
+        if (!Runner.TERMINAL_SESSION.equalsRunner(executionCommand.runner)) {
+            Logger.logDebug(LOG_TAG, "Ignoring wrong runner \"" + executionCommand.runner + "\" command passed to createFableShellSession()");
+            return null;
+        }
+
+        executionCommand.setShellCommandShellEnvironment = true;
+
+        if (Logger.getLogLevel() >= Logger.LOG_LEVEL_VERBOSE)
+            Logger.logVerboseExtended(LOG_TAG, executionCommand.toString());
+
+        // If the execution command was started for a plugin, only then will the stdout be set
+        // Otherwise if command was manually started by the user like by adding a new terminal session,
+        // then no need to set stdout
+        FableShellSession newFableShellSession = FableShellSession.execute(this, executionCommand, getFableTerminalSessionClient(),
+            this, new FableShellEnvironment(), null, executionCommand.isPluginExecutionCommand,
+            RustFableSessionFactory.INSTANCE);
+        if (newFableShellSession == null) {
+            Logger.logError(LOG_TAG, "Failed to execute new FableShellSession command for:\n" + executionCommand.getCommandIdAndLabelLogString());
+            // If the execution command was started for a plugin, then process the error
+            if (executionCommand.isPluginExecutionCommand)
+                FablePluginUtils.processPluginExecutionCommandError(this, LOG_TAG, executionCommand, false);
+            else {
+                Logger.logError(LOG_TAG, "Set log level to debug or higher to see error in logs");
+                Logger.logErrorPrivateExtended(LOG_TAG, executionCommand.toString());
+            }
+            return null;
+        }
+
+        mShellManager.mFableShellSessions.add(newFableShellSession);
+
+        // Remove the execution command from the pending plugin execution commands list since it has
+        // now been processed
+        if (executionCommand.isPluginExecutionCommand)
+            mShellManager.mPendingPluginExecutionCommands.remove(executionCommand);
+
+        // Notify {@link FableShellSessionsListViewController} that sessions list has been updated if
+        // activity in is foreground
+        if (mFableTerminalSessionActivityClient != null)
+            mFableTerminalSessionActivityClient.fableShellSessionListNotifyUpdated();
+
+        updateNotification();
+
+        // No need to recreate the activity since it likely just started and theme should already have applied
+        FableActivity.updateFableActivityStyling(this, false);
+
+        return newFableShellSession;
+    }
+
+    /** Remove a FableShellSession. */
+    public synchronized int removeFableShellSession(TerminalSession sessionToRemove) {
+        int index = getIndexOfSession(sessionToRemove);
+
+        if (index >= 0)
+            mShellManager.mFableShellSessions.get(index).finish();
+
+        return index;
+    }
+
+    /** Callback received when a {@link FableShellSession} finishes. */
+    @Override
+    public void onFableShellSessionExited(final FableShellSession fableShellSession) {
+        if (fableShellSession != null) {
+            ExecutionCommand executionCommand = fableShellSession.getExecutionCommand();
+
+            Logger.logVerbose(LOG_TAG, "The onFableShellSessionExited() callback called for \"" + executionCommand.getCommandIdAndLabelLogString() + "\" FableShellSession command");
+
+            // If the execution command was started for a plugin, then process the results
+            if (executionCommand != null && executionCommand.isPluginExecutionCommand)
+                FablePluginUtils.processPluginExecutionCommandResult(this, LOG_TAG, executionCommand);
+
+            mShellManager.mFableShellSessions.remove(fableShellSession);
+
+            // Notify {@link FableShellSessionsListViewController} that sessions list has been updated if
+            // activity in is foreground
+            if (mFableTerminalSessionActivityClient != null)
+                mFableTerminalSessionActivityClient.fableShellSessionListNotifyUpdated();
+        }
+
+        updateNotification();
+    }
+
+
+
+
+
+    private ShellCreateMode processShellCreateMode(@NonNull ExecutionCommand executionCommand) {
+        if (ShellCreateMode.ALWAYS.equalsMode(executionCommand.shellCreateMode))
+            return ShellCreateMode.ALWAYS; // Default
+        else if (ShellCreateMode.NO_SHELL_WITH_NAME.equalsMode(executionCommand.shellCreateMode))
+            if (DataUtils.isNullOrEmpty(executionCommand.shellName)) {
+                FablePluginUtils.setAndProcessPluginExecutionCommandError(this, LOG_TAG, executionCommand, false,
+                    getString(R.string.error_fable_service_execution_command_shell_name_unset, executionCommand.shellCreateMode));
+                return null;
+            } else {
+               return ShellCreateMode.NO_SHELL_WITH_NAME;
+            }
+        else {
+            FablePluginUtils.setAndProcessPluginExecutionCommandError(this, LOG_TAG, executionCommand, false,
+                getString(R.string.error_fable_service_unsupported_execution_command_shell_create_mode, executionCommand.shellCreateMode));
+            return null;
+        }
+    }
+
+    /** Process session action for new session. */
+    private void handleSessionAction(int sessionAction, TerminalSession newTerminalSession) {
+        Logger.logDebug(LOG_TAG, "Processing sessionAction \"" + sessionAction + "\" for session \"" + newTerminalSession.mSessionName + "\"");
+
+        switch (sessionAction) {
+            case TERMUX_SERVICE.VALUE_EXTRA_SESSION_ACTION_SWITCH_TO_NEW_SESSION_AND_OPEN_ACTIVITY:
+                setCurrentStoredTerminalSession(newTerminalSession);
+                if (mFableTerminalSessionActivityClient != null)
+                    mFableTerminalSessionActivityClient.setCurrentSession(newTerminalSession);
+                startFableActivity();
+                break;
+            case TERMUX_SERVICE.VALUE_EXTRA_SESSION_ACTION_KEEP_CURRENT_SESSION_AND_OPEN_ACTIVITY:
+                if (getFableShellSessionsSize() == 1)
+                    setCurrentStoredTerminalSession(newTerminalSession);
+                startFableActivity();
+                break;
+            case TERMUX_SERVICE.VALUE_EXTRA_SESSION_ACTION_SWITCH_TO_NEW_SESSION_AND_DONT_OPEN_ACTIVITY:
+                setCurrentStoredTerminalSession(newTerminalSession);
+                if (mFableTerminalSessionActivityClient != null)
+                    mFableTerminalSessionActivityClient.setCurrentSession(newTerminalSession);
+                break;
+            case TERMUX_SERVICE.VALUE_EXTRA_SESSION_ACTION_KEEP_CURRENT_SESSION_AND_DONT_OPEN_ACTIVITY:
+                if (getFableShellSessionsSize() == 1)
+                    setCurrentStoredTerminalSession(newTerminalSession);
+                break;
+            default:
+                Logger.logError(LOG_TAG, "Invalid sessionAction: \"" + sessionAction + "\". Force using default sessionAction.");
+                handleSessionAction(TERMUX_SERVICE.VALUE_EXTRA_SESSION_ACTION_SWITCH_TO_NEW_SESSION_AND_OPEN_ACTIVITY, newTerminalSession);
+                break;
+        }
+    }
+
+    /** Launch the {@link }FableActivity} to bring it to foreground. */
+    private void startFableActivity() {
+        // For android >= 10, apps require Display over other apps permission to start foreground activities
+        // from background (services). If it is not granted, then FableShellSessions that are started will
+        // show in Fable notification but will not run until user manually clicks the notification.
+        if (PermissionUtils.validateDisplayOverOtherAppsPermissionForPostAndroid10(this, true)) {
+            FableActivity.startFableActivity(this);
+        } else {
+            FableAppSharedPreferences preferences = FableAppSharedPreferences.build(this);
+            if (preferences == null) return;
+            if (preferences.arePluginErrorNotificationsEnabled(false))
+                Logger.showToast(this, this.getString(R.string.error_display_over_other_apps_permission_not_granted_to_start_terminal), true);
+        }
+    }
+
+
+
+
+
+    /** If {@link FableActivity} has not bound to the {@link FableService} yet or is destroyed, then
+     * interface functions requiring the activity should not be available to the terminal sessions,
+     * so we just return the {@link #mFableTerminalSessionServiceClient}. Once {@link FableActivity} bind
+     * callback is received, it should call {@link #setFableTerminalSessionClient} to set the
+     * {@link FableService#mFableTerminalSessionActivityClient} so that further terminal sessions are directly
+     * passed the {@link FableTerminalSessionActivityClient} object which fully implements the
+     * {@link TerminalSessionClient} interface.
+     *
+     * @return Returns the {@link FableTerminalSessionActivityClient} if {@link FableActivity} has bound with
+     * {@link FableService}, otherwise {@link FableTerminalSessionServiceClient}.
+     */
+    public synchronized FableTerminalSessionClientBase getFableTerminalSessionClient() {
+        if (mFableTerminalSessionActivityClient != null)
+            return mFableTerminalSessionActivityClient;
+        else
+            return mFableTerminalSessionServiceClient;
+    }
+
+    /** This should be called when {@link FableActivity#onServiceConnected} is called to set the
+     * {@link FableService#mFableTerminalSessionActivityClient} variable and update the {@link TerminalSession}
+     * clients in case they were passed {@link FableTerminalSessionServiceClient} earlier.
+     *
+     * @param fableTerminalSessionActivityClient The {@link FableTerminalSessionActivityClient} object that fully
+     * implements the {@link TerminalSessionClient} interface.
+     */
+    public synchronized void setFableTerminalSessionClient(FableTerminalSessionActivityClient fableTerminalSessionActivityClient) {
+        mFableTerminalSessionActivityClient = fableTerminalSessionActivityClient;
+
+        for (int i = 0; i < mShellManager.mFableShellSessions.size(); i++)
+            mShellManager.mFableShellSessions.get(i).getTerminalSession().updateTerminalSessionClient(mFableTerminalSessionActivityClient);
+    }
+
+    /** This should be called when {@link FableActivity} has been destroyed and in {@link #onUnbind(Intent)}
+     * so that the {@link FableService} and {@link TerminalSession} clients do not hold activity references.
+     */
+    public synchronized void unsetFableTerminalSessionClient() {
+        for (int i = 0; i < mShellManager.mFableShellSessions.size(); i++)
+            mShellManager.mFableShellSessions.get(i).getTerminalSession().updateTerminalSessionClient(mFableTerminalSessionServiceClient);
+
+        mFableTerminalSessionActivityClient = null;
+    }
+
+
+
+
+
+    private Notification buildNotification() {
+        Resources res = getResources();
+
+        // Set pending intent to be launched when notification is clicked
+        Intent notificationIntent = FableActivity.newInstance(this);
+        // 工单 05：targetSdk 31+ 必须显式指定 PendingIntent 可变性；通知点击意图用 IMMUTABLE。
+        PendingIntent contentIntent = PendingIntent.getActivity(this, 0, notificationIntent, PendingIntent.FLAG_IMMUTABLE);
+
+
+        // Set notification text
+        int sessionCount = getFableShellSessionsSize();
+        int taskCount = mShellManager.mFableTasks.size();
+        // 工单 05：通知正文汉化（会话/任务数量用复数资源，唤醒锁用字符串资源）。
+        String notificationText = res.getQuantityString(R.plurals.notification_sessions_count, sessionCount, sessionCount);
+        if (taskCount > 0) {
+            notificationText += ", " + res.getQuantityString(R.plurals.notification_tasks_count, taskCount, taskCount);
+        }
+
+        final boolean wakeLockHeld = mWakeLock != null;
+        if (wakeLockHeld) notificationText += res.getString(R.string.notification_wake_lock_held);
+
+
+        // Set notification priority
+        // If holding a wake or wifi lock consider the notification of high priority since it's using power,
+        // otherwise use a low priority
+        int priority = (wakeLockHeld) ? Notification.PRIORITY_HIGH : Notification.PRIORITY_LOW;
+
+
+        // Build the notification
+        Notification.Builder builder =  NotificationUtils.geNotificationBuilder(this,
+            TermuxConstants.TERMUX_APP_NOTIFICATION_CHANNEL_ID, priority,
+            TermuxConstants.TERMUX_APP_NAME, notificationText, null,
+            contentIntent, null, NotificationUtils.NOTIFICATION_MODE_SILENT);
+        if (builder == null)  return null;
+
+        // No need to show a timestamp:
+        builder.setShowWhen(false);
+
+        // Set notification icon
+        builder.setSmallIcon(R.drawable.ic_service_notification);
+
+        // Set background color for small notification icon
+        builder.setColor(0xFF607D8B);
+
+        // FableShellSessions are always ongoing
+        builder.setOngoing(true);
+
+
+        // Set Exit button action
+        Intent exitIntent = new Intent(this, FableService.class).setAction(TERMUX_SERVICE.ACTION_STOP_SERVICE);
+        builder.addAction(android.R.drawable.ic_delete, res.getString(R.string.notification_action_exit),
+            PendingIntent.getService(this, 0, exitIntent, PendingIntent.FLAG_IMMUTABLE));
+
+
+        // Set Wakelock button actions
+        String newWakeAction = wakeLockHeld ? TERMUX_SERVICE.ACTION_WAKE_UNLOCK : TERMUX_SERVICE.ACTION_WAKE_LOCK;
+        Intent toggleWakeLockIntent = new Intent(this, FableService.class).setAction(newWakeAction);
+        String actionTitle = res.getString(wakeLockHeld ? R.string.notification_action_wake_unlock : R.string.notification_action_wake_lock);
+        int actionIcon = wakeLockHeld ? android.R.drawable.ic_lock_idle_lock : android.R.drawable.ic_lock_lock;
+        builder.addAction(actionIcon, actionTitle,
+            PendingIntent.getService(this, 0, toggleWakeLockIntent, PendingIntent.FLAG_IMMUTABLE));
+
+
+        return builder.build();
+    }
+
+    private void setupNotificationChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+
+        NotificationUtils.setupNotificationChannel(this, TermuxConstants.TERMUX_APP_NOTIFICATION_CHANNEL_ID,
+            getString(R.string.fable_app_notification_channel_name), NotificationManager.IMPORTANCE_LOW);
+    }
+
+    /** Update the shown foreground service notification after making any changes that affect it. */
+    private synchronized void updateNotification() {
+        if (mWakeLock == null && mShellManager.mFableShellSessions.isEmpty() && mShellManager.mFableTasks.isEmpty()) {
+            // Exit if we are updating after the user disabled all locks with no sessions or tasks running.
+            requestStopService();
+        } else {
+            ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE)).notify(TermuxConstants.TERMUX_APP_NOTIFICATION_ID, buildNotification());
+        }
+    }
+
+
+
+
+
+    private void setCurrentStoredTerminalSession(TerminalSession terminalSession) {
+        if (terminalSession == null) return;
+        // Make the newly created session the current one to be displayed
+        FableAppSharedPreferences preferences = FableAppSharedPreferences.build(this);
+        if (preferences == null) return;
+        preferences.setCurrentSession(terminalSession.mHandle);
+    }
+
+    public synchronized boolean isFableShellSessionsEmpty() {
+        return mShellManager.mFableShellSessions.isEmpty();
+    }
+
+    public synchronized int getFableShellSessionsSize() {
+        return mShellManager.mFableShellSessions.size();
+    }
+
+    public synchronized List<FableShellSession> getFableShellSessions() {
+        return mShellManager.mFableShellSessions;
+    }
+
+    @Nullable
+    public synchronized FableShellSession getFableShellSession(int index) {
+        if (index >= 0 && index < mShellManager.mFableShellSessions.size())
+            return mShellManager.mFableShellSessions.get(index);
+        else
+            return null;
+    }
+
+    @Nullable
+    public synchronized FableShellSession getFableShellSessionForTerminalSession(TerminalSession terminalSession) {
+        if (terminalSession == null) return null;
+
+        for (int i = 0; i < mShellManager.mFableShellSessions.size(); i++) {
+            if (mShellManager.mFableShellSessions.get(i).getTerminalSession().equals(terminalSession))
+                return mShellManager.mFableShellSessions.get(i);
+        }
+
+        return null;
+    }
+
+    public synchronized FableShellSession getLastFableShellSession() {
+        return mShellManager.mFableShellSessions.isEmpty() ? null : mShellManager.mFableShellSessions.get(mShellManager.mFableShellSessions.size() - 1);
+    }
+
+    public synchronized int getIndexOfSession(TerminalSession terminalSession) {
+        if (terminalSession == null) return -1;
+
+        for (int i = 0; i < mShellManager.mFableShellSessions.size(); i++) {
+            if (mShellManager.mFableShellSessions.get(i).getTerminalSession().equals(terminalSession))
+                return i;
+        }
+        return -1;
+    }
+
+    public synchronized TerminalSession getTerminalSessionForHandle(String sessionHandle) {
+        TerminalSession terminalSession;
+        for (int i = 0, len = mShellManager.mFableShellSessions.size(); i < len; i++) {
+            terminalSession = mShellManager.mFableShellSessions.get(i).getTerminalSession();
+            if (terminalSession.mHandle.equals(sessionHandle))
+                return terminalSession;
+        }
+        return null;
+    }
+
+    public synchronized AppShell getFableTaskForShellName(String name) {
+        if (DataUtils.isNullOrEmpty(name)) return null;
+        AppShell appShell;
+        for (int i = 0, len = mShellManager.mFableTasks.size(); i < len; i++) {
+            appShell = mShellManager.mFableTasks.get(i);
+            String shellName = appShell.getExecutionCommand().shellName;
+            if (shellName != null && shellName.equals(name))
+                return appShell;
+        }
+        return null;
+    }
+
+    public synchronized FableShellSession getFableShellSessionForShellName(String name) {
+        if (DataUtils.isNullOrEmpty(name)) return null;
+        FableShellSession fableShellSession;
+        for (int i = 0, len = mShellManager.mFableShellSessions.size(); i < len; i++) {
+            fableShellSession = mShellManager.mFableShellSessions.get(i);
+            String shellName = fableShellSession.getExecutionCommand().shellName;
+            if (shellName != null && shellName.equals(name))
+                return fableShellSession;
+        }
+        return null;
+    }
+
+
+
+    public boolean wantsToStop() {
+        return mWantsToStop;
+    }
+
+}

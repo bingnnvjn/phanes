@@ -10,18 +10,18 @@ import androidx.viewpager.widget.PagerAdapter;
 import androidx.viewpager.widget.ViewPager;
 
 import com.gph.fable.R;
-import com.gph.fable.app.TermuxActivity;
+import com.gph.fable.app.FableActivity;
 import com.gph.fable.shared.termux.extrakeys.ExtraKeysView;
-import com.gph.fable.terminal.TerminalSession;
+import com.gph.fable.core.TerminalSession;
 
 public class TerminalToolbarViewPager {
 
     public static class PageAdapter extends PagerAdapter {
 
-        final TermuxActivity mActivity;
+        final FableActivity mActivity;
         String mSavedTextInput;
 
-        public PageAdapter(TermuxActivity activity, String savedTextInput) {
+        public PageAdapter(FableActivity activity, String savedTextInput) {
             this.mActivity = activity;
             this.mSavedTextInput = savedTextInput;
         }
@@ -44,10 +44,10 @@ public class TerminalToolbarViewPager {
             if (position == 0) {
                 layout = inflater.inflate(R.layout.view_terminal_toolbar_extra_keys, collection, false);
                 ExtraKeysView extraKeysView = (ExtraKeysView) layout;
-                extraKeysView.setExtraKeysViewClient(mActivity.getTermuxTerminalExtraKeys());
+                extraKeysView.setExtraKeysViewClient(mActivity.getFableTerminalExtraKeys());
                 extraKeysView.setButtonTextAllCaps(mActivity.getProperties().shouldExtraKeysTextBeAllCaps());
                 mActivity.setExtraKeysView(extraKeysView);
-                extraKeysView.reload(mActivity.getTermuxTerminalExtraKeys().getExtraKeysInfo(),
+                extraKeysView.reload(mActivity.getFableTerminalExtraKeys().getExtraKeysInfo(),
                     mActivity.getTerminalToolbarDefaultHeight());
 
                 // apply extra keys fix if enabled in prefs
@@ -72,7 +72,7 @@ public class TerminalToolbarViewPager {
                             if (textToSend.length() == 0) textToSend = "\r";
                             session.write(textToSend);
                         } else {
-                            mActivity.getTermuxTerminalSessionClient().removeFinishedSession(session);
+                            mActivity.getFableTerminalSessionClient().removeFinishedSession(session);
                         }
                         editText.setText("");
                     }
@@ -94,10 +94,10 @@ public class TerminalToolbarViewPager {
 
     public static class OnPageChangeListener extends ViewPager.SimpleOnPageChangeListener {
 
-        final TermuxActivity mActivity;
+        final FableActivity mActivity;
         final ViewPager mTerminalToolbarViewPager;
 
-        public OnPageChangeListener(TermuxActivity activity, ViewPager viewPager) {
+        public OnPageChangeListener(FableActivity activity, ViewPager viewPager) {
             this.mActivity = activity;
             this.mTerminalToolbarViewPager = viewPager;
         }

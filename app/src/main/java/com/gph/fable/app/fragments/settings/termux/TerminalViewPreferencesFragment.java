@@ -10,7 +10,7 @@ import androidx.preference.PreferenceManager;
 import com.gph.fable.R;
 import com.gph.fable.app.fragments.settings.FablePreferenceFragment;
 import com.gph.fable.shared.termux.settings.preferences.TermuxPreferenceConstants;
-import com.gph.fable.shared.termux.settings.preferences.TermuxAppSharedPreferences;
+import com.gph.fable.shared.termux.settings.preferences.FableAppSharedPreferences;
 
 @Keep
 public class TerminalViewPreferencesFragment extends FablePreferenceFragment {
@@ -23,7 +23,7 @@ public class TerminalViewPreferencesFragment extends FablePreferenceFragment {
         PreferenceManager preferenceManager = getPreferenceManager();
         preferenceManager.setPreferenceDataStore(TerminalViewPreferencesDataStore.getInstance(context));
 
-        setPreferencesFromResource(R.xml.termux_terminal_view_preferences, rootKey);
+        setPreferencesFromResource(R.xml.fable_terminal_view_preferences, rootKey);
     }
 
 }
@@ -31,13 +31,13 @@ public class TerminalViewPreferencesFragment extends FablePreferenceFragment {
 class TerminalViewPreferencesDataStore extends PreferenceDataStore {
 
     private final Context mContext;
-    private final TermuxAppSharedPreferences mPreferences;
+    private final FableAppSharedPreferences mPreferences;
 
     private static TerminalViewPreferencesDataStore mInstance;
 
     private TerminalViewPreferencesDataStore(Context context) {
         mContext = context;
-        mPreferences = TermuxAppSharedPreferences.build(context, true);
+        mPreferences = FableAppSharedPreferences.build(context, true);
     }
 
     public static synchronized TerminalViewPreferencesDataStore getInstance(Context context) {

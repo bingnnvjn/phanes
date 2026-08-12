@@ -11,7 +11,7 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 
 import com.gph.fable.R;
-import com.gph.fable.app.TermuxActivity;
+import com.gph.fable.app.FableActivity;
 import com.gph.fable.app.session.RecentSessionStore;
 import com.gph.fable.app.session.RecentSessionStore.RecentSession;
 
@@ -24,11 +24,11 @@ import java.util.List;
 public class RecentSessionsListViewController extends ArrayAdapter<RecentSession>
     implements AdapterView.OnItemClickListener, AdapterView.OnItemLongClickListener {
 
-    private final TermuxActivity mActivity;
+    private final FableActivity mActivity;
     private final View mHeaderView;
     private final View mListView;
 
-    public RecentSessionsListViewController(TermuxActivity activity, View listView, View headerView) {
+    public RecentSessionsListViewController(FableActivity activity, View listView, View headerView) {
         super(activity.getApplicationContext(), R.layout.item_recent_sessions_list);
         this.mActivity = activity;
         this.mListView = listView;
