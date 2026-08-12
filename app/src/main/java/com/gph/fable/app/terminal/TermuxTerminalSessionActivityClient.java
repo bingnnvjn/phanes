@@ -10,6 +10,8 @@ import android.content.pm.PackageManager;
 import android.graphics.Typeface;
 import android.media.AudioAttributes;
 import android.media.SoundPool;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.TextUtils;
 import android.widget.ListView;
 
@@ -48,6 +50,28 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     private SoundPool mBellSoundPool;
 
     private int mBellSoundId;
+
+    /**
+     * 工单 30：UI 状态轮询（title/bell/cursor-visible 消费标记）。
+     * 新路径事件不再由旧模拟器回调投递，改由本轮询驱动（consume 语义 = 查询即清除，
+     * mailbox 保序不丢事件；200ms 间隔与 toast/提示可感知性匹配）。
+     */
+    private static final long UI_STATE_POLL_INTERVAL_MS = 200L;
+
+    private final Handler mUiStateHandler = new Handler(Looper.getMainLooper());
+
+    private final Runnable mUiStatePoller = new Runnable() {
+        @Override
+        public void run() {
+            pollUiState();
+            mUiStateHandler.postDelayed(this, UI_STATE_POLL_INTERVAL_MS);
+        }
+    };
+
+    private boolean mUiStatePolling;
+
+    /** 上次轮询到的当前会话光标可见性（DECTCEM ?25），用于边沿检测驱动闪烁线程。 */
+    private boolean mLastCursorVisible = true;
 
     private static final String LOG_TAG = "TermuxTerminalSessionActivityClient";
 
@@ -88,6 +112,8 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         // the first time bell key is pressed and play() is called, since sound may not be loaded
         // quickly enough before the call to play(). https://stackoverflow.com/questions/35435625
         loadBellSoundPool();
+        // 工单 30：新路径 title/bell/光标可见性由 UI 轮询驱动（仅前台）。
+        startUiStatePolling();
     }
 
     /**
@@ -103,6 +129,7 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         // Bell is not played in background anyways
         // Related: https://stackoverflow.com/a/28708351/14686958
         releaseBellSoundPool();
+        stopUiStatePolling();
     }
 
     /**
@@ -124,6 +151,11 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
 
     @Override
     public void onTitleChanged(@NonNull TerminalSession updatedSession) {
+        handleTitleChanged(updatedSession);
+    }
+
+    /** 标题变更统一入口：旧路径回调与新路径 UI 轮询共用。 */
+    private void handleTitleChanged(@NonNull TerminalSession updatedSession) {
         if (!mActivity.isVisible()) return;
 
         if (updatedSession != mActivity.getCurrentSession()) {
@@ -134,6 +166,43 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         }
 
         termuxSessionListNotifyUpdated();
+    }
+
+    /** 工单 30：轮询各会话核心缝的 title/bell 消费标记并投递既有行为。 */
+    private void pollUiState() {
+        TermuxService service = mActivity.getTermuxService();
+        if (service == null || !mActivity.isVisible()) return;
+
+        TerminalSession currentSession = mActivity.getCurrentSession();
+        for (TermuxSession termuxSession : service.getTermuxSessions()) {
+            TerminalSession session = termuxSession.getTerminalSession();
+            if (session == null) continue;
+            session.pollUiEvents();
+        }
+
+        // 光标可见性（DECTCEM ?25）边沿检测：驱动闪烁线程启停，语义同旧
+        // onTerminalCursorStateChange（tput civis/cnorm）。
+        if (currentSession != null && currentSession.getCoreAdapter() != null) {
+            boolean cursorVisible = currentSession.isCursorEnabled();
+            if (cursorVisible != mLastCursorVisible) {
+                mLastCursorVisible = cursorVisible;
+                if (cursorVisible || mActivity.isVisible()) {
+                    mActivity.getTerminalView().setTerminalCursorBlinkerState(cursorVisible, false);
+                }
+            }
+        }
+    }
+
+    private void startUiStatePolling() {
+        if (mUiStatePolling) return;
+        mUiStatePolling = true;
+        mLastCursorVisible = true;
+        mUiStateHandler.post(mUiStatePoller);
+    }
+
+    private void stopUiStatePolling() {
+        mUiStatePolling = false;
+        mUiStateHandler.removeCallbacks(mUiStatePoller);
     }
 
     @Override
@@ -194,12 +263,17 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         if (!mActivity.isVisible()) return;
 
         String text = ShareUtils.getTextStringFromClipboardIfSet(mActivity, true);
-        if (text != null)
-            mActivity.getTerminalView().mEmulator.paste(text);
+        if (text != null && session != null)
+            session.paste(text);
     }
 
     @Override
     public void onBell(@NonNull TerminalSession session) {
+        handleBell(session);
+    }
+
+    /** bell 统一入口：旧路径回调与新路径 UI 轮询共用。 */
+    private void handleBell(@NonNull TerminalSession session) {
         if (!mActivity.isVisible()) return;
 
         switch (mActivity.getProperties().getBellBehaviour()) {
@@ -225,6 +299,13 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
 
     @Override
     public void onTerminalCursorStateChange(boolean enabled) {
+        // 工单 30：新路径（CoreAdapter 已接）光标可见性由 UI 轮询
+        // getModeCursorVisible() 驱动，旧模拟器回调忽略，避免双轨。
+        TerminalSession currentSession = mActivity.getCurrentSession();
+        if (currentSession != null && currentSession.getCoreAdapter() != null) {
+            return;
+        }
+
         // Do not start cursor blinking thread if activity is not visible
         if (enabled && !mActivity.isVisible()) {
             Logger.logVerbose(LOG_TAG, "Ignoring call to start cursor blinking since activity is not visible");

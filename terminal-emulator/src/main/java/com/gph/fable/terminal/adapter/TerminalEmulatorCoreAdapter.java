@@ -151,6 +151,20 @@ public final class TerminalEmulatorCoreAdapter implements CoreAdapter {
     }
 
     @Override
+    public boolean getModeCursorKeysApplication() {
+        return mEmulator.isCursorKeysApplicationMode();
+    }
+
+    @Override
+    public boolean getModeKeypadApplication() {
+        return mEmulator.isKeypadApplicationMode();
+    }
+
+    // getModeBracketedPaste 保持默认 false：旧模拟器的 bracketed paste 状态无公开
+    // 访问器（TerminalEmulator#paste 内部处理），旧路径粘贴走 TerminalSession#paste
+    // 的 mEmulator.paste 回退，不经过本查询。
+
+    @Override
     public boolean supportsSelectionText() {
         return true;
     }

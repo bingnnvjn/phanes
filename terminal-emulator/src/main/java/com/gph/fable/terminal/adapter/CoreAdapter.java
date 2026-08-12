@@ -109,6 +109,29 @@ public interface CoreAdapter {
         return false;
     }
 
+    /** 工单 30：光标键是否 application mode（DECCKM，DECSET ?1）。 */
+    default boolean getModeCursorKeysApplication() {
+        return false;
+    }
+
+    /** 工单 30：小键盘是否 application mode（DECKPAM，DECSET ?66）。 */
+    default boolean getModeKeypadApplication() {
+        return false;
+    }
+
+    /** 工单 30：bracketed paste（DECSET 2004）是否激活。 */
+    default boolean getModeBracketedPaste() {
+        return false;
+    }
+
+    /**
+     * 工单 30：把当前光标闪烁相位推给渲染层（true = 可见相位）。
+     * 旧路径默认忽略（旧模拟器自绘由 {@code TerminalEmulator#setCursorBlinkState} 承担）；
+     * 新路径（fable-render）用它与核心光标可见性 AND，实现与旧路径一致的闪烁。
+     */
+    default void setCursorBlinkState(boolean cursorVisible) {
+    }
+
     boolean supportsSelectionText();
 
     boolean supportsFontSize();

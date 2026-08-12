@@ -182,6 +182,24 @@ public class CoreAdapterTest {
         assertFalse(mAdapter.getModeMouseTracking());
         assertTrue(mAdapter.getModeCursorVisible());
         assertFalse(mAdapter.getModeCursorBlink());
+        // 工单 30：新增模式默认安全值（旧路径无状态时均 false）。
+        assertFalse(mAdapter.getModeCursorKeysApplication());
+        assertFalse(mAdapter.getModeKeypadApplication());
+        assertFalse(mAdapter.getModeBracketedPaste());
+    }
+
+    @Test
+    public void legacyAdapterReportsDecCkmDeckpamModes() {
+        // 旧路径适配器从旧模拟器读取 DECCKM（?1）/DECKPAM（?66）。
+        byte[] on = "\u001b[?1h\u001b[?66h".getBytes(StandardCharsets.UTF_8);
+        mAdapter.write(on, on.length);
+        assertTrue(mAdapter.getModeCursorKeysApplication());
+        assertTrue(mAdapter.getModeKeypadApplication());
+
+        byte[] off = "\u001b[?1l\u001b[?66l".getBytes(StandardCharsets.UTF_8);
+        mAdapter.write(off, off.length);
+        assertFalse(mAdapter.getModeCursorKeysApplication());
+        assertFalse(mAdapter.getModeKeypadApplication());
     }
 
     @Test
@@ -229,6 +247,37 @@ public class CoreAdapterTest {
         assertFalse(fake.getModeMouseTracking());
         assertTrue(fake.getModeCursorVisible());
         assertFalse(fake.getModeCursorBlink());
+    }
+
+    @Test
+    public void fakeCoreCursorKeysKeypadBracketedAndBlinkPhase() {
+        FakeCoreAdapter fake = new FakeCoreAdapter(10, 5);
+
+        // 初始安全值。
+        assertFalse(fake.getModeCursorKeysApplication());
+        assertFalse(fake.getModeKeypadApplication());
+        assertFalse(fake.getModeBracketedPaste());
+        assertTrue("初始闪烁相位可见", fake.getCursorBlinkPhase());
+
+        // DECCKM / DECKPAM / bracketed paste 开启。
+        byte[] on = "\u001b[?1h\u001b[?66h\u001b[?2004h".getBytes(StandardCharsets.UTF_8);
+        fake.write(on, on.length);
+        assertTrue(fake.getModeCursorKeysApplication());
+        assertTrue(fake.getModeKeypadApplication());
+        assertTrue(fake.getModeBracketedPaste());
+
+        // 光标闪烁相位 feed：UI 闪烁线程推送，渲染层与核心可见性 AND。
+        fake.setCursorBlinkState(false);
+        assertFalse(fake.getCursorBlinkPhase());
+        fake.setCursorBlinkState(true);
+        assertTrue(fake.getCursorBlinkPhase());
+
+        // 全部关闭。
+        byte[] off = "\u001b[?1l\u001b[?66l\u001b[?2004l".getBytes(StandardCharsets.UTF_8);
+        fake.write(off, off.length);
+        assertFalse(fake.getModeCursorKeysApplication());
+        assertFalse(fake.getModeKeypadApplication());
+        assertFalse(fake.getModeBracketedPaste());
     }
 
     @Test
@@ -291,6 +340,10 @@ public class CoreAdapterTest {
         private boolean mMouseAny;
         private boolean mCursorVisible = true;
         private boolean mCursorBlink;
+        private boolean mCursorKeysApp;
+        private boolean mKeypadApp;
+        private boolean mBracketedPaste;
+        private boolean mCursorBlinkPhase = true;
 
         FakeCoreAdapter(int columns, int rows) {
             this.mRows = rows;
@@ -359,6 +412,9 @@ public class CoreAdapterTest {
                     if (body.equals("?1003")) mMouseAny = set;
                     if (body.equals("?25")) mCursorVisible = set;
                     if (body.equals("?12")) mCursorBlink = set;
+                    if (body.equals("?1")) mCursorKeysApp = set;
+                    if (body.equals("?66")) mKeypadApp = set;
+                    if (body.equals("?2004")) mBracketedPaste = set;
                     i = t;
                     continue;
                 }
@@ -410,6 +466,26 @@ public class CoreAdapterTest {
         @Override
         public boolean getModeCursorBlink() {
             return mCursorBlink;
+        }
+
+        @Override
+        public boolean getModeCursorKeysApplication() {
+            return mCursorKeysApp;
+        }
+
+        @Override
+        public boolean getModeKeypadApplication() {
+            return mKeypadApp;
+        }
+
+        @Override
+        public boolean getModeBracketedPaste() {
+            return mBracketedPaste;
+        }
+
+        @Override
+        public void setCursorBlinkState(boolean cursorVisible) {
+            mCursorBlinkPhase = cursorVisible;
         }
 
         @Override
@@ -518,6 +594,10 @@ public class CoreAdapterTest {
 
         int getTopRow() {
             return mTopRow;
+        }
+
+        boolean getCursorBlinkPhase() {
+            return mCursorBlinkPhase;
         }
     }
 }

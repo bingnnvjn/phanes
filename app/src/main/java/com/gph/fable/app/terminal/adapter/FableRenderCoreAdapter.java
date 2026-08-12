@@ -384,6 +384,42 @@ public final class FableRenderCoreAdapter implements CoreAdapter {
     }
 
     @Override
+    public boolean getModeCursorKeysApplication() {
+        long handle;
+        synchronized (mLock) {
+            handle = mHandle;
+        }
+        return handle != 0 && RenderCore.rendererGetModeCursorKeysApplication(handle);
+    }
+
+    @Override
+    public boolean getModeKeypadApplication() {
+        long handle;
+        synchronized (mLock) {
+            handle = mHandle;
+        }
+        return handle != 0 && RenderCore.rendererGetModeKeypadApplication(handle);
+    }
+
+    @Override
+    public boolean getModeBracketedPaste() {
+        long handle;
+        synchronized (mLock) {
+            handle = mHandle;
+        }
+        return handle != 0 && RenderCore.rendererGetModeBracketedPaste(handle);
+    }
+
+    @Override
+    public void setCursorBlinkState(boolean cursorVisible) {
+        long handle;
+        synchronized (mLock) {
+            handle = mHandle;
+        }
+        if (handle != 0) RenderCore.rendererSetCursorBlinkState(handle, cursorVisible);
+    }
+
+    @Override
     public void destroy() {
         long handle;
         synchronized (mLock) {

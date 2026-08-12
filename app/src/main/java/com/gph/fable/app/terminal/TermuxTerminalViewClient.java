@@ -187,10 +187,15 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
 
     @Override
     public void onSingleTapUp(MotionEvent e) {
-        TerminalEmulator term = mActivity.getCurrentSession().getEmulator();
+        TerminalSession session = mActivity.getCurrentSession();
+        TerminalEmulator term = session.getEmulator();
+        // 工单 30：mouse tracking 状态以 CoreAdapter 为准（新路径）；旧路径回退旧模拟器。
+        boolean mouseTrackingActive = session.isMouseTrackingActive();
 
         if (mActivity.getProperties().shouldOpenTerminalTranscriptURLOnClick()) {
             int[] columnAndRow = mActivity.getTerminalView().getColumnAndRow(e, true);
+            // 工单 31 残项：URL 点击取词仍读旧模拟器屏幕内容（CoreAdapter 暂无
+            // word-at-location API；删旧模拟器时需补缝内容查询）。
             String wordAtTap = term.getScreen().getWordAtLocation(columnAndRow[0], columnAndRow[1]);
             LinkedHashSet<CharSequence> urlSet = TermuxUrlUtils.extractUrls(wordAtTap);
 
@@ -201,7 +206,7 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
             }
         }
 
-        if (!term.isMouseTrackingActive() && !e.isFromSource(InputDevice.SOURCE_MOUSE)) {
+        if (!mouseTrackingActive && !e.isFromSource(InputDevice.SOURCE_MOUSE)) {
             if (!KeyboardUtils.areDisableSoftKeyboardFlagsSet(mActivity))
                 KeyboardUtils.showSoftKeyboard(mActivity, mActivity.getTerminalView());
             else
@@ -457,8 +462,10 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
             }
 
             if (resultingKeyCode != -1) {
-                TerminalEmulator term = session.getEmulator();
-                session.write(KeyHandler.getCode(resultingKeyCode, 0, term.isCursorKeysApplicationMode(), term.isKeypadApplicationMode()));
+                // 工单 30：DECCKM/DECKPAM 模式以 CoreAdapter 为准（新路径），
+                // 旧路径回退旧模拟器。
+                session.write(KeyHandler.getCode(resultingKeyCode, 0,
+                        session.isCursorKeysApplicationMode(), session.isKeypadApplicationMode()));
             } else if (resultingCodePoint != -1) {
                 session.writeCodePoint(altDown, resultingCodePoint);
             }
@@ -800,7 +807,7 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
 
         String text = ShareUtils.getTextStringFromClipboardIfSet(mActivity, true);
         if (text != null)
-            session.getEmulator().paste(text);
+            session.paste(text);
     }
 
 }

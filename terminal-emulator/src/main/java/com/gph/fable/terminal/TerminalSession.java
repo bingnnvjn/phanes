@@ -160,8 +160,13 @@ public final class TerminalSession extends TerminalOutput {
         if (mCoreAdapter != null) mCoreAdapter.resize(columns, rows);
     }
 
-    /** The terminal title as set through escape sequences or null if none set. */
+    /**
+     * The terminal title as set through escape sequences or null if none set.
+     * 工单 30：新路径（CoreAdapter 已接）标题以核心缝为准（libghostty-vt 解析
+     * OSC 0/2）；旧路径回退旧模拟器。
+     */
     public String getTitle() {
+        if (mCoreAdapter != null) return mCoreAdapter.getTitle();
         return (mEmulator == null) ? null : mEmulator.getTitle();
     }
 
@@ -285,7 +290,51 @@ public final class TerminalSession extends TerminalOutput {
 
     @Override
     public void titleChanged(String oldTitle, String newTitle) {
-        mClient.onTitleChanged(this);
+        // 工单 30：新路径标题事件经 CoreAdapter 消费标记投递（pollUiEvents），
+        // 旧模拟器解析只作状态同步；旧路径（mCoreAdapter == null）保留原回调。
+        if (mCoreAdapter == null) mClient.onTitleChanged(this);
+    }
+
+    /**
+     * 工单 30：轮询核心缝的 title/bell 消费标记并投递客户端回调（UI 定时调用）。
+     * consume 语义 = 查询即清除，mailbox 保序保证不丢事件；旧路径（无缝）为空操作。
+     */
+    public void pollUiEvents() {
+        if (mCoreAdapter == null) return;
+        if (mCoreAdapter.consumeTitleChanged()) mClient.onTitleChanged(this);
+        if (mCoreAdapter.consumeBell()) mClient.onBell(this);
+    }
+
+    // ---------- 工单 30：模式状态统一查询（新路径走 CoreAdapter，旧路径回退旧模拟器） ----------
+
+    /** 任一 mouse tracking 模式（X10/1000/1002/1003）。 */
+    public boolean isMouseTrackingActive() {
+        if (mCoreAdapter != null) return mCoreAdapter.getModeMouseTracking();
+        return mEmulator != null && mEmulator.isMouseTrackingActive();
+    }
+
+    /** alternate screen（DECSET 1047/1049）。 */
+    public boolean isAlternateBufferActive() {
+        if (mCoreAdapter != null) return mCoreAdapter.getModeAlternateScreen();
+        return mEmulator != null && mEmulator.isAlternateBufferActive();
+    }
+
+    /** 光标可见（DECTCEM，DECSET 25）。 */
+    public boolean isCursorEnabled() {
+        if (mCoreAdapter != null) return mCoreAdapter.getModeCursorVisible();
+        return mEmulator != null && mEmulator.isCursorEnabled();
+    }
+
+    /** 光标键 application mode（DECCKM，DECSET ?1）。 */
+    public boolean isCursorKeysApplicationMode() {
+        if (mCoreAdapter != null) return mCoreAdapter.getModeCursorKeysApplication();
+        return mEmulator != null && mEmulator.isCursorKeysApplicationMode();
+    }
+
+    /** 小键盘 application mode（DECKPAM，DECSET ?66）。 */
+    public boolean isKeypadApplicationMode() {
+        if (mCoreAdapter != null) return mCoreAdapter.getModeKeypadApplication();
+        return mEmulator != null && mEmulator.isKeypadApplicationMode();
     }
 
     public synchronized boolean isRunning() {
@@ -309,12 +358,32 @@ public final class TerminalSession extends TerminalOutput {
 
     @Override
     public void onBell() {
-        mClient.onBell(this);
+        // 工单 30：新路径 bell 经 CoreAdapter 消费标记投递（pollUiEvents）。
+        if (mCoreAdapter == null) mClient.onBell(this);
     }
 
     @Override
     public void onColorsChanged() {
+        // 颜色不在工单 30 切缝清单内：保持既有回调（新路径下 updateBackgroundColor
+        // 走 FableTerminalPalette，不读旧模拟器状态）。
         mClient.onColorsChanged(this);
+    }
+
+    /**
+     * 工单 30：粘贴文本。新路径 bracketed paste 模式以 CoreAdapter 状态为准
+     * （核心解析 DECSET 2004）；旧路径回退旧模拟器 paste（含其 bracketed 状态）。
+     */
+    public void paste(String text) {
+        if (mCoreAdapter != null) {
+            // 清洗逻辑与 TerminalEmulator#paste 共用（sanitizePasteText）。
+            String sanitized = TerminalEmulator.sanitizePasteText(text);
+            boolean bracketed = mCoreAdapter.getModeBracketedPaste();
+            if (bracketed) write("\u001b[200~");
+            write(sanitized);
+            if (bracketed) write("\u001b[201~");
+        } else if (mEmulator != null) {
+            mEmulator.paste(text);
+        }
     }
 
     public int getPid() {

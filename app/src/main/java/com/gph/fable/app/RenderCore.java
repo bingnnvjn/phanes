@@ -65,6 +65,18 @@ public final class RenderCore {
     /** 工单 29：当前光标是否闪烁（DECSET 12）。 */
     public static native boolean rendererGetModeCursorBlink(long handle);
 
+    /** 工单 30：光标键是否 application mode（DECCKM，DECSET ?1）。 */
+    public static native boolean rendererGetModeCursorKeysApplication(long handle);
+
+    /** 工单 30：小键盘是否 application mode（DECKPAM，DECSET ?66）。 */
+    public static native boolean rendererGetModeKeypadApplication(long handle);
+
+    /** 工单 30：bracketed paste（DECSET 2004）是否激活。 */
+    public static native boolean rendererGetModeBracketedPaste(long handle);
+
+    /** 工单 30：推送光标闪烁相位（true = 可见相位；渲染层与核心光标可见性 AND）。 */
+    public static native void rendererSetCursorBlinkState(long handle, boolean cursorVisible);
+
     /** 工单 14：push 配色板（ARGB），前景/背景/选择色/光标色。 */
     public static native void rendererSetPalette(long handle, int fgArgb, int bgArgb, int selectionArgb, int cursorArgb);
 

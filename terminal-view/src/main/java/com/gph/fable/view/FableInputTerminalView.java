@@ -20,7 +20,7 @@ import com.gph.fable.terminal.adapter.CoreAdapter;
  */
 public final class FableInputTerminalView extends TerminalView {
 
-    private CoreAdapter mCoreAdapter;
+    // mCoreAdapter 字段在父类 TerminalView（工单 30：UI 状态统一走 CoreAdapter）。
     private int mLastSyncedTopRow;
     private long mSelectionSyncSignature = Long.MIN_VALUE;
 
@@ -89,7 +89,6 @@ public final class FableInputTerminalView extends TerminalView {
             mTermSession.updateSize(newColumns, newRows, cellWidth, cellHeight);
             mEmulator = mTermSession.getEmulator();
             if (mClient != null) mClient.onEmulatorSet();
-            updateTerminalCursorBlinkerForEmulator();
 
             mTopRow = 0;
             scrollTo(0, 0);

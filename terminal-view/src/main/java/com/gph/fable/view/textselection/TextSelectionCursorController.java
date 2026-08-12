@@ -97,6 +97,8 @@ public class TextSelectionCursorController implements CursorController {
         mSelX1 = mSelX2 = columnAndRow[0];
         mSelY1 = mSelY2 = columnAndRow[1];
 
+        // 工单 31 残项：长按词边界展开仍读旧模拟器屏幕内容（CoreAdapter 无逐格文本
+        // 查询；删旧模拟器时需补缝内容 API，见工单 22 Comments"双模型"遗留）。
         TerminalBuffer screen = terminalView.mEmulator.getScreen();
         if (!" ".equals(screen.getSelectedText(mSelX1, mSelY1, mSelX1, mSelY1))) {
             // Selecting something other than whitespace. Expand to word.
@@ -244,7 +246,8 @@ public class TextSelectionCursorController implements CursorController {
                 mSelX1 = mSelX2;
             }
 
-            if (!terminalView.mEmulator.isAlternateBufferActive()) {
+            // 工单 30：alt screen 状态经 TerminalView 查询（新路径走 CoreAdapter）。
+            if (!terminalView.isAlternateBufferActive()) {
                 int topRow = terminalView.getTopRow();
 
                 if (mSelY1 <= topRow) {

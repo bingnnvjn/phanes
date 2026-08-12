@@ -100,8 +100,9 @@ public class TermuxTerminalExtraKeys extends TerminalExtraKeys {
                 mTermuxTerminalSessionActivityClient.onPasteTextFromClipboard(null);
         }  else if ("SCROLL".equals(key)) {
             TerminalView terminalView = mTermuxTerminalViewClient.getActivity().getTerminalView();
-            if (terminalView != null && terminalView.mEmulator != null)
-                terminalView.mEmulator.toggleAutoScrollDisabled();
+            // 工单 30：自动滚动切换走 TerminalView（新路径视图本地状态，旧路径旧模拟器）。
+            if (terminalView != null)
+                terminalView.toggleAutoScrollDisabled();
         } else {
             super.onTerminalExtraKeyButtonClick(view, key, ctrlDown, altDown, shiftDown, fnDown);
         }

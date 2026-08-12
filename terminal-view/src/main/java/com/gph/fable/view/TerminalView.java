@@ -42,6 +42,7 @@ import java.util.function.Consumer;
 import com.gph.fable.terminal.KeyHandler;
 import com.gph.fable.terminal.TerminalEmulator;
 import com.gph.fable.terminal.TerminalSession;
+import com.gph.fable.terminal.adapter.CoreAdapter;
 import com.gph.fable.view.textselection.TextSelectionCursorController;
 
 /** View displaying and interacting with a {@link TerminalSession}. */
@@ -67,6 +68,13 @@ public class TerminalView extends View {
     /** Our terminal emulator whose session is {@link #mTermSession}. */
     public TerminalEmulator mEmulator;
 
+    /**
+     * 工单 30：新路径核心缝（fable-render）。null = 旧路径降级（TerminalRenderer 自绘）。
+     * 主终端 UI 的标题/铃声/模式/选择/滚动/光标状态一律以本缝为准；
+     * 旧模拟器只作旧路径状态与内容回退，不再被新路径读取。
+     */
+    CoreAdapter mCoreAdapter;
+
     public TerminalRenderer mRenderer;
 
     public TerminalViewClient mClient;
@@ -82,6 +90,8 @@ public class TerminalView extends View {
 
     /** The top row of text to display. Ranges from -activeTranscriptRows to 0. */
     int mTopRow;
+    /** 工单 30：自动滚动禁用（新路径视图本地状态；旧路径用旧模拟器状态）。 */
+    private boolean mAutoScrollDisabled;
     int[] mDefaultSelectors = new int[]{-1,-1,-1,-1};
 
     float mScaleFactor = 1.f;
@@ -156,7 +166,7 @@ public class TerminalView extends View {
             @Override
             public boolean onUp(MotionEvent event) {
                 mScrollRemainder = 0.0f;
-                if (mEmulator != null && mEmulator.isMouseTrackingActive() && !event.isFromSource(InputDevice.SOURCE_MOUSE) && !isSelectingText() && !scrolledWithFinger) {
+                if (mEmulator != null && isMouseTrackingActive() && !event.isFromSource(InputDevice.SOURCE_MOUSE) && !isSelectingText() && !scrolledWithFinger) {
                     // Quick event processing when mouse tracking is active - do not wait for check of double tapping
                     // for zooming.
                     sendMouseEventCode(event, TerminalEmulator.MOUSE_LEFT_BUTTON, true);
@@ -183,7 +193,7 @@ public class TerminalView extends View {
             @Override
             public boolean onScroll(MotionEvent e, float distanceX, float distanceY) {
                 if (mEmulator == null) return true;
-                if (mEmulator.isMouseTrackingActive() && e.isFromSource(InputDevice.SOURCE_MOUSE)) {
+                if (isMouseTrackingActive() && e.isFromSource(InputDevice.SOURCE_MOUSE)) {
                     // If moving with mouse pointer while pressing button, report that instead of scroll.
                     // This means that we never report moving with button press-events for touch input,
                     // since we cannot just start sending these events without a starting press event,
@@ -213,7 +223,7 @@ public class TerminalView extends View {
                 // Do not start scrolling until last fling has been taken care of:
                 if (!mScroller.isFinished()) return true;
 
-                final boolean mouseTrackingAtStartOfFling = mEmulator.isMouseTrackingActive();
+                final boolean mouseTrackingAtStartOfFling = isMouseTrackingActive();
                 float SCALE = 0.25f;
                 if (mouseTrackingAtStartOfFling) {
                     mScroller.fling(0, 0, 0, -(int) (velocityY * SCALE), 0, 0, -mEmulator.mRows / 2, mEmulator.mRows / 2);
@@ -226,7 +236,7 @@ public class TerminalView extends View {
 
                     @Override
                     public void run() {
-                        if (mouseTrackingAtStartOfFling != mEmulator.isMouseTrackingActive()) {
+                        if (mouseTrackingAtStartOfFling != isMouseTrackingActive()) {
                             mScroller.abortAnimation();
                             return;
                         }
@@ -283,6 +293,56 @@ public class TerminalView extends View {
      */
     public void setTerminalViewClient(TerminalViewClient client) {
         this.mClient = client;
+    }
+
+    // ---------- 工单 30：模式/光标/自动滚动状态统一走 CoreAdapter（新路径） ----------
+
+    /** 新路径是否激活（fable-render 已绑定会话）。 */
+    boolean isCoreAdapterActive() {
+        return mCoreAdapter != null;
+    }
+
+    /** 任一 mouse tracking 模式（X10/1000/1002/1003）。 */
+    private boolean isMouseTrackingActive() {
+        return mTermSession != null && mTermSession.isMouseTrackingActive();
+    }
+
+    /**
+     * alternate screen（DECSET 1047/1049）。供选择控制器等 UI 组件查询；
+     * 新路径查 CoreAdapter，旧路径回退旧模拟器（工单 30）。
+     */
+    public boolean isAlternateBufferActive() {
+        return mTermSession != null && mTermSession.isAlternateBufferActive();
+    }
+
+    /** 光标可见（DECTCEM，DECSET 25）。 */
+    private boolean isCursorEnabled() {
+        return mTermSession != null && mTermSession.isCursorEnabled();
+    }
+
+    /** 光标键 application mode（DECCKM，DECSET ?1）。 */
+    private boolean isCursorKeysApplicationMode() {
+        return mTermSession != null && mTermSession.isCursorKeysApplicationMode();
+    }
+
+    /** 小键盘 application mode（DECKPAM，DECSET ?66）。 */
+    private boolean isKeypadApplicationMode() {
+        return mTermSession != null && mTermSession.isKeypadApplicationMode();
+    }
+
+    /** 自动滚动禁用（新路径 = 视图本地状态；旧路径 = 旧模拟器状态）。 */
+    private boolean isAutoScrollDisabled() {
+        if (mCoreAdapter != null) return mAutoScrollDisabled;
+        return mEmulator != null && mEmulator.isAutoScrollDisabled();
+    }
+
+    /** 工单 30：推送光标闪烁相位（新路径走 CoreAdapter，旧路径走旧模拟器）。 */
+    private void setCursorBlinkPhase(boolean cursorVisible) {
+        if (mCoreAdapter != null) {
+            mCoreAdapter.setCursorBlinkState(cursorVisible);
+        } else if (mEmulator != null) {
+            mEmulator.setCursorBlinkState(cursorVisible);
+        }
     }
 
     /**
@@ -471,20 +531,23 @@ public class TerminalView extends View {
     public void onScreenUpdated(boolean skipScrolling) {
         if (mEmulator == null) return;
 
+        // 工单 31 残项：滚动钳制/滚轴度量仍用旧模拟器 transcript 行数（CoreAdapter
+        // 无 scrollback 行数查询；渲染器内部自行钳制，此处只影响视图本地 mTopRow）。
         int rowsInHistory = mEmulator.getScreen().getActiveTranscriptRows();
         if (mTopRow < -rowsInHistory) mTopRow = -rowsInHistory;
 
-        if (isSelectingText() || mEmulator.isAutoScrollDisabled()) {
+        if (isSelectingText() || isAutoScrollDisabled()) {
 
             // Do not scroll when selecting text.
-            int rowShift = mEmulator.getScrollCounter();
+            // 新路径（CoreAdapter）：滚动回看由渲染器承担，无旧模拟器滚动计数。
+            int rowShift = isCoreAdapterActive() ? 0 : mEmulator.getScrollCounter();
             if (-mTopRow + rowShift > rowsInHistory) {
                 // .. unless we're hitting the end of history transcript, in which
                 // case we abort text selection and scroll to end.
                 if (isSelectingText())
                     stopTextSelectionMode();
 
-                if (mEmulator.isAutoScrollDisabled()) {
+                if (isAutoScrollDisabled()) {
                     mTopRow = -rowsInHistory;
                     skipScrolling = true;
                 }
@@ -506,7 +569,7 @@ public class TerminalView extends View {
             mTopRow = 0;
         }
 
-        mEmulator.clearScrollCounter();
+        if (!isCoreAdapterActive()) mEmulator.clearScrollCounter();
 
         invalidate();
         if (mAccessibilityEnabled) setContentDescription(getText());
@@ -589,9 +652,9 @@ public class TerminalView extends View {
         boolean up = rowsDown < 0;
         int amount = Math.abs(rowsDown);
         for (int i = 0; i < amount; i++) {
-            if (mEmulator.isMouseTrackingActive()) {
+            if (isMouseTrackingActive()) {
                 sendMouseEventCode(event, up ? TerminalEmulator.MOUSE_WHEELUP_BUTTON : TerminalEmulator.MOUSE_WHEELDOWN_BUTTON, true);
-            } else if (mEmulator.isAlternateBufferActive()) {
+            } else if (isAlternateBufferActive()) {
                 // Send up and down key events for scrolling, which is what some terminals do to make scroll work in
                 // e.g. less, which shifts to the alt screen without mouse handling.
                 handleKeyCode(up ? KeyEvent.KEYCODE_DPAD_UP : KeyEvent.KEYCODE_DPAD_DOWN, 0);
@@ -636,10 +699,10 @@ public class TerminalView extends View {
                     ClipData.Item clipItem = clipData.getItemAt(0);
                     if (clipItem != null) {
                         CharSequence text = clipItem.coerceToText(getContext());
-                        if (!TextUtils.isEmpty(text)) mEmulator.paste(text.toString());
+                        if (!TextUtils.isEmpty(text)) mTermSession.paste(text.toString());
                     }
                 }
-            } else if (mEmulator.isMouseTrackingActive()) { // BUTTON_PRIMARY.
+            } else if (isMouseTrackingActive()) { // BUTTON_PRIMARY.
                 switch (event.getAction()) {
                     case MotionEvent.ACTION_DOWN:
                     case MotionEvent.ACTION_UP:
@@ -864,8 +927,7 @@ public class TerminalView extends View {
         if (mTermSession == null) return;
 
         // Ensure cursor is shown when a key is pressed down like long hold on (arrow) keys
-        if (mEmulator != null)
-            mEmulator.setCursorBlinkState(true);
+        setCursorBlinkPhase(true);
 
         final boolean controlDown = controlDownFromEvent || mClient.readControlKey();
         final boolean altDown = leftAltDownFromEvent || mClient.readAltKey();
@@ -923,14 +985,12 @@ public class TerminalView extends View {
     /** Input the specified keyCode if applicable and return if the input was consumed. */
     public boolean handleKeyCode(int keyCode, int keyMod) {
         // Ensure cursor is shown when a key is pressed down like long hold on (arrow) keys
-        if (mEmulator != null)
-            mEmulator.setCursorBlinkState(true);
+        setCursorBlinkPhase(true);
 
         if (handleKeyCodeAction(keyCode, keyMod))
             return true;
 
-        TerminalEmulator term = mTermSession.getEmulator();
-        String code = KeyHandler.getCode(keyCode, keyMod, term.isCursorKeysApplicationMode(), term.isKeypadApplicationMode());
+        String code = KeyHandler.getCode(keyCode, keyMod, isCursorKeysApplicationMode(), isKeypadApplicationMode());
         if (code == null) return false;
         mTermSession.write(code);
         return true;
@@ -1009,8 +1069,6 @@ public class TerminalView extends View {
 
             // Update mTerminalCursorBlinkerRunnable inner class mEmulator on session change
             if (mTerminalCursorBlinkerRunnable != null)
-                mTerminalCursorBlinkerRunnable.setEmulator(mEmulator);
-
             mTopRow = 0;
             scrollTo(0, 0);
             invalidate();
@@ -1272,7 +1330,8 @@ public class TerminalView extends View {
      *
      * @param start If cursor blinker should be started or stopped.
      * @param startOnlyIfCursorEnabled If set to {@code true}, then it will also be checked if the
-     *                                 cursor is even enabled by {@link TerminalEmulator} before
+     *                                 cursor is even enabled（新路径查 CoreAdapter 的
+     *                                 getModeCursorVisible，旧路径查旧模拟器）before
      *                                 starting the cursor blinker.
      */
     public synchronized void setTerminalCursorBlinkerState(boolean start, boolean startOnlyIfCursorEnabled) {
@@ -1281,14 +1340,15 @@ public class TerminalView extends View {
 
         if (mEmulator == null) return;
 
-        mEmulator.setCursorBlinkingEnabled(false);
+        // 旧路径需要同步旧模拟器的"闪烁启用"标志；新路径相位只经 CoreAdapter 推送。
+        if (!isCoreAdapterActive()) mEmulator.setCursorBlinkingEnabled(false);
 
         if (start) {
             // If cursor blinker is not enabled or is not valid
             if (mTerminalCursorBlinkerRate < TERMINAL_CURSOR_BLINK_RATE_MIN || mTerminalCursorBlinkerRate > TERMINAL_CURSOR_BLINK_RATE_MAX)
                 return;
             // If cursor blinder is to be started only if cursor is enabled
-            else if (startOnlyIfCursorEnabled && ! mEmulator.isCursorEnabled()) {
+            else if (startOnlyIfCursorEnabled && !isCursorEnabled()) {
                 if (TERMINAL_VIEW_KEY_LOGGING_ENABLED)
                     mClient.logVerbose(LOG_TAG, "Ignoring call to start cursor blinker since cursor is not enabled");
                 return;
@@ -1299,8 +1359,8 @@ public class TerminalView extends View {
                 mClient.logVerbose(LOG_TAG, "Starting cursor blinker with the blink rate " + mTerminalCursorBlinkerRate);
             if (mTerminalCursorBlinkerHandler == null)
                 mTerminalCursorBlinkerHandler = new Handler(Looper.getMainLooper());
-            mTerminalCursorBlinkerRunnable = new TerminalCursorBlinkerRunnable(mEmulator, mTerminalCursorBlinkerRate);
-            mEmulator.setCursorBlinkingEnabled(true);
+            mTerminalCursorBlinkerRunnable = new TerminalCursorBlinkerRunnable(mTerminalCursorBlinkerRate);
+            if (!isCoreAdapterActive()) mEmulator.setCursorBlinkingEnabled(true);
             mTerminalCursorBlinkerRunnable.run();
         }
     }
@@ -1314,37 +1374,32 @@ public class TerminalView extends View {
                 mClient.logVerbose(LOG_TAG, "Stopping cursor blinker");
             mTerminalCursorBlinkerHandler.removeCallbacks(mTerminalCursorBlinkerRunnable);
         }
+        // 工单 30：闪烁停止即恢复可见相位，与旧路径
+        // shouldCursorBeVisible()（enabled && (blinkingEnabled ? phase : true)）一致，
+        // 避免停止时相位恰为隐藏导致光标永久消失。
+        setCursorBlinkPhase(true);
     }
 
     private class TerminalCursorBlinkerRunnable implements Runnable {
 
-        private TerminalEmulator mEmulator;
         private final int mBlinkRate;
 
         // Initialize with false so that initial blink state is visible after toggling
         boolean mCursorVisible = false;
 
-        public TerminalCursorBlinkerRunnable(TerminalEmulator emulator, int blinkRate) {
-            mEmulator = emulator;
+        public TerminalCursorBlinkerRunnable(int blinkRate) {
             mBlinkRate = blinkRate;
-        }
-
-        public void setEmulator(TerminalEmulator emulator) {
-            mEmulator = emulator;
         }
 
         public void run() {
             try {
-                if (mEmulator != null) {
-                    // Toggle the blink state and then invalidate() the view so
-                    // that onDraw() is called, which then calls TerminalRenderer.render()
-                    // which checks with TerminalEmulator.shouldCursorBeVisible() to decide whether
-                    // to draw the cursor or not
-                    mCursorVisible = !mCursorVisible;
-                    //mClient.logVerbose(LOG_TAG, "Toggling cursor blink state to " + mCursorVisible);
-                    mEmulator.setCursorBlinkState(mCursorVisible);
-                    invalidate();
-                }
+                // Toggle the blink phase and then invalidate() the view so that onDraw()
+                // is called。新路径：相位经 CoreAdapter.setCursorBlinkState 推给渲染层
+                // （与核心光标可见性 AND 后决定是否画光标）；旧路径：写旧模拟器
+                // 状态，TerminalRenderer 用 shouldCursorBeVisible() 决定。
+                mCursorVisible = !mCursorVisible;
+                setCursorBlinkPhase(mCursorVisible);
+                invalidate();
             } finally {
                 // Recall the Runnable after mBlinkRate milliseconds to toggle the blink state
                 mTerminalCursorBlinkerHandler.postDelayed(this, mBlinkRate);
@@ -1396,10 +1451,16 @@ public class TerminalView extends View {
         }
     }
 
-    /** 会话/尺寸变化后让光标闪烁线程指向当前 emulator。 */
-    protected void updateTerminalCursorBlinkerForEmulator() {
-        if (mTerminalCursorBlinkerRunnable != null)
-            mTerminalCursorBlinkerRunnable.setEmulator(mEmulator);
+    /**
+     * 工单 30：切换"自动滚动禁用"（extra keys SCROLL 按钮）。
+     * 新路径为视图本地状态（onScreenUpdated 据此保持视口）；旧路径回退旧模拟器。
+     */
+    public void toggleAutoScrollDisabled() {
+        if (isCoreAdapterActive()) {
+            mAutoScrollDisabled = !mAutoScrollDisabled;
+        } else if (mEmulator != null) {
+            mEmulator.toggleAutoScrollDisabled();
+        }
     }
 
     /**
