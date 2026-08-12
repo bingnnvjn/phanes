@@ -16,6 +16,7 @@ import android.webkit.MimeTypeMap;
 import com.gph.fable.shared.termux.plugins.FablePluginUtils;
 import com.gph.fable.shared.data.DataUtils;
 import com.gph.fable.shared.data.IntentUtils;
+import com.gph.fable.shared.file.SafeFilePaths;
 import com.gph.fable.shared.net.uri.UriUtils;
 import com.gph.fable.shared.logger.Logger;
 import com.gph.fable.shared.net.uri.UriScheme;
@@ -199,16 +200,25 @@ public class FableOpenReceiver extends BroadcastReceiver {
 
         @Override
         public ParcelFileDescriptor openFile(@NonNull Uri uri, @NonNull String mode) throws FileNotFoundException {
-            File file = new File(uri.getPath());
+            String requestedPath = uri.getPath();
+            if (requestedPath == null) {
+                throw new FileNotFoundException("Missing file path");
+            }
+            File requestedFile = new File(requestedPath);
+            File file;
             try {
+                File filesRoot = new File(TermuxConstants.TERMUX_FILES_DIR_PATH);
+                File storageRoot = Environment.getExternalStorageDirectory();
+                file = SafeFilePaths.resolveWithin(filesRoot, requestedFile, true);
+                if (file == null) {
+                    file = SafeFilePaths.resolveWithin(storageRoot, requestedFile, true);
+                }
+                if (file == null) {
+                    throw new IllegalArgumentException("Invalid path: " + requestedFile);
+                }
                 String path = file.getCanonicalPath();
                 String callingPackageName = getCallingPackage();
                 Logger.logDebug(LOG_TAG, "Open file request received from " + callingPackageName + " for \"" + path + "\" with mode \"" + mode + "\"");
-                String storagePath = Environment.getExternalStorageDirectory().getCanonicalPath();
-                // See https://support.google.com/faqs/answer/7496913:
-                if (!(path.startsWith(TermuxConstants.TERMUX_FILES_DIR_PATH) || path.startsWith(storagePath))) {
-                    throw new IllegalArgumentException("Invalid path: " + path);
-                }
 
                 // If TermuxConstants.PROP_ALLOW_EXTERNAL_APPS property to not set to "true", then throw exception
                 String errmsg = FablePluginUtils.checkIfAllowExternalAppsPolicyIsViolated(getContext(), LOG_TAG);

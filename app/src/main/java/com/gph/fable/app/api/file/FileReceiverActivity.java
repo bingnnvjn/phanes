@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.Bundle;
 import android.provider.OpenableColumns;
 import android.util.Patterns;
 
@@ -14,6 +15,7 @@ import com.gph.fable.R;
 import com.gph.fable.shared.android.PackageUtils;
 import com.gph.fable.shared.data.DataUtils;
 import com.gph.fable.shared.data.IntentUtils;
+import com.gph.fable.shared.file.SafeFilePaths;
 import com.gph.fable.shared.net.uri.UriUtils;
 import com.gph.fable.shared.interact.MessageDialogUtils;
 import com.gph.fable.shared.net.uri.UriScheme;
@@ -37,6 +39,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.regex.Pattern;
 
 public class FileReceiverActivity extends AppCompatActivity {
+
+    private static final String STATE_INTENT_HANDLED = "intent_handled";
 
     static final String TERMUX_RECEIVEDIR = TermuxConstants.TERMUX_FILES_DIR_PATH + "/home/downloads";
     static final String EDITOR_PROGRAM = TermuxConstants.TERMUX_HOME_DIR_PATH + "/bin/termux-file-editor";
@@ -62,10 +66,27 @@ public class FileReceiverActivity extends AppCompatActivity {
     }
 
     @Override
-    protected void onResume() {
-        super.onResume();
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        if (savedInstanceState == null || !savedInstanceState.getBoolean(STATE_INTENT_HANDLED)) {
+            handleIntent(getIntent());
+        }
+    }
 
-        final Intent intent = getIntent();
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleIntent(intent);
+    }
+
+    @Override
+    protected void onSaveInstanceState(@NonNull Bundle outState) {
+        outState.putBoolean(STATE_INTENT_HANDLED, true);
+        super.onSaveInstanceState(outState);
+    }
+
+    private void handleIntent(@NonNull Intent intent) {
         final String action = intent.getAction();
         final String type = intent.getType();
         final String scheme = intent.getScheme();
@@ -87,7 +108,8 @@ public class FileReceiverActivity extends AppCompatActivity {
                     String subject = IntentUtils.getStringExtraIfSet(intent, Intent.EXTRA_SUBJECT, null);
                     if (subject == null) subject = sharedTitle;
                     if (subject != null) subject += ".txt";
-                    promptNameAndSave(new ByteArrayInputStream(sharedText.getBytes(StandardCharsets.UTF_8)), subject);
+                    byte[] sharedBytes = sharedText.getBytes(StandardCharsets.UTF_8);
+                    promptNameAndSave(() -> new ByteArrayInputStream(sharedBytes), subject);
                 }
             } else {
                 showErrorDialogAndQuit(getString(R.string.error_send_action_without_content));
@@ -113,12 +135,7 @@ public class FileReceiverActivity extends AppCompatActivity {
                 }
 
                 File file = new File(path);
-                try {
-                    FileInputStream in = new FileInputStream(file);
-                    promptNameAndSave(in, file.getName());
-                } catch (FileNotFoundException e) {
-                    showErrorDialogAndQuit(getString(R.string.error_cannot_open_file, e.getMessage()));
-                }
+                promptNameAndSave(() -> new FileInputStream(file), file.getName());
             } else {
                 showErrorDialogAndQuit(getString(R.string.error_unable_to_receive_file_or_url));
             }
@@ -151,18 +168,21 @@ public class FileReceiverActivity extends AppCompatActivity {
             if (attachmentFileName == null) attachmentFileName = subjectFromIntent;
             if (attachmentFileName == null) attachmentFileName = UriUtils.getUriFileBasename(uri, true);
 
-            InputStream in = getContentResolver().openInputStream(uri);
-            promptNameAndSave(in, attachmentFileName);
+            promptNameAndSave(() -> {
+                InputStream in = getContentResolver().openInputStream(uri);
+                if (in == null) throw new FileNotFoundException("Content provider returned no stream");
+                return in;
+            }, attachmentFileName);
         } catch (Exception e) {
             showErrorDialogAndQuit(getString(R.string.error_unable_to_handle_shared_content, e.getMessage()));
             Logger.logStackTraceWithMessage(LOG_TAG, "handleContentUri(uri=" + uri + ") failed", e);
         }
     }
 
-    void promptNameAndSave(final InputStream in, final String attachmentFileName) {
+    void promptNameAndSave(final InputSource source, final String attachmentFileName) {
         TextInputDialogUtils.textInput(this, R.string.title_file_received, attachmentFileName,
             R.string.action_file_received_edit, text -> {
-                File outFile = saveStreamWithName(in, text);
+                File outFile = saveSourceWithName(source, text);
                 if (outFile == null) return;
 
                 final File editorProgramFile = new File(EDITOR_PROGRAM);
@@ -184,7 +204,7 @@ public class FileReceiverActivity extends AppCompatActivity {
                 finish();
             },
             R.string.action_file_received_open_directory, text -> {
-                if (saveStreamWithName(in, text) == null) return;
+                if (saveSourceWithName(source, text) == null) return;
 
                 Intent executeIntent = new Intent(TERMUX_SERVICE.ACTION_SERVICE_EXECUTE);
                 executeIntent.putExtra(TERMUX_SERVICE.EXTRA_WORKDIR, TERMUX_RECEIVEDIR);
@@ -197,7 +217,7 @@ public class FileReceiverActivity extends AppCompatActivity {
             });
     }
 
-    public File saveStreamWithName(InputStream in, String attachmentFileName) {
+    public File saveSourceWithName(InputSource source, String attachmentFileName) {
         File receiveDir = new File(TERMUX_RECEIVEDIR);
 
         if (DataUtils.isNullOrEmpty(attachmentFileName)) {
@@ -211,8 +231,17 @@ public class FileReceiverActivity extends AppCompatActivity {
         }
 
         try {
-            final File outFile = new File(receiveDir, attachmentFileName);
-            try (FileOutputStream f = new FileOutputStream(outFile)) {
+            if (SafeFilePaths.resolveLeaf(receiveDir, attachmentFileName) == null) {
+                showErrorDialogAndQuit(getString(R.string.error_file_name_invalid));
+                return null;
+            }
+            final File outFile = SafeFilePaths.createNewLeaf(receiveDir, attachmentFileName);
+            if (outFile == null) {
+                showErrorDialogAndQuit(getString(R.string.error_file_already_exists));
+                return null;
+            }
+            try (InputStream in = source.open();
+                 FileOutputStream f = new FileOutputStream(outFile)) {
                 byte[] buffer = new byte[4096];
                 int readBytes;
                 while ((readBytes = in.read(buffer)) > 0) {
@@ -221,10 +250,20 @@ public class FileReceiverActivity extends AppCompatActivity {
             }
             return outFile;
         } catch (IOException e) {
+            File incompleteFile = SafeFilePaths.resolveLeaf(receiveDir, attachmentFileName);
+            if (incompleteFile != null) {
+                //noinspection ResultOfMethodCallIgnored
+                incompleteFile.delete();
+            }
             showErrorDialogAndQuit(getString(R.string.error_saving_file, e));
             Logger.logStackTraceWithMessage(LOG_TAG, "Error saving file", e);
             return null;
         }
+    }
+
+    @FunctionalInterface
+    interface InputSource {
+        InputStream open() throws IOException;
     }
 
     void handleUrlAndFinish(final String url) {

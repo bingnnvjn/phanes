@@ -12,6 +12,7 @@ import android.provider.DocumentsProvider;
 import android.webkit.MimeTypeMap;
 
 import com.gph.fable.R;
+import com.gph.fable.shared.file.SafeFilePaths;
 import com.gph.fable.shared.termux.TermuxConstants;
 
 import java.io.File;
@@ -19,6 +20,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.LinkedList;
+import java.util.Locale;
 
 /**
  * A document provider for the Storage Access Framework which exposes the files in the
@@ -90,8 +92,13 @@ public class FableDocumentsProvider extends DocumentsProvider {
     public Cursor queryChildDocuments(String parentDocumentId, String[] projection, String sortOrder) throws FileNotFoundException {
         final MatrixCursor result = new MatrixCursor(projection != null ? projection : DEFAULT_DOCUMENT_PROJECTION);
         final File parent = getFileForDocId(parentDocumentId);
-        for (File file : parent.listFiles()) {
-            includeFile(result, null, file);
+        final File[] children = parent.listFiles();
+        if (children != null) {
+            for (File file : children) {
+                if (SafeFilePaths.isWithin(BASE_DIR, file, false)) {
+                    includeFile(result, null, file);
+                }
+            }
         }
         return result;
     }
@@ -117,10 +124,20 @@ public class FableDocumentsProvider extends DocumentsProvider {
 
     @Override
     public String createDocument(String parentDocumentId, String mimeType, String displayName) throws FileNotFoundException {
-        File newFile = new File(parentDocumentId, displayName);
+        File parent = getFileForDocId(parentDocumentId);
+        if (!parent.isDirectory()) {
+            throw new FileNotFoundException("Parent is not a directory: " + parentDocumentId);
+        }
+        File newFile = SafeFilePaths.resolveLeaf(parent, displayName);
+        if (newFile == null || !SafeFilePaths.isWithin(BASE_DIR, newFile, false)) {
+            throw new FileNotFoundException("Invalid document name");
+        }
         int noConflictId = 2;
         while (newFile.exists()) {
-            newFile = new File(parentDocumentId, displayName + " (" + noConflictId++ + ")");
+            newFile = SafeFilePaths.resolveLeaf(parent, displayName + " (" + noConflictId++ + ")");
+            if (newFile == null) {
+                throw new FileNotFoundException("Invalid document name");
+            }
         }
         try {
             boolean succeeded;
@@ -141,6 +158,9 @@ public class FableDocumentsProvider extends DocumentsProvider {
     @Override
     public void deleteDocument(String documentId) throws FileNotFoundException {
         File file = getFileForDocId(documentId);
+        if (file.equals(SafeFilePaths.resolveWithin(BASE_DIR, BASE_DIR, true))) {
+            throw new FileNotFoundException("Cannot delete the Fable home root");
+        }
         if (!file.delete()) {
             throw new FileNotFoundException("Failed to delete document with id " + documentId);
         }
@@ -156,6 +176,7 @@ public class FableDocumentsProvider extends DocumentsProvider {
     public Cursor querySearchDocuments(String rootId, String query, String[] projection) throws FileNotFoundException {
         final MatrixCursor result = new MatrixCursor(projection != null ? projection : DEFAULT_DOCUMENT_PROJECTION);
         final File parent = getFileForDocId(rootId);
+        final String normalizedQuery = query == null ? "" : query.toLowerCase(Locale.ROOT);
 
         // This example implementation searches file names for the query and doesn't rank search
         // results, so we can stop as soon as we find a sufficient number of matches.  Other
@@ -169,17 +190,13 @@ public class FableDocumentsProvider extends DocumentsProvider {
             final File file = pending.removeFirst();
             // Avoid directories outside the $HOME directory linked with symlinks (to avoid e.g. search
             // through the whole SD card).
-            boolean isInsideHome;
-            try {
-                isInsideHome = file.getCanonicalPath().startsWith(TermuxConstants.TERMUX_HOME_DIR_PATH);
-            } catch (IOException e) {
-                isInsideHome = true;
-            }
+            boolean isInsideHome = SafeFilePaths.isWithin(BASE_DIR, file, true);
             if (isInsideHome) {
                 if (file.isDirectory()) {
-                    Collections.addAll(pending, file.listFiles());
+                    File[] children = file.listFiles();
+                    if (children != null) Collections.addAll(pending, children);
                 } else {
-                    if (file.getName().toLowerCase().contains(query)) {
+                    if (file.getName().toLowerCase(Locale.ROOT).contains(normalizedQuery)) {
                         includeFile(result, null, file);
                     }
                 }
@@ -191,7 +208,13 @@ public class FableDocumentsProvider extends DocumentsProvider {
 
     @Override
     public boolean isChildDocument(String parentDocumentId, String documentId) {
-        return documentId.startsWith(parentDocumentId);
+        try {
+            File parent = getFileForDocId(parentDocumentId);
+            File child = getFileForDocId(documentId);
+            return SafeFilePaths.isWithin(parent, child, false);
+        } catch (FileNotFoundException e) {
+            return false;
+        }
     }
 
     /**
@@ -201,14 +224,19 @@ public class FableDocumentsProvider extends DocumentsProvider {
      * The reverse of @{link #getFileForDocId}.
      */
     private static String getDocIdForFile(File file) {
-        return file.getAbsolutePath();
+        File safeFile = SafeFilePaths.resolveWithin(BASE_DIR, file, true);
+        if (safeFile == null) {
+            throw new IllegalArgumentException("File is outside Fable home: " + file);
+        }
+        return safeFile.getAbsolutePath();
     }
 
     /**
      * Get the file given a document id (the reverse of {@link #getDocIdForFile(File)}).
      */
     private static File getFileForDocId(String docId) throws FileNotFoundException {
-        final File f = new File(docId);
+        final File f = SafeFilePaths.resolveWithin(BASE_DIR, new File(docId), true);
+        if (f == null) throw new FileNotFoundException("Document is outside Fable home");
         if (!f.exists()) throw new FileNotFoundException(f.getAbsolutePath() + " not found");
         return f;
     }
@@ -249,7 +277,10 @@ public class FableDocumentsProvider extends DocumentsProvider {
         } else if (file.canWrite()) {
             flags |= Document.FLAG_SUPPORTS_WRITE;
         }
-        if (file.getParentFile().canWrite()) flags |= Document.FLAG_SUPPORTS_DELETE;
+        File parent = file.getParentFile();
+        if (parent != null && SafeFilePaths.isWithin(BASE_DIR, parent, true) && parent.canWrite()) {
+            flags |= Document.FLAG_SUPPORTS_DELETE;
+        }
 
         final String displayName = file.getName();
         final String mimeType = getMimeType(file);

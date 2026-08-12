@@ -263,6 +263,8 @@
     <string name="error_unable_to_handle_shared_content">Unable to handle shared content:\n\n%1$s</string>
     <string name="error_file_editor_missing">The following file does not exist:\n$HOME/bin/termux-file-editor\n\nCreate this file as a script or a symlink - it will be called with the received file as only argument.</string>
     <string name="error_file_name_null">File name cannot be null or empty</string>
+    <string name="error_file_name_invalid">File name must not contain a path</string>
+    <string name="error_file_already_exists">A file with this name already exists</string>
     <string name="error_cannot_create_directory">Cannot create directory: %1$s</string>
     <string name="error_saving_file">Error saving file:\n\n%1$s</string>
     <string name="error_url_opener_missing">The following file does not exist:\n$HOME/bin/termux-url-opener\n\nCreate this file as a script or a symlink - it will be called with the shared URL as the first argument.</string>
