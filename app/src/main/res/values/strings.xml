@@ -3,8 +3,6 @@
 <!DOCTYPE resources [
     <!ENTITY TERMUX_PACKAGE_NAME "com.gph.fable">
     <!ENTITY TERMUX_APP_NAME "Fable">
-    <!ENTITY TERMUX_BOOT_APP_NAME "Termux:Boot">
-    <!ENTITY TERMUX_STYLING_APP_NAME "Termux:Styling">
     ]>
 
 <resources>
