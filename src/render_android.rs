@@ -65,7 +65,6 @@ const ANDROID_LOG_ERROR: i32 = 6;
 
 extern "C" {
     fn fable_android_log(prio: i32, tag: *const c_char, msg: *const c_char) -> i32;
-    fn ANativeWindow_acquire(window: *mut c_void) -> i32;
     fn ANativeWindow_release(window: *mut c_void) -> i32;
     fn fable_anw_get_width(window: *mut c_void) -> i32;
     fn fable_anw_get_height(window: *mut c_void) -> i32;
@@ -2673,6 +2672,11 @@ impl GpuRuntime {
     fn attach_surface(&mut self, window: *mut c_void, width: u32, height: u32) -> Result<(), String> {
         if let Some(surface) = &self.surface {
             if surface.window == window && surface.width == width && surface.height == height {
+                // RenderCommand 接管了 ANativeWindow_fromSurface 的引用；同 Surface
+                // 不替换时立即归还这次新取得的引用，保留已有 surface 的那一份。
+                unsafe {
+                    ANativeWindow_release(window);
+                }
                 return Ok(());
             }
             self.detach_surface();
@@ -2696,9 +2700,8 @@ impl GpuRuntime {
             .get_default_config(&self.adapter, width.max(1), height.max(1))
             .ok_or_else(|| "adapter cannot present to this surface".to_string())?;
         surface.configure(&self.device, &config);
-        unsafe {
-            ANativeWindow_acquire(window);
-        }
+        // window 是 JNI 侧 ANativeWindow_fromSurface 取得并随 RenderCommand 转移的引用；
+        // detach_surface / RendererCore::drop 恰好释放一次。
         self.surface = Some(GpuSurface {
             surface,
             config,
@@ -4262,6 +4265,10 @@ impl RendererCore {
                 }
                 RenderCommand::Attach(window, width, height) => {
                     if let Err(error) = self.attach(window, width, height) {
+                        // attach_surface 失败没有把 window 放入 GpuSurface，故由此处归还。
+                        unsafe {
+                            ANativeWindow_release(window);
+                        }
                         self.last_error = error;
                     }
                 }

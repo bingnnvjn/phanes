@@ -1,16 +1,19 @@
 //! 工单 10：Rust 渲染器 + PTY 的 JNI 桥（com.gph.fable.app.RenderCore）。
 
-use crate::render_android::{DEFAULT_ANSI_16, Palette, Renderer, Rgb, log_error};
-use jni::Env;
-use jni::EnvUnowned;
+use crate::render_android::{log_error, Palette, Renderer, Rgb, DEFAULT_ANSI_16};
 use jni::errors::LogErrorAndDefault;
 use jni::objects::{JByteArray, JClass, JIntArray, JObject, JString};
 use jni::sys::{jboolean, jint, jintArray, jlong, jobject, jstring, JNI_FALSE, JNI_TRUE};
-use std::ffi::{CString, c_char, c_void};
-use std::panic::{AssertUnwindSafe, catch_unwind};
+use jni::Env;
+use jni::EnvUnowned;
+use std::ffi::{c_char, c_void, CString};
+use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 
 extern "C" {
     fn ANativeWindow_fromSurface(env: *mut jni::sys::JNIEnv, surface: jobject) -> *mut c_void;
+    fn ANativeWindow_release(window: *mut c_void) -> i32;
     fn fable_pty_spawn(shell: *const c_char, cols: jint, rows: jint) -> jlong;
     fn fable_pty_read(handle: jlong, buf: *mut u8, len: usize) -> jint;
     fn fable_pty_write(handle: jlong, data: *const u8, len: usize) -> jint;
@@ -18,25 +21,80 @@ extern "C" {
     fn fable_pty_close(handle: jlong);
 }
 
-unsafe fn renderer_ptr(handle: jlong) -> *mut Renderer {
-    if handle == 0 {
-        std::ptr::null_mut()
-    } else {
-        handle as *mut Renderer
+struct HandleRegistry<T> {
+    next_handle: AtomicI64,
+    entries: Mutex<std::collections::HashMap<jlong, Arc<T>>>,
+}
+
+impl<T> HandleRegistry<T> {
+    fn new() -> Self {
+        Self {
+            next_handle: AtomicI64::new(1),
+            entries: Mutex::new(std::collections::HashMap::new()),
+        }
     }
+
+    fn insert(&self, value: T) -> jlong {
+        loop {
+            let handle = self.next_handle.fetch_add(1, Ordering::Relaxed);
+            if handle <= 0 {
+                self.next_handle.store(1, Ordering::Relaxed);
+                continue;
+            }
+            let mut entries = self
+                .entries
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if entries.contains_key(&handle) {
+                continue;
+            }
+            entries.insert(handle, Arc::new(value));
+            return handle;
+        }
+    }
+
+    fn get(&self, handle: jlong) -> Option<Arc<T>> {
+        if handle <= 0 {
+            return None;
+        }
+        self.entries
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(&handle)
+            .cloned()
+    }
+
+    /// 移除注册表所有权；已经取得的 Arc 会自然完成在途调用后再析构。
+    fn remove(&self, handle: jlong) -> Option<Arc<T>> {
+        if handle <= 0 {
+            return None;
+        }
+        self.entries
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(&handle)
+    }
+}
+
+fn renderer_registry() -> &'static HandleRegistry<Renderer> {
+    static REGISTRY: OnceLock<HandleRegistry<Renderer>> = OnceLock::new();
+    REGISTRY.get_or_init(HandleRegistry::new)
+}
+
+fn renderer_for_handle(handle: jlong) -> Option<Arc<Renderer>> {
+    renderer_registry().get(handle)
 }
 
 fn with_renderer<F, R>(handle: jlong, f: F) -> R
 where
-    F: FnOnce(&mut Renderer) -> R,
+    F: FnOnce(&Renderer) -> R,
     R: Default,
 {
     catch_unwind(AssertUnwindSafe(|| {
-        let ptr = unsafe { renderer_ptr(handle) };
-        if ptr.is_null() {
+        let Some(renderer) = renderer_for_handle(handle) else {
             return R::default();
-        }
-        f(unsafe { &mut *ptr })
+        };
+        f(&renderer)
     }))
     .unwrap_or_default()
 }
@@ -74,6 +132,61 @@ fn argb_to_rgb(argb: jint) -> Rgb {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::HandleRegistry;
+    use std::sync::Arc;
+    use std::thread;
+
+    #[test]
+    fn handles_are_registry_tokens_and_destroy_is_idempotent() {
+        let registry = HandleRegistry::new();
+        let first = registry.insert(String::from("renderer"));
+        assert!(first > 0);
+        assert_eq!(
+            registry.get(first).as_deref().map(String::as_str),
+            Some("renderer")
+        );
+        assert!(registry.remove(first).is_some());
+        assert!(registry.remove(first).is_none());
+        assert!(registry.get(first).is_none());
+        assert!(registry.get(0).is_none());
+        assert!(registry.get(-1).is_none());
+    }
+
+    #[test]
+    fn in_flight_lookup_keeps_value_alive_after_remove() {
+        let registry = Arc::new(HandleRegistry::new());
+        let handle = registry.insert(String::from("renderer"));
+        let in_flight = registry.get(handle).expect("registered handle");
+        assert!(registry.remove(handle).is_some());
+        assert_eq!(in_flight.as_str(), "renderer");
+        drop(in_flight);
+        assert!(registry.get(handle).is_none());
+    }
+
+    #[test]
+    fn concurrent_lookup_and_destroy_never_resurrects_handle() {
+        let registry = Arc::new(HandleRegistry::new());
+        let handle = registry.insert(7u32);
+        let readers = (0..8)
+            .map(|_| {
+                let registry = Arc::clone(&registry);
+                thread::spawn(move || {
+                    for _ in 0..10_000 {
+                        let _ = registry.get(handle);
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+        assert!(registry.remove(handle).is_some());
+        for reader in readers {
+            reader.join().expect("reader thread");
+        }
+        assert!(registry.get(handle).is_none());
+    }
+}
+
 #[no_mangle]
 pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererCreate(
     _env: EnvUnowned,
@@ -83,7 +196,7 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererCreate(
 ) -> jlong {
     catch_unwind(AssertUnwindSafe(|| {
         match Renderer::new(cols.max(1) as u16, rows.max(1) as u16) {
-            Some(renderer) => Box::into_raw(Box::new(renderer)) as jlong,
+            Some(renderer) => renderer_registry().insert(renderer),
             None => 0,
         }
     }))
@@ -96,13 +209,11 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererDestroy(
     _class: JClass,
     handle: jlong,
 ) {
-    let ptr = unsafe { renderer_ptr(handle) };
-    if !ptr.is_null() {
-        catch_unwind(AssertUnwindSafe(|| unsafe {
-            drop(Box::from_raw(ptr));
-        }))
-        .ok();
-    }
+    // remove 幂等；已在其他 JNI 调用中取得 Arc 的 Renderer 会在调用结束后析构。
+    catch_unwind(AssertUnwindSafe(|| {
+        drop(renderer_registry().remove(handle))
+    }))
+    .ok();
 }
 
 #[no_mangle]
@@ -113,9 +224,7 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererWrite(
     data: JByteArray,
     len: jint,
 ) {
-    let bytes = with_jni_env(env, |env| {
-        Ok(jbytes_to_vec(env, data, len))
-    });
+    let bytes = with_jni_env(env, |env| Ok(jbytes_to_vec(env, data, len)));
     with_renderer(handle, |renderer| renderer.write(&bytes));
 }
 
@@ -152,7 +261,11 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererSetSelection(
     end_col: jint,
 ) {
     with_renderer(handle, |renderer| {
-        renderer.set_selection(row.max(0) as u32, start_col.max(0) as u32, end_col.max(0) as u32)
+        renderer.set_selection(
+            row.max(0) as u32,
+            start_col.max(0) as u32,
+            end_col.max(0) as u32,
+        )
     });
 }
 
@@ -536,6 +649,11 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererAttach(
     height_px: jint,
 ) {
     with_jni_env(env, |env| {
+        // 先保留注册表 Arc，再从 Java Surface 取得需手动 release 的窗口引用。
+        // destroy 此后只能移除注册表项，不能让本次 attach 访问失效对象。
+        let Some(renderer) = renderer_for_handle(handle) else {
+            return Ok(());
+        };
         let env_ptr = env.get_raw();
         let surface_raw = surface.into_raw();
         let window = unsafe { ANativeWindow_fromSurface(env_ptr, surface_raw) };
@@ -543,15 +661,14 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererAttach(
             log_error("ANativeWindow_fromSurface returned null");
             return Ok(());
         }
-        with_renderer(handle, |renderer| {
-            if let Err(error) = renderer.attach(
-                window,
-                width_px.max(1) as u32,
-                height_px.max(1) as u32,
-            ) {
-                log_error(&format!("attach failed: {error}"));
+        if let Err(error) = renderer.attach(window, width_px.max(1) as u32, height_px.max(1) as u32)
+        {
+            // 命令未进入 mailbox 时 RendererCore 不会接管 window 引用。
+            unsafe {
+                ANativeWindow_release(window);
             }
-        });
+            log_error(&format!("attach failed: {error}"));
+        }
         Ok(())
     });
 }
@@ -573,16 +690,13 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererRender(
     width_px: jint,
     height_px: jint,
 ) -> jboolean {
-    with_renderer(
-        handle,
-        |renderer| {
-            if renderer.render(width_px.max(1) as u32, height_px.max(1) as u32) {
-                JNI_TRUE
-            } else {
-                JNI_FALSE
-            }
-        },
-    )
+    with_renderer(handle, |renderer| {
+        if renderer.render(width_px.max(1) as u32, height_px.max(1) as u32) {
+            JNI_TRUE
+        } else {
+            JNI_FALSE
+        }
+    })
 }
 
 #[no_mangle]
@@ -606,16 +720,13 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererTestPattern(
     width_px: jint,
     height_px: jint,
 ) -> jboolean {
-    with_renderer(
-        handle,
-        |renderer| {
-            if renderer.test_pattern(width_px.max(1) as u32, height_px.max(1) as u32) {
-                JNI_TRUE
-            } else {
-                JNI_FALSE
-            }
-        },
-    )
+    with_renderer(handle, |renderer| {
+        if renderer.test_pattern(width_px.max(1) as u32, height_px.max(1) as u32) {
+            JNI_TRUE
+        } else {
+            JNI_FALSE
+        }
+    })
 }
 
 #[no_mangle]
