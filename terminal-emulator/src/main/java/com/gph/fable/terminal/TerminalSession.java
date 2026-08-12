@@ -86,7 +86,6 @@ public final class TerminalSession {
     private final String mCwd;
     private final String[] mArgs;
     private final String[] mEnv;
-    private final Integer mTranscriptRows;
     /** Buffer to write translate code points into utf8 before writing to the session. */
     private final byte[] mUtf8InputBuffer = new byte[5];
 
@@ -96,13 +95,12 @@ public final class TerminalSession {
      * 由 TermuxService 显式注入（terminal-emulator 模块无 app 依赖）。
      */
     public TerminalSession(String shellPath, String cwd, String[] args, String[] env,
-                           Integer transcriptRows, TerminalSessionClient client,
+                           TerminalSessionClient client,
                            FableSessionFactory sessionFactory) {
         this.mShellPath = shellPath;
         this.mCwd = cwd;
         this.mArgs = args;
         this.mEnv = env;
-        this.mTranscriptRows = transcriptRows;
         this.mClient = client;
         this.mSessionFactory = sessionFactory;
     }

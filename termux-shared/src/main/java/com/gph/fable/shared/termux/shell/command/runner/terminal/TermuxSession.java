@@ -159,7 +159,7 @@ public class TermuxSession {
         Logger.logDebug(LOG_TAG, "Running \"" + executionCommand.getCommandIdAndLabelLogString() + "\" TermuxSession");
         TerminalSession terminalSession = new TerminalSession(executionCommand.executable,
             executionCommand.workingDirectory, executionCommand.arguments, environmentArray,
-            executionCommand.terminalTranscriptRows, terminalSessionClient, sessionFactory);
+            terminalSessionClient, sessionFactory);
 
         if (executionCommand.shellName != null) {
             terminalSession.mSessionName = executionCommand.shellName;

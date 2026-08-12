@@ -185,16 +185,6 @@
                 <string name="termux_terminal_view_terminal_margin_adjustment_off">终端边距调整将被禁用。</string>
                 <string name="termux_terminal_view_terminal_margin_adjustment_on">终端边距调整将被启用。建议启用，以修复软键盘遮挡部分扩展键/终端视图的问题。如果导致屏幕闪烁，请关闭。（默认）</string>
 
-    <!-- 配套应用偏好（已从设置页移除，保留资源供兼容引用） -->
-    <string name="termux_api_preferences_title">Termux:API</string>
-    <string name="termux_api_preferences_summary">Termux:API 应用偏好</string>
-    <string name="termux_float_preferences_title">Termux:Float</string>
-    <string name="termux_float_preferences_summary">Termux:Float 应用偏好</string>
-    <string name="termux_tasker_preferences_title">Termux:Tasker</string>
-    <string name="termux_tasker_preferences_summary">Termux:Tasker 应用偏好</string>
-    <string name="termux_widget_preferences_title">Termux:Widget</string>
-    <string name="termux_widget_preferences_summary">Termux:Widget 应用偏好</string>
-
     <!-- 关于 -->
     <string name="about_preference_title">关于</string>
     <string name="about_fable_header">## Fable（寓言）</string>

@@ -334,7 +334,7 @@ public class TerminalSessionUiStateTest {
     }
 
     private TerminalSession newSession(RecordingClient client, RecordingFactory factory) {
-        return new TerminalSession("/bin/sh", "/", null, null, 1000, client, factory);
+        return new TerminalSession("/bin/sh", "/", null, null, client, factory);
     }
 
     @Test

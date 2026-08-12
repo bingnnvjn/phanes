@@ -306,7 +306,7 @@ public class FableSessionSeamTest {
         mClient = new RecordingClient();
         mCore = new RecordingCoreAdapter();
         TerminalSession session = new TerminalSession(SHELL, CWD,
-            new String[] { "-bash" }, new String[] { "HOME=" + CWD }, 100, mClient, factory);
+            new String[] { "-bash" }, new String[] { "HOME=" + CWD }, mClient, factory);
         session.setCoreAdapter(mCore);
         return session;
     }

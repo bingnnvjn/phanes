@@ -165,10 +165,6 @@ public class ExecutionCommand {
     public String workingDirectory;
 
 
-    /** The terminal transcript rows for the {@link ExecutionCommand}. */
-    public Integer terminalTranscriptRows;
-
-
     /** The {@link Runner} for the {@link ExecutionCommand}. */
     public String runner;
 
