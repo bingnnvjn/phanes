@@ -240,6 +240,80 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetCursor(
     })
 }
 
+/// 工单 29：当前核心标题（未设置为空串）。
+#[no_mangle]
+pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetTitle(
+    mut env: EnvUnowned,
+    _class: JClass,
+    handle: jlong,
+) -> jstring {
+    let title = with_renderer(handle, |renderer| renderer.title());
+    with_jni_env(env, |env| {
+        let string = env.new_string(title)?;
+        Ok(string.into_raw())
+    })
+}
+
+/// 工单 29：读取并清除"标题已变更"标记。
+#[no_mangle]
+pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererConsumeTitleChanged(
+    _env: EnvUnowned,
+    _class: JClass,
+    handle: jlong,
+) -> jboolean {
+    with_renderer(handle, |renderer| renderer.consume_title_changed()) as jboolean
+}
+
+/// 工单 29：读取并清除 bell 标记。
+#[no_mangle]
+pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererConsumeBell(
+    _env: EnvUnowned,
+    _class: JClass,
+    handle: jlong,
+) -> jboolean {
+    with_renderer(handle, |renderer| renderer.consume_bell()) as jboolean
+}
+
+/// 工单 29：alternate screen（DECSET 1047/1049）。
+#[no_mangle]
+pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetModeAltScreen(
+    _env: EnvUnowned,
+    _class: JClass,
+    handle: jlong,
+) -> jboolean {
+    with_renderer(handle, |renderer| renderer.mode_alt_screen()) as jboolean
+}
+
+/// 工单 29：任一 mouse tracking 模式激活。
+#[no_mangle]
+pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetModeMouseTracking(
+    _env: EnvUnowned,
+    _class: JClass,
+    handle: jlong,
+) -> jboolean {
+    with_renderer(handle, |renderer| renderer.mode_mouse_tracking()) as jboolean
+}
+
+/// 工单 29：光标可见（DECSET 25）。
+#[no_mangle]
+pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetModeCursorVisible(
+    _env: EnvUnowned,
+    _class: JClass,
+    handle: jlong,
+) -> jboolean {
+    with_renderer(handle, |renderer| renderer.mode_cursor_visible()) as jboolean
+}
+
+/// 工单 29：光标闪烁（DECSET 12）。
+#[no_mangle]
+pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetModeCursorBlink(
+    _env: EnvUnowned,
+    _class: JClass,
+    handle: jlong,
+) -> jboolean {
+    with_renderer(handle, |renderer| renderer.mode_cursor_blink()) as jboolean
+}
+
 #[no_mangle]
 pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererSetPalette(
     _env: EnvUnowned,

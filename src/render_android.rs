@@ -1021,6 +1021,52 @@ mod tests {
         };
         assert_eq!(adapt_light_fg(yellow, &dark), yellow);
     }
+
+    /// 工单 29：title / bell / mode 端到端（真实 libghostty-vt 核心 +
+    /// effect 回调注册 + mailbox 保序查询路径）。
+    #[test]
+    fn ui_state_title_bell_modes() {
+        let mut core = RendererCore::new(80, 24).expect("core");
+
+        // 初始：无标题、无事件、默认模式（光标可见、非 alt、非鼠标、不闪烁）。
+        assert_eq!(core.title(), "");
+        assert!(!core.consume_title_changed());
+        assert!(!core.consume_bell());
+        assert!(!core.mode_alt_screen());
+        assert!(!core.mode_mouse_tracking());
+        assert!(core.mode_cursor_visible());
+        assert!(!core.mode_cursor_blink());
+
+        // OSC 0 标题 + OSC 2 标题：title_changed 置位、title 可读。
+        core.write(b"\x1b]0;fable-title\x07");
+        assert_eq!(core.title(), "fable-title");
+        assert!(core.consume_title_changed(), "首次读取应消费标题变更");
+        assert!(!core.consume_title_changed(), "消费后标记应清除");
+        core.write(b"\x1b]2;second-title\x07");
+        assert_eq!(core.title(), "second-title");
+
+        // BEL：bell 置位并消费。
+        core.write(b"\x07");
+        assert!(core.consume_bell());
+        assert!(!core.consume_bell());
+
+        // 模式：alt screen / mouse tracking / 光标隐藏 / 闪烁。
+        core.write(b"\x1b[?1049h");
+        assert!(core.mode_alt_screen(), "1049 应报告 alt screen");
+        core.write(b"\x1b[?1000h");
+        assert!(core.mode_mouse_tracking(), "1000 应报告 mouse tracking");
+        core.write(b"\x1b[?25l");
+        assert!(!core.mode_cursor_visible(), "25l 应隐藏光标");
+        core.write(b"\x1b[?12h");
+        assert!(core.mode_cursor_blink(), "12h 应开启闪烁");
+
+        // 清除模式。
+        core.write(b"\x1b[?1049l\x1b[?1000l\x1b[?25h\x1b[?12l");
+        assert!(!core.mode_alt_screen());
+        assert!(!core.mode_mouse_tracking());
+        assert!(core.mode_cursor_visible());
+        assert!(!core.mode_cursor_blink());
+    }
 }
 
 fn hash_row(row: &[Cell]) -> u64 {
@@ -3236,6 +3282,14 @@ enum RenderCommand {
     /// 工单 26：同步查询当前核心光标视口位置（CPR 应答用核心模型，避免
     /// 与旧 Java 模拟器 8 列宽模型双轨）。
     CursorPosition(std::sync::mpsc::Sender<Option<(u16, u16)>>),
+    /// 工单 29：UI 状态同步查询（title / bell / mode）。
+    Title(std::sync::mpsc::Sender<String>),
+    ConsumeTitleChanged(std::sync::mpsc::Sender<bool>),
+    ConsumeBell(std::sync::mpsc::Sender<bool>),
+    ModeAltScreen(std::sync::mpsc::Sender<bool>),
+    ModeMouseTracking(std::sync::mpsc::Sender<bool>),
+    ModeCursorVisible(std::sync::mpsc::Sender<bool>),
+    ModeCursorBlink(std::sync::mpsc::Sender<bool>),
     Attach(*mut c_void, u32, u32),
     Detach,
     Render(u32, u32),
@@ -3255,6 +3309,14 @@ pub struct RenderStats {
     pub adapter: String,
     pub cols: u16,
     pub rows: u16,
+    /// 工单 29：UI 状态（title/bell/mode），rendererInfo 诊断用。
+    pub title: String,
+    pub title_changed: bool,
+    pub bell: bool,
+    pub mode_alt_screen: bool,
+    pub mode_mouse_tracking: bool,
+    pub mode_cursor_visible: bool,
+    pub mode_cursor_blink: bool,
     pub atlas_glyphs: usize,
     pub color_glyphs: usize,
     pub emoji_status: String,
@@ -3287,6 +3349,9 @@ pub struct RenderStats {
 struct RendererCore {
     terminal: GhosttyTerminal,
     state: GhosttyRenderState,
+    /// UI 状态事件（title/bell）：effect 回调在 vt_write 内同步写入；
+    /// 标题在 title_changed 返回后才可读，write() 末尾再同步一次。
+    events: Box<TerminalEvents>,
     cols: u16,
     rows: u16,
     gpu: Option<GpuRuntime>,
@@ -3316,6 +3381,33 @@ struct RendererCore {
 
 unsafe impl Send for RendererCore {}
 
+/// libghostty-vt effect 回调写入的 UI 状态（渲染线程独占，无需锁）。
+#[derive(Default)]
+struct TerminalEvents {
+    title: String,
+    title_changed: bool,
+    bell: bool,
+}
+
+/// title_changed effect：只置位"已变更"标记；新标题按头文件约定在回调
+/// 返回后才可读，由 write() 末尾经 sync_ui_events() 读取。
+unsafe extern "C" fn terminal_title_changed(_terminal: GhosttyTerminal, userdata: *mut c_void) {
+    if userdata.is_null() {
+        return;
+    }
+    let events = unsafe { &mut *(userdata as *mut TerminalEvents) };
+    events.title_changed = true;
+}
+
+/// bell effect：BEL（0x07）同步置位。
+unsafe extern "C" fn terminal_bell(_terminal: GhosttyTerminal, userdata: *mut c_void) {
+    if userdata.is_null() {
+        return;
+    }
+    let events = unsafe { &mut *(userdata as *mut TerminalEvents) };
+    events.bell = true;
+}
+
 impl RendererCore {
     fn new(cols: u16, rows: u16) -> Option<Self> {
         let opts = GhosttyTerminalOptions {
@@ -3329,6 +3421,27 @@ impl RendererCore {
             "terminal_new",
         ) {
             return None;
+        }
+        // 工单 29：注册 title/bell effect（userdata 指向 events Box 堆地址，
+        // Box 本身随结构体移动但堆分配地址稳定，回调经原始指针可达）。
+        let mut events = Box::<TerminalEvents>::default();
+        let events_ptr = &mut *events as *mut TerminalEvents;
+        unsafe {
+            let _ = ghostty_terminal_set(
+                terminal,
+                TERMINAL_OPT_USERDATA,
+                events_ptr as *const c_void,
+            );
+            let _ = ghostty_terminal_set(
+                terminal,
+                TERMINAL_OPT_TITLE_CHANGED,
+                terminal_title_changed as *const c_void,
+            );
+            let _ = ghostty_terminal_set(
+                terminal,
+                TERMINAL_OPT_BELL,
+                terminal_bell as *const c_void,
+            );
         }
         let mut state: GhosttyRenderState = std::ptr::null_mut();
         if !check(
@@ -3352,6 +3465,7 @@ impl RendererCore {
         Some(Self {
             terminal,
             state,
+            events,
             cols,
             rows,
             gpu: None,
@@ -3384,6 +3498,75 @@ impl RendererCore {
         unsafe {
             ghostty_terminal_vt_write(self.terminal, data.as_ptr(), data.len());
         }
+        self.sync_ui_events();
+    }
+
+    /// title_changed 回调返回后读取新标题（头文件：回调内不可读）。
+    fn sync_ui_events(&mut self) {
+        if self.events.title_changed {
+            let mut s = GhosttyString {
+                ptr: std::ptr::null(),
+                len: 0,
+            };
+            let r = unsafe {
+                ghostty_terminal_get(
+                    self.terminal,
+                    TERMINAL_DATA_TITLE,
+                    &mut s as *mut GhosttyString as *mut c_void,
+                )
+            };
+            if r == GHOSTTY_SUCCESS && !s.ptr.is_null() {
+                let bytes = unsafe { std::slice::from_raw_parts(s.ptr, s.len) };
+                self.events.title = String::from_utf8_lossy(bytes).into_owned();
+            }
+        }
+    }
+
+    /// 当前核心标题（未设置为空串）。
+    fn title(&self) -> String {
+        self.events.title.clone()
+    }
+
+    /// 读取并清除"标题已变更"标记。
+    fn consume_title_changed(&mut self) -> bool {
+        std::mem::take(&mut self.events.title_changed)
+    }
+
+    /// 读取并清除 bell 标记。
+    fn consume_bell(&mut self) -> bool {
+        std::mem::take(&mut self.events.bell)
+    }
+
+    fn mode(&self, mode: GhosttyMode) -> bool {
+        let mut v = false;
+        let r = unsafe { ghostty_terminal_mode_get(self.terminal, mode, &mut v) };
+        r == GHOSTTY_SUCCESS && v
+    }
+
+    /// alternate screen（DECSET 1047 或 1049）。
+    fn mode_alt_screen(&self) -> bool {
+        self.mode(GHOSTTY_MODE_ALT_SCREEN) || self.mode(GHOSTTY_MODE_ALT_SCREEN_SAVE)
+    }
+
+    /// 任一 mouse tracking 模式（X10/1000/1002/1003）。
+    fn mode_mouse_tracking(&self) -> bool {
+        let mut v = false;
+        let r = unsafe {
+            ghostty_terminal_get(
+                self.terminal,
+                TERMINAL_DATA_MOUSE_TRACKING,
+                &mut v as *mut bool as *mut c_void,
+            )
+        };
+        r == GHOSTTY_SUCCESS && v
+    }
+
+    fn mode_cursor_visible(&self) -> bool {
+        self.mode(GHOSTTY_MODE_CURSOR_VISIBLE)
+    }
+
+    fn mode_cursor_blink(&self) -> bool {
+        self.mode(GHOSTTY_MODE_CURSOR_BLINKING)
     }
 
     fn resize(&mut self, cols: u16, rows: u16) {
@@ -3668,6 +3851,27 @@ impl RendererCore {
                 RenderCommand::CursorPosition(tx) => {
                     let _ = tx.send(self.cursor_position());
                 }
+                RenderCommand::Title(tx) => {
+                    let _ = tx.send(self.title());
+                }
+                RenderCommand::ConsumeTitleChanged(tx) => {
+                    let _ = tx.send(self.consume_title_changed());
+                }
+                RenderCommand::ConsumeBell(tx) => {
+                    let _ = tx.send(self.consume_bell());
+                }
+                RenderCommand::ModeAltScreen(tx) => {
+                    let _ = tx.send(self.mode_alt_screen());
+                }
+                RenderCommand::ModeMouseTracking(tx) => {
+                    let _ = tx.send(self.mode_mouse_tracking());
+                }
+                RenderCommand::ModeCursorVisible(tx) => {
+                    let _ = tx.send(self.mode_cursor_visible());
+                }
+                RenderCommand::ModeCursorBlink(tx) => {
+                    let _ = tx.send(self.mode_cursor_blink());
+                }
                 RenderCommand::Attach(window, width, height) => {
                     if let Err(error) = self.attach(window, width, height) {
                         self.last_error = error;
@@ -3730,6 +3934,13 @@ impl RendererCore {
         }
         stats.cols = self.cols;
         stats.rows = self.rows;
+        stats.title = self.events.title.clone();
+        stats.title_changed = self.events.title_changed;
+        stats.bell = self.events.bell;
+        stats.mode_alt_screen = self.mode_alt_screen();
+        stats.mode_mouse_tracking = self.mode_mouse_tracking();
+        stats.mode_cursor_visible = self.mode_cursor_visible();
+        stats.mode_cursor_blink = self.mode_cursor_blink();
         stats.atlas_glyphs = self.atlas.entries.len();
         stats.color_glyphs = self.atlas.color_glyph_count();
         stats.emoji_status = self.atlas.emoji_diagnostics();
@@ -4129,6 +4340,76 @@ impl Renderer {
         }
     }
 
+    /// 工单 29：当前核心标题（未设置为空串；mailbox 保序，写先于查）。
+    pub fn title(&self) -> String {
+        let (tx, rx) = std::sync::mpsc::channel();
+        if self.send(RenderCommand::Title(tx)) {
+            rx.recv().unwrap_or_default()
+        } else {
+            String::new()
+        }
+    }
+
+    /// 工单 29：读取并清除"标题已变更"标记。
+    pub fn consume_title_changed(&self) -> bool {
+        let (tx, rx) = std::sync::mpsc::channel();
+        if self.send(RenderCommand::ConsumeTitleChanged(tx)) {
+            rx.recv().unwrap_or(false)
+        } else {
+            false
+        }
+    }
+
+    /// 工单 29：读取并清除 bell 标记。
+    pub fn consume_bell(&self) -> bool {
+        let (tx, rx) = std::sync::mpsc::channel();
+        if self.send(RenderCommand::ConsumeBell(tx)) {
+            rx.recv().unwrap_or(false)
+        } else {
+            false
+        }
+    }
+
+    /// 工单 29：alternate screen（DECSET 1047/1049）。
+    pub fn mode_alt_screen(&self) -> bool {
+        let (tx, rx) = std::sync::mpsc::channel();
+        if self.send(RenderCommand::ModeAltScreen(tx)) {
+            rx.recv().unwrap_or(false)
+        } else {
+            false
+        }
+    }
+
+    /// 工单 29：任一 mouse tracking 模式激活。
+    pub fn mode_mouse_tracking(&self) -> bool {
+        let (tx, rx) = std::sync::mpsc::channel();
+        if self.send(RenderCommand::ModeMouseTracking(tx)) {
+            rx.recv().unwrap_or(false)
+        } else {
+            false
+        }
+    }
+
+    /// 工单 29：光标可见（DECSET 25）。
+    pub fn mode_cursor_visible(&self) -> bool {
+        let (tx, rx) = std::sync::mpsc::channel();
+        if self.send(RenderCommand::ModeCursorVisible(tx)) {
+            rx.recv().unwrap_or(false)
+        } else {
+            false
+        }
+    }
+
+    /// 工单 29：光标闪烁（DECSET 12）。
+    pub fn mode_cursor_blink(&self) -> bool {
+        let (tx, rx) = std::sync::mpsc::channel();
+        if self.send(RenderCommand::ModeCursorBlink(tx)) {
+            rx.recv().unwrap_or(false)
+        } else {
+            false
+        }
+    }
+
     pub fn attach(&self, window: *mut c_void, width_px: u32, height_px: u32) -> Result<(), String> {
         if self.send(RenderCommand::Attach(window, width_px, height_px)) {
             Ok(())
@@ -4169,7 +4450,7 @@ impl Renderer {
             Err(_) => return "stats lock failed".to_string(),
         };
         format!(
-            "backend={} adapter={} cols={} rows={} font_size={} palette={} atlas_glyphs={} color_glyphs={} emoji=[{}] atlas_rev={} attaches={} presents={} terminal_frames={} acquire={}/{}/{}/{}/{} draw_attempts={} calls={} builds={} full={} incr={} dirty_rows={} build_us={} row_uploads={} upload_bytes={} vertices={} mailbox_writes={} thread_alive={} err={} wgpu_log={}",
+            "backend={} adapter={} cols={} rows={} font_size={} palette={} atlas_glyphs={} color_glyphs={} emoji=[{}] atlas_rev={} attaches={} presents={} terminal_frames={} acquire={}/{}/{}/{}/{} draw_attempts={} calls={} builds={} full={} incr={} dirty_rows={} build_us={} row_uploads={} upload_bytes={} vertices={} mailbox_writes={} thread_alive={} title={} title_changed={} bell={} mode_alt_screen={} mode_mouse_tracking={} mode_cursor_visible={} mode_cursor_blink={} err={} wgpu_log={}",
             stats.backend,
             stats.adapter,
             stats.cols,
@@ -4200,6 +4481,13 @@ impl Renderer {
             stats.vertices_last,
             stats.mailbox_writes,
             stats.alive,
+            stats.title,
+            stats.title_changed,
+            stats.bell,
+            stats.mode_alt_screen,
+            stats.mode_mouse_tracking,
+            stats.mode_cursor_visible,
+            stats.mode_cursor_blink,
             stats.last_error,
             recent_wgpu_log()
         )

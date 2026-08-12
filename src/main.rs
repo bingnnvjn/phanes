@@ -816,6 +816,189 @@ unsafe fn verify_resize() -> bool {
     all_ok
 }
 
+/// 工单 29：UI 状态验证（title / bell / mode）。libghostty-vt 的 title/bell
+/// 是 effect 回调（需注册），标题在 title_changed 返回后才可读；模式经
+/// ghostty_terminal_mode_get / TERMINAL_DATA_MOUSE_TRACKING 查询。
+#[derive(Default)]
+struct UiEvents {
+    title_changed: bool,
+    bell: bool,
+}
+
+unsafe extern "C" fn ui_title_changed(_terminal: GhosttyTerminal, userdata: *mut c_void) {
+    if !userdata.is_null() {
+        let events = unsafe { &mut *(userdata as *mut UiEvents) };
+        events.title_changed = true;
+    }
+}
+
+unsafe extern "C" fn ui_bell(_terminal: GhosttyTerminal, userdata: *mut c_void) {
+    if !userdata.is_null() {
+        let events = unsafe { &mut *(userdata as *mut UiEvents) };
+        events.bell = true;
+    }
+}
+
+unsafe fn terminal_title(terminal: GhosttyTerminal) -> String {
+    let mut s = GhosttyString {
+        ptr: std::ptr::null(),
+        len: 0,
+    };
+    check(
+        ghostty_terminal_get(
+            terminal,
+            TERMINAL_DATA_TITLE,
+            &mut s as *mut GhosttyString as *mut c_void,
+        ),
+        "terminal_get title",
+    );
+    if s.ptr.is_null() {
+        return String::new();
+    }
+    String::from_utf8_lossy(unsafe { std::slice::from_raw_parts(s.ptr, s.len) }).into_owned()
+}
+
+unsafe fn terminal_mode(terminal: GhosttyTerminal, mode: GhosttyMode) -> bool {
+    let mut v = false;
+    check(
+        ghostty_terminal_mode_get(terminal, mode, &mut v),
+        "terminal_mode_get",
+    );
+    v
+}
+
+unsafe fn verify_ui_state() -> bool {
+    let mut all_ok = true;
+    let opts = GhosttyTerminalOptions {
+        cols: 80,
+        rows: 24,
+        max_scrollback: 10000,
+    };
+    let mut term: GhosttyTerminal = std::ptr::null_mut();
+    check(
+        ghostty_terminal_new(std::ptr::null(), &mut term, opts),
+        "ui terminal_new",
+    );
+
+    let mut events = UiEvents::default();
+    let events_ptr = &mut events as *mut UiEvents;
+    let _ = ghostty_terminal_set(term, TERMINAL_OPT_USERDATA, events_ptr as *const c_void);
+    let _ = ghostty_terminal_set(
+        term,
+        TERMINAL_OPT_TITLE_CHANGED,
+        ui_title_changed as *const c_void,
+    );
+    let _ = ghostty_terminal_set(term, TERMINAL_OPT_BELL, ui_bell as *const c_void);
+
+    println!("\n== UI 状态（title / bell / mode）验证 ==");
+    check_case(
+        terminal_title(term).is_empty(),
+        "ui: 初始无标题",
+        &mut all_ok,
+    );
+    check_case(
+        !events.title_changed && !events.bell,
+        "ui: 初始无事件",
+        &mut all_ok,
+    );
+    check_case(
+        !terminal_mode(term, GHOSTTY_MODE_ALT_SCREEN)
+            && !terminal_mode(term, GHOSTTY_MODE_ALT_SCREEN_SAVE),
+        "ui: 初始非 alt screen",
+        &mut all_ok,
+    );
+    check_case(
+        !terminal_bool(term, TERMINAL_DATA_MOUSE_TRACKING),
+        "ui: 初始无 mouse tracking",
+        &mut all_ok,
+    );
+    check_case(
+        terminal_mode(term, GHOSTTY_MODE_CURSOR_VISIBLE),
+        "ui: 初始光标可见",
+        &mut all_ok,
+    );
+    check_case(
+        !terminal_mode(term, GHOSTTY_MODE_CURSOR_BLINKING),
+        "ui: 初始不闪烁",
+        &mut all_ok,
+    );
+
+    let title0 = b"\x1b]0;fable-title\x07";
+    ghostty_terminal_vt_write(term, title0.as_ptr(), title0.len());
+    check_case(
+        terminal_title(term) == "fable-title",
+        "ui: OSC 0 标题可读",
+        &mut all_ok,
+    );
+    check_case(
+        events.title_changed,
+        "ui: title_changed 回调触发",
+        &mut all_ok,
+    );
+
+    let title2 = b"\x1b]2;second-title\x07";
+    ghostty_terminal_vt_write(term, title2.as_ptr(), title2.len());
+    check_case(
+        terminal_title(term) == "second-title",
+        "ui: OSC 2 覆盖标题可读",
+        &mut all_ok,
+    );
+
+    ghostty_terminal_vt_write(term, b"\x07".as_ptr(), 1);
+    check_case(events.bell, "ui: bell 回调触发", &mut all_ok);
+
+    let modes_on = b"\x1b[?1049h\x1b[?1000h\x1b[?25l\x1b[?12h";
+    ghostty_terminal_vt_write(term, modes_on.as_ptr(), modes_on.len());
+    check_case(
+        terminal_mode(term, GHOSTTY_MODE_ALT_SCREEN)
+            || terminal_mode(term, GHOSTTY_MODE_ALT_SCREEN_SAVE),
+        "ui: 1049 进入 alt screen",
+        &mut all_ok,
+    );
+    check_case(
+        terminal_bool(term, TERMINAL_DATA_MOUSE_TRACKING),
+        "ui: 1000 启用 mouse tracking",
+        &mut all_ok,
+    );
+    check_case(
+        !terminal_mode(term, GHOSTTY_MODE_CURSOR_VISIBLE),
+        "ui: 25l 隐藏光标",
+        &mut all_ok,
+    );
+    check_case(
+        terminal_mode(term, GHOSTTY_MODE_CURSOR_BLINKING),
+        "ui: 12h 开启闪烁",
+        &mut all_ok,
+    );
+
+    let modes_off = b"\x1b[?1049l\x1b[?1000l\x1b[?25h\x1b[?12l";
+    ghostty_terminal_vt_write(term, modes_off.as_ptr(), modes_off.len());
+    check_case(
+        !terminal_mode(term, GHOSTTY_MODE_ALT_SCREEN)
+            && !terminal_mode(term, GHOSTTY_MODE_ALT_SCREEN_SAVE),
+        "ui: 1049l 退出 alt screen",
+        &mut all_ok,
+    );
+    check_case(
+        !terminal_bool(term, TERMINAL_DATA_MOUSE_TRACKING),
+        "ui: 1000l 关闭 mouse tracking",
+        &mut all_ok,
+    );
+    check_case(
+        terminal_mode(term, GHOSTTY_MODE_CURSOR_VISIBLE),
+        "ui: 25h 恢复光标",
+        &mut all_ok,
+    );
+    check_case(
+        !terminal_mode(term, GHOSTTY_MODE_CURSOR_BLINKING),
+        "ui: 12l 关闭闪烁",
+        &mut all_ok,
+    );
+
+    ghostty_terminal_free(term);
+    all_ok
+}
+
 fn main() {
     force_tls_pad();
     unsafe {
@@ -1708,7 +1891,7 @@ fn main() {
         ghostty_render_state_free(state);
         ghostty_terminal_free(terminal);
 
-        let extra_ok = verify_scroll() & verify_resize();
+        let extra_ok = verify_scroll() & verify_resize() & verify_ui_state();
         all_ok &= extra_ok;
 
         println!("\n结果: {}", if all_ok { "ALL PASS" } else { "FAILED" });

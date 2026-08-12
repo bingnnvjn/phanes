@@ -17,9 +17,38 @@ pub type GhosttyRenderStateRowCells = *mut c_void;
 
 // GhosttyTerminalData（terminal_get 用）
 pub const TERMINAL_DATA_SCROLLBAR: i32 = 9;
+/** 是否有任一 mouse tracking 模式激活（X10/1000/1002/1003）。 */
+pub const TERMINAL_DATA_MOUSE_TRACKING: i32 = 11;
+/** 终端标题（OSC 0/2 设置；借出串，下一次 vt_write/reset 前有效）。 */
+pub const TERMINAL_DATA_TITLE: i32 = 12;
 pub const TERMINAL_DATA_TOTAL_ROWS: i32 = 14;
 pub const TERMINAL_DATA_SCROLLBACK_ROWS: i32 = 15;
 pub const TERMINAL_DATA_VIEWPORT_ACTIVE: i32 = 32;
+
+// GhosttyTerminalOption（ghostty_terminal_set 用；effects 回调注册）
+pub const TERMINAL_OPT_USERDATA: i32 = 0;
+pub const TERMINAL_OPT_BELL: i32 = 2;
+pub const TERMINAL_OPT_TITLE_CHANGED: i32 = 5;
+
+// GhosttyMode：ghostty_mode_new(value, ansi) = (value & 0x7FFF) | (ansi << 15)。
+// 本工单只查 DEC 私有模式（ansi=false → 高位置 0）。
+pub type GhosttyMode = u16;
+/** 光标闪烁（DECSET 12）。 */
+pub const GHOSTTY_MODE_CURSOR_BLINKING: GhosttyMode = 12;
+/** 光标可见（DECTCEM，DECSET 25）。 */
+pub const GHOSTTY_MODE_CURSOR_VISIBLE: GhosttyMode = 25;
+/** Alternate screen（DECSET 1047）。 */
+pub const GHOSTTY_MODE_ALT_SCREEN: GhosttyMode = 1047;
+/** Alternate screen + 保存光标 + 清屏（DECSET 1049）。 */
+pub const GHOSTTY_MODE_ALT_SCREEN_SAVE: GhosttyMode = 1049;
+
+/** 借出字节串（terminal_get GHOSTTY_TERMINAL_DATA_TITLE 输出）。 */
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct GhosttyString {
+    pub ptr: *const u8,
+    pub len: usize,
+}
 
 // GhosttyTerminalScrollViewportTag
 pub const SCROLL_VIEWPORT_TOP: i32 = 0;
@@ -191,6 +220,18 @@ extern "C" {
     ) -> GhosttyResult;
     pub fn ghostty_terminal_free(terminal: GhosttyTerminal);
     pub fn ghostty_terminal_vt_write(terminal: GhosttyTerminal, data: *const u8, len: usize);
+    /** 设置终端选项/effect 回调（value 对回调与 userdata 直接传指针）。 */
+    pub fn ghostty_terminal_set(
+        terminal: GhosttyTerminal,
+        option: i32,
+        value: *const c_void,
+    ) -> GhosttyResult;
+    /** 查询终端模式（GhosttyMode 为打包 16 位值，见 modes.h）。 */
+    pub fn ghostty_terminal_mode_get(
+        terminal: GhosttyTerminal,
+        mode: GhosttyMode,
+        out_value: *mut bool,
+    ) -> GhosttyResult;
     pub fn ghostty_terminal_resize(
         terminal: GhosttyTerminal,
         cols: u16,

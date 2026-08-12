@@ -157,6 +157,75 @@ fn mailbox_checks() -> bool {
         &mut all_ok,
     );
 
+    // 工单 29：UI 状态（title / bell / mode）。mailbox 保序：写先于查。
+    renderer.write("\u{1b}]0;fable-title\u{7}".as_bytes());
+    print_case(
+        renderer.title() == "fable-title",
+        "ui: OSC 0 标题可读",
+        &mut all_ok,
+    );
+    print_case(
+        renderer.consume_title_changed(),
+        "ui: title_changed 标记可消费",
+        &mut all_ok,
+    );
+    print_case(
+        !renderer.consume_title_changed(),
+        "ui: title_changed 消费后清除",
+        &mut all_ok,
+    );
+
+    renderer.write(&[0x07]);
+    print_case(renderer.consume_bell(), "ui: bell 标记可消费", &mut all_ok);
+    print_case(!renderer.consume_bell(), "ui: bell 消费后清除", &mut all_ok);
+
+    renderer.write("\u{1b}[?1049h\u{1b}[?1000h\u{1b}[?25l\u{1b}[?12h".as_bytes());
+    print_case(
+        renderer.mode_alt_screen(),
+        "ui: 1049 进入 alt screen",
+        &mut all_ok,
+    );
+    print_case(
+        renderer.mode_mouse_tracking(),
+        "ui: 1000 启用 mouse tracking",
+        &mut all_ok,
+    );
+    print_case(
+        !renderer.mode_cursor_visible(),
+        "ui: 25l 隐藏光标",
+        &mut all_ok,
+    );
+    print_case(renderer.mode_cursor_blink(), "ui: 12h 开启闪烁", &mut all_ok);
+
+    renderer.write("\u{1b}[?1049l\u{1b}[?1000l\u{1b}[?25h\u{1b}[?12l".as_bytes());
+    print_case(
+        !renderer.mode_alt_screen(),
+        "ui: 1049l 退出 alt screen",
+        &mut all_ok,
+    );
+    print_case(
+        !renderer.mode_mouse_tracking(),
+        "ui: 1000l 关闭 mouse tracking",
+        &mut all_ok,
+    );
+    print_case(
+        renderer.mode_cursor_visible(),
+        "ui: 25h 恢复光标",
+        &mut all_ok,
+    );
+    print_case(
+        !renderer.mode_cursor_blink(),
+        "ui: 12l 关闭闪烁",
+        &mut all_ok,
+    );
+
+    let info = renderer.info();
+    print_case(
+        info.contains("title=") && info.contains("mode_alt_screen="),
+        "info: rendererInfo 报告 title/mode 状态",
+        &mut all_ok,
+    );
+
     all_ok
 }
 
