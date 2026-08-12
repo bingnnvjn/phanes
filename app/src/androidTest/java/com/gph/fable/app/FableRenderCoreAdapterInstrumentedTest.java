@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -94,6 +95,41 @@ public class FableRenderCoreAdapterInstrumentedTest {
             adapter.setSelection(1, 0, 0);
             adapter.setSelection(0, 0, 4);
             assertEquals("row0", adapter.getSelectionText());
+        } finally {
+            adapter.destroy();
+        }
+    }
+
+    @Test
+    public void titleBellAndModes() {
+        FableRenderCoreAdapter adapter = new FableRenderCoreAdapter(80, 24);
+        assertTrue(adapter.isValid());
+        try {
+            byte[] title = "\u001b]0;fable-title\u0007".getBytes(StandardCharsets.UTF_8);
+            adapter.write(title, title.length);
+            assertEquals("fable-title", adapter.getTitle());
+            assertTrue("标题变更应可消费", adapter.consumeTitleChanged());
+            assertFalse("消费后标记应清除", adapter.consumeTitleChanged());
+
+            adapter.write(new byte[] { 0x07 }, 1);
+            assertTrue("bell 应可消费", adapter.consumeBell());
+            assertFalse("消费后 bell 应清除", adapter.consumeBell());
+
+            byte[] on = "\u001b[?1049h\u001b[?1000h\u001b[?25l\u001b[?12h"
+                    .getBytes(StandardCharsets.UTF_8);
+            adapter.write(on, on.length);
+            assertTrue(adapter.getModeAlternateScreen());
+            assertTrue(adapter.getModeMouseTracking());
+            assertFalse(adapter.getModeCursorVisible());
+            assertTrue(adapter.getModeCursorBlink());
+
+            byte[] off = "\u001b[?1049l\u001b[?1000l\u001b[?25h\u001b[?12l"
+                    .getBytes(StandardCharsets.UTF_8);
+            adapter.write(off, off.length);
+            assertFalse(adapter.getModeAlternateScreen());
+            assertFalse(adapter.getModeMouseTracking());
+            assertTrue(adapter.getModeCursorVisible());
+            assertFalse(adapter.getModeCursorBlink());
         } finally {
             adapter.destroy();
         }

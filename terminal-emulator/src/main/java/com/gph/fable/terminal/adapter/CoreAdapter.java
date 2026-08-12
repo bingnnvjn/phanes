@@ -74,6 +74,41 @@ public interface CoreAdapter {
         return false;
     }
 
+    /** 工单 29：当前核心标题（OSC 0/2 设置；未设置返回空串）。 */
+    default String getTitle() {
+        return "";
+    }
+
+    /** 工单 29：读取并清除"标题已变更"标记（true=自上次消费后标题变过）。 */
+    default boolean consumeTitleChanged() {
+        return false;
+    }
+
+    /** 工单 29：读取并清除 bell 标记（true=自上次消费后响过 bell）。 */
+    default boolean consumeBell() {
+        return false;
+    }
+
+    /** 工单 29：当前是否在 alternate screen（DECSET 1047/1049）。 */
+    default boolean getModeAlternateScreen() {
+        return false;
+    }
+
+    /** 工单 29：当前是否有任一 mouse tracking 模式激活（X10/1000/1002/1003）。 */
+    default boolean getModeMouseTracking() {
+        return false;
+    }
+
+    /** 工单 29：当前光标是否可见（DECSET 25）。旧路径无隐藏光标能力，默认可见。 */
+    default boolean getModeCursorVisible() {
+        return true;
+    }
+
+    /** 工单 29：当前光标是否闪烁（DECSET 12）。 */
+    default boolean getModeCursorBlink() {
+        return false;
+    }
+
     boolean supportsSelectionText();
 
     boolean supportsFontSize();

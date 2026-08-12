@@ -321,6 +321,69 @@ public final class FableRenderCoreAdapter implements CoreAdapter {
     }
 
     @Override
+    public String getTitle() {
+        long handle;
+        synchronized (mLock) {
+            handle = mHandle;
+        }
+        return handle == 0 ? "" : RenderCore.rendererGetTitle(handle);
+    }
+
+    @Override
+    public boolean consumeTitleChanged() {
+        long handle;
+        synchronized (mLock) {
+            handle = mHandle;
+        }
+        return handle != 0 && RenderCore.rendererConsumeTitleChanged(handle);
+    }
+
+    @Override
+    public boolean consumeBell() {
+        long handle;
+        synchronized (mLock) {
+            handle = mHandle;
+        }
+        return handle != 0 && RenderCore.rendererConsumeBell(handle);
+    }
+
+    @Override
+    public boolean getModeAlternateScreen() {
+        long handle;
+        synchronized (mLock) {
+            handle = mHandle;
+        }
+        return handle != 0 && RenderCore.rendererGetModeAltScreen(handle);
+    }
+
+    @Override
+    public boolean getModeMouseTracking() {
+        long handle;
+        synchronized (mLock) {
+            handle = mHandle;
+        }
+        return handle != 0 && RenderCore.rendererGetModeMouseTracking(handle);
+    }
+
+    @Override
+    public boolean getModeCursorVisible() {
+        long handle;
+        synchronized (mLock) {
+            handle = mHandle;
+        }
+        return handle != 0 && RenderCore.rendererGetModeCursorVisible(handle);
+    }
+
+    @Override
+    public boolean getModeCursorBlink() {
+        long handle;
+        synchronized (mLock) {
+            handle = mHandle;
+        }
+        return handle != 0 && RenderCore.rendererGetModeCursorBlink(handle);
+    }
+
+    @Override
     public void destroy() {
         long handle;
         synchronized (mLock) {

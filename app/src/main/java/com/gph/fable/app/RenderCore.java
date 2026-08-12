@@ -44,6 +44,27 @@ public final class RenderCore {
      *  CPR 应答用它，避免与旧 Java 模拟器按码位算宽的双轨错位。 */
     public static native int rendererGetCursor(long handle, int[] out);
 
+    /** 工单 29：当前核心标题（OSC 0/2 设置；未设置返回空串）。 */
+    public static native String rendererGetTitle(long handle);
+
+    /** 工单 29：读取并清除"标题已变更"标记（true=自上次消费后变过）。 */
+    public static native boolean rendererConsumeTitleChanged(long handle);
+
+    /** 工单 29：读取并清除 bell 标记（true=自上次消费后响过 bell）。 */
+    public static native boolean rendererConsumeBell(long handle);
+
+    /** 工单 29：当前是否在 alternate screen（DECSET 1047/1049）。 */
+    public static native boolean rendererGetModeAltScreen(long handle);
+
+    /** 工单 29：当前是否有任一 mouse tracking 模式激活（X10/1000/1002/1003）。 */
+    public static native boolean rendererGetModeMouseTracking(long handle);
+
+    /** 工单 29：当前光标是否可见（DECSET 25）。 */
+    public static native boolean rendererGetModeCursorVisible(long handle);
+
+    /** 工单 29：当前光标是否闪烁（DECSET 12）。 */
+    public static native boolean rendererGetModeCursorBlink(long handle);
+
     /** 工单 14：push 配色板（ARGB），前景/背景/选择色/光标色。 */
     public static native void rendererSetPalette(long handle, int fgArgb, int bgArgb, int selectionArgb, int cursorArgb);
 
