@@ -1036,6 +1036,10 @@ mod tests {
         assert!(!core.mode_mouse_tracking());
         assert!(core.mode_cursor_visible());
         assert!(!core.mode_cursor_blink());
+        assert!(!core.mode_cursor_keys_application(), "初始非 DECCKM");
+        assert!(!core.mode_keypad_application(), "初始非 DECKPAM");
+        assert!(!core.mode_bracketed_paste(), "初始非 bracketed paste");
+        assert!(core.cursor_blink_phase, "初始闪烁相位可见");
 
         // OSC 0 标题 + OSC 2 标题：title_changed 置位、title 可读。
         core.write(b"\x1b]0;fable-title\x07");
@@ -1059,13 +1063,28 @@ mod tests {
         assert!(!core.mode_cursor_visible(), "25l 应隐藏光标");
         core.write(b"\x1b[?12h");
         assert!(core.mode_cursor_blink(), "12h 应开启闪烁");
+        core.write(b"\x1b[?1h");
+        assert!(core.mode_cursor_keys_application(), "?1h 应开启 DECCKM");
+        core.write(b"\x1b[?66h");
+        assert!(core.mode_keypad_application(), "?66h 应开启 DECKPAM");
+        core.write(b"\x1b[?2004h");
+        assert!(core.mode_bracketed_paste(), "?2004h 应开启 bracketed paste");
+
+        // 光标闪烁相位：默认可见；隐藏相位后重绘隐藏光标；恢复可见。
+        core.set_cursor_blink_phase(false);
+        assert!(!core.cursor_blink_phase, "相位可切到隐藏");
+        core.set_cursor_blink_phase(true);
+        assert!(core.cursor_blink_phase, "相位可恢复可见");
 
         // 清除模式。
-        core.write(b"\x1b[?1049l\x1b[?1000l\x1b[?25h\x1b[?12l");
+        core.write(b"\x1b[?1049l\x1b[?1000l\x1b[?25h\x1b[?12l\x1b[?1l\x1b[?66l\x1b[?2004l");
         assert!(!core.mode_alt_screen());
         assert!(!core.mode_mouse_tracking());
         assert!(core.mode_cursor_visible());
         assert!(!core.mode_cursor_blink());
+        assert!(!core.mode_cursor_keys_application(), "?1l 应关闭 DECCKM");
+        assert!(!core.mode_keypad_application(), "?66l 应关闭 DECKPAM");
+        assert!(!core.mode_bracketed_paste(), "?2004l 应关闭 bracketed paste");
     }
 }
 
@@ -3290,6 +3309,10 @@ enum RenderCommand {
     ModeMouseTracking(std::sync::mpsc::Sender<bool>),
     ModeCursorVisible(std::sync::mpsc::Sender<bool>),
     ModeCursorBlink(std::sync::mpsc::Sender<bool>),
+    ModeCursorKeysApplication(std::sync::mpsc::Sender<bool>),
+    ModeKeypadApplication(std::sync::mpsc::Sender<bool>),
+    ModeBracketedPaste(std::sync::mpsc::Sender<bool>),
+    CursorBlinkState(bool),
     Attach(*mut c_void, u32, u32),
     Detach,
     Render(u32, u32),
@@ -3317,6 +3340,10 @@ pub struct RenderStats {
     pub mode_mouse_tracking: bool,
     pub mode_cursor_visible: bool,
     pub mode_cursor_blink: bool,
+    pub mode_cursor_keys_application: bool,
+    pub mode_keypad_application: bool,
+    pub mode_bracketed_paste: bool,
+    pub cursor_blink_phase: bool,
     pub atlas_glyphs: usize,
     pub color_glyphs: usize,
     pub emoji_status: String,
@@ -3377,6 +3404,9 @@ struct RendererCore {
     font_size_px: f32,
     palette: Option<Palette>,
     last_error: String,
+    /// 工单 30：光标闪烁相位（true = 可见相位），UI 经 setCursorBlinkState 推送；
+    /// 与核心 DATA_CURSOR_VISIBLE AND 后决定是否画光标。
+    cursor_blink_phase: bool,
 }
 
 unsafe impl Send for RendererCore {}
@@ -3491,6 +3521,7 @@ impl RendererCore {
             font_size_px: DEFAULT_FONT_SIZE_PX,
             palette: None,
             last_error: String::new(),
+            cursor_blink_phase: true,
         })
     }
 
@@ -3567,6 +3598,29 @@ impl RendererCore {
 
     fn mode_cursor_blink(&self) -> bool {
         self.mode(GHOSTTY_MODE_CURSOR_BLINKING)
+    }
+
+    /// 光标键 application mode（DECCKM，DECSET ?1）。
+    fn mode_cursor_keys_application(&self) -> bool {
+        self.mode(GHOSTTY_MODE_CURSOR_KEYS_APPLICATION)
+    }
+
+    /// 小键盘 application mode（DECKPAM，DECSET ?66）。
+    fn mode_keypad_application(&self) -> bool {
+        self.mode(GHOSTTY_MODE_KEYPAD_APPLICATION)
+    }
+
+    /// bracketed paste（DECSET 2004）。
+    fn mode_bracketed_paste(&self) -> bool {
+        self.mode(GHOSTTY_MODE_BRACKETED_PASTE)
+    }
+
+    /// 工单 30：设置光标闪烁相位（true = 可见相位）。
+    fn set_cursor_blink_phase(&mut self, visible: bool) {
+        self.cursor_blink_phase = visible;
+        // 相位变化必须重绘（否则 signature 去重吞掉相位切换）。
+        self.last_signature = None;
+        self.last_meta = None;
     }
 
     fn resize(&mut self, cols: u16, rows: u16) {
@@ -3872,6 +3926,18 @@ impl RendererCore {
                 RenderCommand::ModeCursorBlink(tx) => {
                     let _ = tx.send(self.mode_cursor_blink());
                 }
+                RenderCommand::ModeCursorKeysApplication(tx) => {
+                    let _ = tx.send(self.mode_cursor_keys_application());
+                }
+                RenderCommand::ModeKeypadApplication(tx) => {
+                    let _ = tx.send(self.mode_keypad_application());
+                }
+                RenderCommand::ModeBracketedPaste(tx) => {
+                    let _ = tx.send(self.mode_bracketed_paste());
+                }
+                RenderCommand::CursorBlinkState(visible) => {
+                    self.set_cursor_blink_phase(visible);
+                }
                 RenderCommand::Attach(window, width, height) => {
                     if let Err(error) = self.attach(window, width, height) {
                         self.last_error = error;
@@ -3941,6 +4007,10 @@ impl RendererCore {
         stats.mode_mouse_tracking = self.mode_mouse_tracking();
         stats.mode_cursor_visible = self.mode_cursor_visible();
         stats.mode_cursor_blink = self.mode_cursor_blink();
+        stats.mode_cursor_keys_application = self.mode_cursor_keys_application();
+        stats.mode_keypad_application = self.mode_keypad_application();
+        stats.mode_bracketed_paste = self.mode_bracketed_paste();
+        stats.cursor_blink_phase = self.cursor_blink_phase;
         stats.atlas_glyphs = self.atlas.entries.len();
         stats.color_glyphs = self.atlas.color_glyph_count();
         stats.emoji_status = self.atlas.emoji_diagnostics();
@@ -3990,7 +4060,10 @@ impl RendererCore {
         }
 
         // 廉价全局元数据（不遍历行）。
-        let cursor_visible = unsafe { get_bool(self.state, DATA_CURSOR_VISIBLE) };
+        // 工单 30：核心光标可见性（DECTCEM ?25）与 UI 推送的闪烁相位 AND，
+        // 与旧路径 shouldCursorBeVisible()（enabled && blink 相位）行为一致。
+        let cursor_visible =
+            unsafe { get_bool(self.state, DATA_CURSOR_VISIBLE) } && self.cursor_blink_phase;
         let cursor = if cursor_visible {
             Some((
                 unsafe { get_u16(self.state, DATA_CURSOR_VIEWPORT_X) },
@@ -4410,6 +4483,41 @@ impl Renderer {
         }
     }
 
+    /// 工单 30：光标键 application mode（DECCKM，DECSET ?1）。
+    pub fn mode_cursor_keys_application(&self) -> bool {
+        let (tx, rx) = std::sync::mpsc::channel();
+        if self.send(RenderCommand::ModeCursorKeysApplication(tx)) {
+            rx.recv().unwrap_or(false)
+        } else {
+            false
+        }
+    }
+
+    /// 工单 30：小键盘 application mode（DECKPAM，DECSET ?66）。
+    pub fn mode_keypad_application(&self) -> bool {
+        let (tx, rx) = std::sync::mpsc::channel();
+        if self.send(RenderCommand::ModeKeypadApplication(tx)) {
+            rx.recv().unwrap_or(false)
+        } else {
+            false
+        }
+    }
+
+    /// 工单 30：bracketed paste（DECSET 2004）。
+    pub fn mode_bracketed_paste(&self) -> bool {
+        let (tx, rx) = std::sync::mpsc::channel();
+        if self.send(RenderCommand::ModeBracketedPaste(tx)) {
+            rx.recv().unwrap_or(false)
+        } else {
+            false
+        }
+    }
+
+    /// 工单 30：推送光标闪烁相位（true = 可见相位；渲染层与核心光标可见性 AND）。
+    pub fn set_cursor_blink_state(&self, visible: bool) {
+        self.send(RenderCommand::CursorBlinkState(visible));
+    }
+
     pub fn attach(&self, window: *mut c_void, width_px: u32, height_px: u32) -> Result<(), String> {
         if self.send(RenderCommand::Attach(window, width_px, height_px)) {
             Ok(())
@@ -4450,7 +4558,7 @@ impl Renderer {
             Err(_) => return "stats lock failed".to_string(),
         };
         format!(
-            "backend={} adapter={} cols={} rows={} font_size={} palette={} atlas_glyphs={} color_glyphs={} emoji=[{}] atlas_rev={} attaches={} presents={} terminal_frames={} acquire={}/{}/{}/{}/{} draw_attempts={} calls={} builds={} full={} incr={} dirty_rows={} build_us={} row_uploads={} upload_bytes={} vertices={} mailbox_writes={} thread_alive={} title={} title_changed={} bell={} mode_alt_screen={} mode_mouse_tracking={} mode_cursor_visible={} mode_cursor_blink={} err={} wgpu_log={}",
+            "backend={} adapter={} cols={} rows={} font_size={} palette={} atlas_glyphs={} color_glyphs={} emoji=[{}] atlas_rev={} attaches={} presents={} terminal_frames={} acquire={}/{}/{}/{}/{} draw_attempts={} calls={} builds={} full={} incr={} dirty_rows={} build_us={} row_uploads={} upload_bytes={} vertices={} mailbox_writes={} thread_alive={} title={} title_changed={} bell={} mode_alt_screen={} mode_mouse_tracking={} mode_cursor_visible={} mode_cursor_blink={} mode_cursor_keys={} mode_keypad={} mode_bracketed_paste={} cursor_blink_phase={} err={} wgpu_log={}",
             stats.backend,
             stats.adapter,
             stats.cols,
@@ -4488,6 +4596,10 @@ impl Renderer {
             stats.mode_mouse_tracking,
             stats.mode_cursor_visible,
             stats.mode_cursor_blink,
+            stats.mode_cursor_keys_application,
+            stats.mode_keypad_application,
+            stats.mode_bracketed_paste,
+            stats.cursor_blink_phase,
             stats.last_error,
             recent_wgpu_log()
         )

@@ -219,6 +219,57 @@ fn mailbox_checks() -> bool {
         &mut all_ok,
     );
 
+    // 工单 30：DECCKM / DECKPAM / bracketed paste 模式查询 + 光标闪烁相位 feed。
+    renderer.write("\u{1b}[?1h\u{1b}[?66h\u{1b}[?2004h".as_bytes());
+    print_case(
+        renderer.mode_cursor_keys_application(),
+        "ui: ?1h 开启 DECCKM",
+        &mut all_ok,
+    );
+    print_case(
+        renderer.mode_keypad_application(),
+        "ui: ?66h 开启 DECKPAM",
+        &mut all_ok,
+    );
+    print_case(
+        renderer.mode_bracketed_paste(),
+        "ui: ?2004h 开启 bracketed paste",
+        &mut all_ok,
+    );
+    renderer.set_cursor_blink_state(false);
+    // 同步查询作 mailbox 屏障：等渲染线程处理完相位命令后再读 stats。
+    let _ = renderer.mode_cursor_visible();
+    let info = renderer.info();
+    print_case(
+        info.contains("cursor_blink_phase=false"),
+        "ui: 光标闪烁相位可切隐藏并反映到 rendererInfo",
+        &mut all_ok,
+    );
+    renderer.set_cursor_blink_state(true);
+    let _ = renderer.mode_cursor_visible();
+    let info = renderer.info();
+    print_case(
+        info.contains("cursor_blink_phase=true"),
+        "ui: 光标闪烁相位恢复可见",
+        &mut all_ok,
+    );
+    renderer.write("\u{1b}[?1l\u{1b}[?66l\u{1b}[?2004l".as_bytes());
+    print_case(
+        !renderer.mode_cursor_keys_application(),
+        "ui: ?1l 关闭 DECCKM",
+        &mut all_ok,
+    );
+    print_case(
+        !renderer.mode_keypad_application(),
+        "ui: ?66l 关闭 DECKPAM",
+        &mut all_ok,
+    );
+    print_case(
+        !renderer.mode_bracketed_paste(),
+        "ui: ?2004l 关闭 bracketed paste",
+        &mut all_ok,
+    );
+
     let info = renderer.info();
     print_case(
         info.contains("title=") && info.contains("mode_alt_screen="),

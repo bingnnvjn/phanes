@@ -922,6 +922,21 @@ unsafe fn verify_ui_state() -> bool {
         "ui: 初始不闪烁",
         &mut all_ok,
     );
+    check_case(
+        !terminal_mode(term, GHOSTTY_MODE_CURSOR_KEYS_APPLICATION),
+        "ui: 初始非 DECCKM",
+        &mut all_ok,
+    );
+    check_case(
+        !terminal_mode(term, GHOSTTY_MODE_KEYPAD_APPLICATION),
+        "ui: 初始非 DECKPAM",
+        &mut all_ok,
+    );
+    check_case(
+        !terminal_mode(term, GHOSTTY_MODE_BRACKETED_PASTE),
+        "ui: 初始非 bracketed paste",
+        &mut all_ok,
+    );
 
     let title0 = b"\x1b]0;fable-title\x07";
     ghostty_terminal_vt_write(term, title0.as_ptr(), title0.len());
@@ -947,7 +962,7 @@ unsafe fn verify_ui_state() -> bool {
     ghostty_terminal_vt_write(term, b"\x07".as_ptr(), 1);
     check_case(events.bell, "ui: bell 回调触发", &mut all_ok);
 
-    let modes_on = b"\x1b[?1049h\x1b[?1000h\x1b[?25l\x1b[?12h";
+    let modes_on = b"\x1b[?1049h\x1b[?1000h\x1b[?25l\x1b[?12h\x1b[?1h\x1b[?66h\x1b[?2004h";
     ghostty_terminal_vt_write(term, modes_on.as_ptr(), modes_on.len());
     check_case(
         terminal_mode(term, GHOSTTY_MODE_ALT_SCREEN)
@@ -970,8 +985,23 @@ unsafe fn verify_ui_state() -> bool {
         "ui: 12h 开启闪烁",
         &mut all_ok,
     );
+    check_case(
+        terminal_mode(term, GHOSTTY_MODE_CURSOR_KEYS_APPLICATION),
+        "ui: ?1h 开启 DECCKM",
+        &mut all_ok,
+    );
+    check_case(
+        terminal_mode(term, GHOSTTY_MODE_KEYPAD_APPLICATION),
+        "ui: ?66h 开启 DECKPAM",
+        &mut all_ok,
+    );
+    check_case(
+        terminal_mode(term, GHOSTTY_MODE_BRACKETED_PASTE),
+        "ui: ?2004h 开启 bracketed paste",
+        &mut all_ok,
+    );
 
-    let modes_off = b"\x1b[?1049l\x1b[?1000l\x1b[?25h\x1b[?12l";
+    let modes_off = b"\x1b[?1049l\x1b[?1000l\x1b[?25h\x1b[?12l\x1b[?1l\x1b[?66l\x1b[?2004l";
     ghostty_terminal_vt_write(term, modes_off.as_ptr(), modes_off.len());
     check_case(
         !terminal_mode(term, GHOSTTY_MODE_ALT_SCREEN)
@@ -992,6 +1022,21 @@ unsafe fn verify_ui_state() -> bool {
     check_case(
         !terminal_mode(term, GHOSTTY_MODE_CURSOR_BLINKING),
         "ui: 12l 关闭闪烁",
+        &mut all_ok,
+    );
+    check_case(
+        !terminal_mode(term, GHOSTTY_MODE_CURSOR_KEYS_APPLICATION),
+        "ui: ?1l 关闭 DECCKM",
+        &mut all_ok,
+    );
+    check_case(
+        !terminal_mode(term, GHOSTTY_MODE_KEYPAD_APPLICATION),
+        "ui: ?66l 关闭 DECKPAM",
+        &mut all_ok,
+    );
+    check_case(
+        !terminal_mode(term, GHOSTTY_MODE_BRACKETED_PASTE),
+        "ui: ?2004l 关闭 bracketed paste",
         &mut all_ok,
     );
 

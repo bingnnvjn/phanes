@@ -33,14 +33,20 @@ pub const TERMINAL_OPT_TITLE_CHANGED: i32 = 5;
 // GhosttyMode：ghostty_mode_new(value, ansi) = (value & 0x7FFF) | (ansi << 15)。
 // 本工单只查 DEC 私有模式（ansi=false → 高位置 0）。
 pub type GhosttyMode = u16;
+/** 光标键 application mode（DECCKM，DECSET ?1）。 */
+pub const GHOSTTY_MODE_CURSOR_KEYS_APPLICATION: GhosttyMode = 1;
 /** 光标闪烁（DECSET 12）。 */
 pub const GHOSTTY_MODE_CURSOR_BLINKING: GhosttyMode = 12;
 /** 光标可见（DECTCEM，DECSET 25）。 */
 pub const GHOSTTY_MODE_CURSOR_VISIBLE: GhosttyMode = 25;
+/** 小键盘 application mode（DECKPAM，DECSET ?66）。 */
+pub const GHOSTTY_MODE_KEYPAD_APPLICATION: GhosttyMode = 66;
 /** Alternate screen（DECSET 1047）。 */
 pub const GHOSTTY_MODE_ALT_SCREEN: GhosttyMode = 1047;
 /** Alternate screen + 保存光标 + 清屏（DECSET 1049）。 */
 pub const GHOSTTY_MODE_ALT_SCREEN_SAVE: GhosttyMode = 1049;
+/** Bracketed paste（DECSET 2004）。 */
+pub const GHOSTTY_MODE_BRACKETED_PASTE: GhosttyMode = 2004;
 
 /** 借出字节串（terminal_get GHOSTTY_TERMINAL_DATA_TITLE 输出）。 */
 #[repr(C)]

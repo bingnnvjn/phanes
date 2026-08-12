@@ -314,6 +314,47 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetModeCursorBl
     with_renderer(handle, |renderer| renderer.mode_cursor_blink()) as jboolean
 }
 
+/// 工单 30：光标键 application mode（DECCKM，DECSET ?1）。
+#[no_mangle]
+pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetModeCursorKeysApplication(
+    _env: EnvUnowned,
+    _class: JClass,
+    handle: jlong,
+) -> jboolean {
+    with_renderer(handle, |renderer| renderer.mode_cursor_keys_application()) as jboolean
+}
+
+/// 工单 30：小键盘 application mode（DECKPAM，DECSET ?66）。
+#[no_mangle]
+pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetModeKeypadApplication(
+    _env: EnvUnowned,
+    _class: JClass,
+    handle: jlong,
+) -> jboolean {
+    with_renderer(handle, |renderer| renderer.mode_keypad_application()) as jboolean
+}
+
+/// 工单 30：bracketed paste（DECSET 2004）。
+#[no_mangle]
+pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetModeBracketedPaste(
+    _env: EnvUnowned,
+    _class: JClass,
+    handle: jlong,
+) -> jboolean {
+    with_renderer(handle, |renderer| renderer.mode_bracketed_paste()) as jboolean
+}
+
+/// 工单 30：推送光标闪烁相位（true = 可见相位）。
+#[no_mangle]
+pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererSetCursorBlinkState(
+    _env: EnvUnowned,
+    _class: JClass,
+    handle: jlong,
+    visible: jboolean,
+) {
+    with_renderer(handle, |renderer| renderer.set_cursor_blink_state(visible));
+}
+
 #[no_mangle]
 pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererSetPalette(
     _env: EnvUnowned,
