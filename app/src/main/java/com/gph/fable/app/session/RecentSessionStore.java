@@ -9,9 +9,6 @@ import androidx.annotation.Nullable;
 import com.gph.fable.shared.termux.TermuxConstants;
 
 import java.io.File;
-import java.io.UnsupportedEncodingException;
-import java.net.URLDecoder;
-import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -32,8 +29,6 @@ public final class RecentSessionStore {
     public static final int MAX_ENTRIES = 10;
 
     private static final String KEY = "fable_recent_sessions_v1";
-    private static final String UTF_8 = "UTF-8";
-
     private RecentSessionStore() {
     }
 
@@ -142,7 +137,8 @@ public final class RecentSessionStore {
         StringBuilder builder = new StringBuilder();
         for (RecentSession session : sessions) {
             if (builder.length() > 0) builder.append('\n');
-            builder.append(session.timestamp).append('\t').append(encodePath(session.workingDirectory));
+            builder.append(session.timestamp).append('\t')
+                .append(RecentSessionPathCodec.encode(session.workingDirectory));
         }
         return builder.toString();
     }
@@ -164,29 +160,10 @@ public final class RecentSessionStore {
                 continue;
             }
 
-            String workingDirectory = decodePath(line.substring(separator + 1));
+            String workingDirectory = RecentSessionPathCodec.decode(line.substring(separator + 1));
             if (workingDirectory == null || workingDirectory.isEmpty()) continue;
             sessions.add(new RecentSession(timestamp, workingDirectory));
         }
         return sessions;
-    }
-
-    @NonNull
-    private static String encodePath(@NonNull String path) {
-        try {
-            return URLEncoder.encode(path, UTF_8);
-        } catch (UnsupportedEncodingException e) {
-            return path;
-        }
-    }
-
-    @Nullable
-    private static String decodePath(@Nullable String encoded) {
-        if (encoded == null) return null;
-        try {
-            return URLDecoder.decode(encoded, UTF_8);
-        } catch (UnsupportedEncodingException | IllegalArgumentException e) {
-            return null;
-        }
     }
 }

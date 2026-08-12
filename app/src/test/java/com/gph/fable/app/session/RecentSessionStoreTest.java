@@ -146,4 +146,17 @@ public class RecentSessionStoreTest {
         RecentSessionStore.remove(store, "/work/dir/a");
         assertEquals(1, RecentSessionStore.load(store).size());
     }
+
+    /** 工单 28：经 RecentSessionStore 整条链路（record→load）验证 Java→Kotlin 编解码接线，特殊字符不被破坏。 */
+    @Test
+    public void recordAndLoadKeepsSpecialCharacters() {
+        MemoryStore store = new MemoryStore();
+        String weirdPath = "/home/a+b%c/中文 目录\n换行";
+
+        RecentSessionStore.record(store, weirdPath);
+        List<RecentSession> loaded = RecentSessionStore.load(store);
+
+        assertEquals(1, loaded.size());
+        assertEquals(weirdPath, loaded.get(0).workingDirectory);
+    }
 }

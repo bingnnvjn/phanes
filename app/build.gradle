@@ -24,6 +24,8 @@ ext {
 android {
     namespace = "com.gph.fable"
     compileSdk = 36
+    // 工单 28：AGP 9 内置 Kotlin（不引 KGP）。AGP 9.3 默认 true，这里显式声明试点模块启用。
+    enableKotlin = true
     ndkVersion = System.getenv("JITPACK_NDK_VERSION") ?: "22.1.7171670"
     buildFeatures {
         buildConfig = true
