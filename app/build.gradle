@@ -274,8 +274,14 @@ tasks.register("fetchEmojiFonts", Exec) {
     workingDir fableRoot
     commandLine "bash", new File(fableRoot, "scripts/fetch-emoji-fonts.sh").absolutePath
 }
+tasks.register("buildFableSession", Exec) {
+    def fableRoot = rootProject.rootDir.parentFile
+    workingDir fableRoot
+    commandLine "bash", new File(fableRoot, "scripts/build-session-lib.sh").absolutePath
+}
 tasks.named("preBuild") {
     dependsOn "fetchEmojiFonts"
+    dependsOn "buildFableSession"
 }
 
 dependencies {

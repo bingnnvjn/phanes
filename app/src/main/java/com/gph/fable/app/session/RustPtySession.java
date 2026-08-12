@@ -34,6 +34,12 @@ public final class RustPtySession implements FableSession {
 
     private final FableSessionCallbacks mCallbacks;
     private final Handler mMainHandler = new Handler(Looper.getMainLooper());
+    /**
+     * Native 回调线程只入队；本对象保证输出背压、同一时刻仅一个主线程 drain，
+     * 并在 close 时让已排队的旧 generation 静默。
+     */
+    private final MainThreadEventDispatcher mEventDispatcher;
+    private final SessionEventCallback mEventCallback;
     private final long mHandle;
     private final String mCwd;
 
@@ -47,6 +53,11 @@ public final class RustPtySession implements FableSession {
     RustPtySession(FableSessionSpec spec, FableSessionCallbacks callbacks) {
         mCallbacks = callbacks;
         mCwd = spec.getCwd();
+        mEventDispatcher = new MainThreadEventDispatcher(
+            runnable -> mMainHandler.post(runnable),
+            this::dispatch);
+        mEventCallback = (sessionId, event, ts, data, exitCode, message, extra) ->
+            mEventDispatcher.enqueue(sessionId, event, ts, data, exitCode, message, extra);
         mHandle = SessionHandle.sessionCreate(spec.getShell(), spec.getArgs(), spec.getEnv(),
             spec.getCwd(), spec.getColumns(), spec.getRows(), mEventCallback);
         if (mHandle == 0) {
@@ -59,9 +70,6 @@ public final class RustPtySession implements FableSession {
     boolean isValid() {
         return mHandle != 0;
     }
-
-    private final SessionEventCallback mEventCallback = (sessionId, event, ts, data, exitCode, message, extra) ->
-        mMainHandler.post(() -> dispatch(sessionId, event, ts, data, exitCode, message, extra));
 
     private void dispatch(long sessionId, String event, long ts,
                           byte[] data, int exitCode, String message, String[] extra) {
@@ -123,12 +131,25 @@ public final class RustPtySession implements FableSession {
     public void close() {
         if (mClosed) return;
         mClosed = true;
+        // 先撤销 JNI callback，再使 Java drain 的旧 generation 无效；因此即使 native
+        // 分发线程已拿到一个事件，close 返回后也不能再触达 TerminalSession/Activity。
+        mEventDispatcher.close();
         if (mHandle != 0 && !mExited) {
-            // sessionClose 杀死子进程并关闭会话；exit_code → session_closed
-            // 事件仍会投递，onExit 在 session_closed 处触发（与 Java SIGKILL 语义对齐）。
+            SessionHandle.sessionSetEventCallback(mHandle, null);
             SessionHandle.sessionClose(mHandle);
             mHandleReleased = true;
+            // FableSession 契约要求 close 后仍有一次 onExit；这是调用 close 的受控
+            // 终态通知，不复用/放行任何 native 的旧 generation callback。
+            mMainHandler.post(this::notifyClosedByCaller);
         }
+    }
+
+    /** close() 的受控终态通知：仅主线程执行，幂等。 */
+    private void notifyClosedByCaller() {
+        if (mExited) return;
+        mExited = true;
+        mRunning = false;
+        mCallbacks.onExit(mExitStatus);
     }
 
     /** 释放 Rust 侧会话记录（会话结束后调用；幂等）。 */
