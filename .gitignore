@@ -28,6 +28,7 @@ app/src/main/assets/fonts/
 # Signing files
 .signing/
 keystore/
+signing.properties
 
 # Intellij
 .idea/

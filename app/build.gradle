@@ -2,6 +2,30 @@ plugins {
     id "com.android.application"
 }
 
+def localSigningProperties = new Properties()
+def localSigningPropertiesFile = rootProject.file("signing.properties")
+if (localSigningPropertiesFile.isFile()) {
+    localSigningPropertiesFile.withInputStream { input ->
+        localSigningProperties.load(input)
+    }
+}
+
+def readSigningInput = { String name ->
+    def value = providers.environmentVariable(name).orNull ?:
+            providers.gradleProperty(name).orNull ?:
+            localSigningProperties.getProperty(name)
+    value?.trim() ?: null
+}
+
+def releaseSigningInputs = [
+    keystore: readSigningInput("FABLE_RELEASE_KEYSTORE"),
+    keyAlias: readSigningInput("FABLE_RELEASE_KEY_ALIAS"),
+    storePassword: readSigningInput("FABLE_RELEASE_STORE_PASSWORD"),
+    keyPassword: readSigningInput("FABLE_RELEASE_KEY_PASSWORD"),
+]
+def missingReleaseSigningInputs = releaseSigningInputs.findAll { !it.value }.keySet()
+def debugUsesReleaseSigning = readSigningInput("FABLE_DEBUG_USE_RELEASE_SIGNING") == "1"
+
 ext {
     // The packageVariant defines the bootstrap variant that will be included in the app APK.
     // This must be supported by com.gph.fable.shared.termux.FableBootstrap.PackageVariant or app will
@@ -101,19 +125,13 @@ android {
     }
 
     signingConfigs {
-        debug {
-            // Fable 个人 keystore（工单 01）：debug 与 release 共用同一身份，
-            // 保证后续版本可覆盖安装更新。keystore 密码见 .scratch 工单记录。
-            storeFile file('../keystore/<旧签名材料>')
-            keyAlias 'fable'
-            storePassword 'Fable-GPH-2026!'
-            keyPassword 'Fable-GPH-2026!'
-        }
         release {
-            storeFile file('../keystore/<旧签名材料>')
-            keyAlias 'fable'
-            storePassword 'Fable-GPH-2026!'
-            keyPassword 'Fable-GPH-2026!'
+            if (missingReleaseSigningInputs.empty) {
+                storeFile file(releaseSigningInputs.keystore)
+                keyAlias releaseSigningInputs.keyAlias
+                storePassword releaseSigningInputs.storePassword
+                keyPassword releaseSigningInputs.keyPassword
+            }
         }
     }
 
@@ -126,7 +144,11 @@ android {
         }
 
         debug {
-            signingConfig signingConfigs.debug
+            // 默认使用 AGP 的独立 debug keystore。需要覆盖安装正式包时，才显式复用
+            // release 身份：FABLE_DEBUG_USE_RELEASE_SIGNING=1。
+            if (debugUsesReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 
@@ -174,6 +196,63 @@ android {
         }
     }
 
+}
+
+tasks.register("verifyReleaseSigning") {
+    group = "verification"
+    description = "Fails clearly unless all release signing inputs are supplied."
+    doLast {
+        if (!missingReleaseSigningInputs.empty) {
+            throw new GradleException(
+                "Release signing requires FABLE_RELEASE_KEYSTORE, FABLE_RELEASE_KEY_ALIAS, " +
+                "FABLE_RELEASE_STORE_PASSWORD, and FABLE_RELEASE_KEY_PASSWORD. Supply them " +
+                "as environment variables (CI) or Gradle properties (local ~/.gradle/gradle.properties)."
+            )
+        }
+        if (!file(releaseSigningInputs.keystore).isFile()) {
+            throw new GradleException(
+                "Release signing keystore does not exist: " + releaseSigningInputs.keystore
+            )
+        }
+    }
+}
+
+tasks.register("verifyDebugSigning") {
+    group = "verification"
+    description = "Validates the explicit debug-to-release signing override."
+    doLast {
+        if (debugUsesReleaseSigning && !missingReleaseSigningInputs.empty) {
+            throw new GradleException(
+                "FABLE_DEBUG_USE_RELEASE_SIGNING=1 requires complete release signing inputs. " +
+                "Unset it to use the default debug keystore."
+            )
+        }
+    }
+}
+
+tasks.matching { task ->
+    task.name == "assembleRelease" || task.name == "bundleRelease"
+}.configureEach {
+    dependsOn "verifyReleaseSigning"
+}
+tasks.matching { task ->
+    task.name == "validateSigningRelease"
+}.configureEach {
+    dependsOn "verifyReleaseSigning"
+}
+tasks.matching { task ->
+    task.name == "assembleDebug"
+}.configureEach {
+    dependsOn "verifyDebugSigning"
+}
+
+tasks.register("printSigningConfiguration") {
+    group = "verification"
+    description = "Prints signing identities without exposing signing secrets."
+    doLast {
+        println("debug=" + (debugUsesReleaseSigning ? "release-override" : "default-debug-keystore"))
+        println("release=" + (missingReleaseSigningInputs.empty ? "configured" : "missing"))
+    }
 }
 
 androidComponents {
