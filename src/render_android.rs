@@ -3312,6 +3312,14 @@ enum RenderCommand {
     ModeCursorKeysApplication(std::sync::mpsc::Sender<bool>),
     ModeKeypadApplication(std::sync::mpsc::Sender<bool>),
     ModeBracketedPaste(std::sync::mpsc::Sender<bool>),
+    ModeMouseSgr(std::sync::mpsc::Sender<bool>),
+    ModeMouseButtonEvent(std::sync::mpsc::Sender<bool>),
+    /// 工单 31：内容/几何查询（旧模拟器删除后由核心承担）。
+    ScrollbackRows(std::sync::mpsc::Sender<u32>),
+    Text(i32, u32, u32, std::sync::mpsc::Sender<String>),
+    WordBoundsAt(u32, i32, std::sync::mpsc::Sender<Option<(u32, u32)>>),
+    WordAt(u32, i32, std::sync::mpsc::Sender<String>),
+    TranscriptText(bool, bool, std::sync::mpsc::Sender<String>),
     CursorBlinkState(bool),
     Attach(*mut c_void, u32, u32),
     Detach,
@@ -3613,6 +3621,299 @@ impl RendererCore {
     /// bracketed paste（DECSET 2004）。
     fn mode_bracketed_paste(&self) -> bool {
         self.mode(GHOSTTY_MODE_BRACKETED_PASTE)
+    }
+
+    /// SGR mouse format（DECSET 1006）。
+    fn mode_mouse_sgr(&self) -> bool {
+        self.mode(GHOSTTY_MODE_SGR_MOUSE)
+    }
+
+    /// button-event（1002）或 any-event（1003）mouse tracking。
+    fn mode_mouse_button_event(&self) -> bool {
+        self.mode(GHOSTTY_MODE_BUTTON_MOUSE) || self.mode(GHOSTTY_MODE_ANY_MOUSE)
+    }
+
+    /// 终端数据查询（size_t 输出）。
+    fn terminal_size_t(&self, data: i32) -> usize {
+        let mut v: usize = 0;
+        let r = unsafe { ghostty_terminal_get(self.terminal, data, &mut v as *mut usize as *mut c_void) };
+        if r == GHOSTTY_SUCCESS {
+            v
+        } else {
+        	0
+        }
+    }
+
+    /// 工单 31：当前可向上回看的历史行数（视口之外）。
+    fn scrollback_rows(&self) -> u32 {
+        self.terminal_size_t(TERMINAL_DATA_SCROLLBACK_ROWS).min(u32::MAX as usize) as u32
+    }
+
+    /// 活动屏 + 历史总行数（SCREEN 坐标范围）。
+    fn total_rows(&self) -> u32 {
+        self.terminal_size_t(TERMINAL_DATA_TOTAL_ROWS).min(u32::MAX as usize) as u32
+    }
+
+    /// 外部行（0 = 活动屏顶，负 = 历史）→ SCREEN 坐标 y。
+    fn screen_y_for_external(&self, external_row: i32) -> Option<u32> {
+        let scrollback = self.scrollback_rows();
+        let y = scrollback as i64 + external_row as i64;
+        if y < 0 || y >= self.total_rows() as i64 {
+            None
+        } else {
+            Some(y as u32)
+        }
+    }
+
+    /// 单格字素文本（SCREEN 坐标；空格格返回 " "，空/占位格返回 ""，越界返回 None）。
+    fn cell_graphemes(&self, col: u16, screen_y: u32) -> Option<String> {
+        unsafe {
+            let point = GhosttyPoint {
+                tag: POINT_TAG_SCREEN,
+                value: GhosttyPointValue {
+                    coordinate: GhosttyPointCoordinate { x: col, y: screen_y },
+                },
+            };
+            let mut grid_ref = GhosttyGridRef {
+                size: std::mem::size_of::<GhosttyGridRef>(),
+                node: std::ptr::null_mut(),
+                x: 0,
+                y: 0,
+            };
+            let r = ghostty_terminal_grid_ref(self.terminal, point, &mut grid_ref);
+            if r != GHOSTTY_SUCCESS {
+                return None;
+            }
+            let mut needed = 0usize;
+            let r = ghostty_grid_ref_graphemes(&grid_ref, std::ptr::null_mut(), 0, &mut needed);
+            if r == GHOSTTY_OUT_OF_SPACE && needed > 0 {
+                let mut cps = vec![0u32; needed];
+                let mut written = 0usize;
+                let r = ghostty_grid_ref_graphemes(
+                    &grid_ref,
+                    cps.as_mut_ptr(),
+                    cps.len(),
+                    &mut written,
+                );
+                if r != GHOSTTY_SUCCESS {
+                    return None;
+                }
+                cps.truncate(written);
+                Some(
+                    cps.into_iter()
+                        .filter_map(char::from_u32)
+                        .collect::<String>(),
+                )
+            } else if r == GHOSTTY_SUCCESS {
+                Some(String::new())
+            } else {
+                None
+            }
+        }
+    }
+
+    /// 某行（SCREEN 坐标）是否软换行续行（ROW_DATA_WRAP_CONTINUATION）。
+    fn row_wrap_continuation(&self, screen_y: u32) -> bool {
+        unsafe {
+            let point = GhosttyPoint {
+                tag: POINT_TAG_SCREEN,
+                value: GhosttyPointValue {
+                    coordinate: GhosttyPointCoordinate { x: 0, y: screen_y },
+                },
+            };
+            let mut grid_ref = GhosttyGridRef {
+                size: std::mem::size_of::<GhosttyGridRef>(),
+                node: std::ptr::null_mut(),
+                x: 0,
+                y: 0,
+            };
+            if ghostty_terminal_grid_ref(self.terminal, point, &mut grid_ref) != GHOSTTY_SUCCESS {
+                return false;
+            }
+            let mut row: GhosttyRow = 0;
+            if ghostty_grid_ref_row(&grid_ref, &mut row) != GHOSTTY_SUCCESS {
+                return false;
+            }
+            let mut wrap = false;
+            let r = ghostty_row_get(row, ROW_DATA_WRAP_CONTINUATION, &mut wrap as *mut bool as *mut c_void);
+            r == GHOSTTY_SUCCESS && wrap
+        }
+    }
+
+    /// 列区间文本（外部行；逐格拼接，空格 " "，占位/越界 ""）。
+    fn text(&self, external_row: i32, start_col: u32, end_col: u32) -> String {
+        let Some(screen_y) = self.screen_y_for_external(external_row) else {
+            return String::new();
+        };
+        let cols = self.cols;
+        let mut out = String::new();
+        for col in (start_col.min(cols as u32))..(end_col.min(cols as u32)) {
+            if let Some(text) = self.cell_graphemes(col as u16, screen_y) {
+                out.push_str(&text);
+            }
+        }
+        out
+    }
+
+    /// 单行逐格文本 + 该行续行标志（转录/取词共用）。
+    fn row_text(&self, screen_y: u32) -> (String, bool) {
+        let cols = self.cols;
+        let mut out = String::new();
+        for col in 0..cols {
+            if let Some(text) = self.cell_graphemes(col, screen_y) {
+                out.push_str(&text);
+            }
+        }
+        (out, self.row_wrap_continuation(screen_y))
+    }
+
+    /// 去掉行尾空格/空占位（宽字符占位格为 ""，不参与计数）。
+    fn trim_row_trailing(text: &str) -> &str {
+        let mut end = text.len();
+        while end > 0 {
+            let ch = text[..end].chars().next_back().unwrap();
+            if ch == ' ' {
+                end -= ch.len_utf8();
+            } else {
+                break;
+            }
+        }
+        &text[..end]
+    }
+
+    /// 工单 31：单词列边界（同行展开；空格/空/占位为边界）。
+    fn word_bounds_at(&self, column: u32, external_row: i32) -> Option<(u32, u32)> {
+        let screen_y = self.screen_y_for_external(external_row)?;
+        let cols = self.cols;
+        if column >= cols as u32 {
+            return None;
+        }
+        let is_boundary = |c: u32| -> bool {
+            if c >= cols as u32 {
+                return true;
+            }
+            let boundary = match self.cell_graphemes(c as u16, screen_y) {
+                None => true,
+                Some(ref t) => t.is_empty() || t == " ",
+            };
+            boundary
+        };
+        if is_boundary(column) {
+            return None;
+        }
+        let mut start = column;
+        let mut end = column;
+        while start > 0 && !is_boundary(start - 1) {
+            start -= 1;
+        }
+        while end < cols as u32 && !is_boundary(end) {
+            end += 1;
+        }
+        Some((start, end))
+    }
+
+    /// 工单 31：取词（软换行整行语义，与旧 TerminalBuffer#getWordAtLocation 对齐）。
+    fn word_at(&self, column: u32, external_row: i32) -> String {
+        let Some(screen_y) = self.screen_y_for_external(external_row) else {
+            return String::new();
+        };
+        let cols = self.cols as u32;
+        if column >= cols {
+            return String::new();
+        }
+        let rows_total = self.total_rows();
+        // 软换行整行范围 [y1, y2]：行 r 与 r+1 之间无换行 ⇔ wrap(r+1) || 行 r 填满宽度。
+        // 行信息按需惰性读取（tap 查询避免全屏扫描）。
+        let row_fills = |y: u32| -> bool {
+            let (text, _) = self.row_text(y);
+            text.chars().count() >= cols as usize
+        };
+        let joins_above = |r: u32| -> bool {
+            if r == 0 {
+                return false;
+            }
+            self.row_wrap_continuation(r) || row_fills(r - 1)
+        };
+        let mut y1 = screen_y;
+        while y1 > 0 && joins_above(y1) {
+            y1 -= 1;
+        }
+        let mut y2 = screen_y;
+        while y2 + 1 < rows_total && joins_above(y2 + 1) {
+            y2 += 1;
+        }
+        // 整行文本拼接（行内去尾空白；软换行接续行保留尾空格语义从简）。
+        let mut joined = String::new();
+        for y in y1..=y2 {
+            let (text, _) = self.row_text(y);
+            joined.push_str(Self::trim_row_trailing(&text));
+        }
+        if joined.is_empty() {
+            return String::new();
+        }
+        // 列偏移：前面各整行实际文本长度 + 当前列（从简；越界即无词）。
+        let mut offset = 0usize;
+        for y in y1..screen_y {
+            let (text, _) = self.row_text(y);
+            offset += Self::trim_row_trailing(&text).len();
+        }
+        offset += column as usize;
+        if offset >= joined.len() {
+            return String::new();
+        }
+        let bytes = joined.as_bytes();
+        let mut word_start = offset;
+        while word_start > 0 && bytes[word_start - 1] != b' ' {
+            word_start -= 1;
+        }
+        let mut word_end = offset;
+        while word_end < bytes.len() && bytes[word_end] != b' ' {
+            word_end += 1;
+        }
+        if word_start == word_end {
+            return String::new();
+        }
+        joined[word_start..word_end].to_string()
+    }
+
+    /// 工单 31：完整转录文本（活动屏 + 历史）。
+    fn transcript_text(&self, lines_joined: bool, trim: bool) -> String {
+        let rows_total = self.total_rows();
+        let mut wraps = vec![false; rows_total as usize];
+        let mut fills = vec![false; rows_total as usize];
+        for y in 0..rows_total {
+            let (text, wrap) = self.row_text(y);
+            wraps[y as usize] = wrap;
+            fills[y as usize] = text.chars().count() >= self.cols as usize;
+        }
+        let mut out = String::new();
+        for y in 0..rows_total {
+            let (text, wrap) = self.row_text(y);
+            // 旧语义：软换行行保留尾空格；普通行去尾空白。
+            let row_text = if wrap {
+                text.as_str()
+            } else {
+                Self::trim_row_trailing(&text)
+            };
+            out.push_str(row_text);
+            let last = y + 1 >= rows_total;
+            if !last {
+                let no_newline = wraps[(y + 1) as usize] || fills[y as usize];
+                let append_newline = if lines_joined {
+                    !no_newline
+                } else {
+                    true
+                };
+                if append_newline {
+                    out.push('\n');
+                }
+            }
+        }
+        if trim {
+            out.trim().to_string()
+        } else {
+            out
+        }
     }
 
     /// 工单 30：设置光标闪烁相位（true = 可见相位）。
@@ -3934,6 +4235,27 @@ impl RendererCore {
                 }
                 RenderCommand::ModeBracketedPaste(tx) => {
                     let _ = tx.send(self.mode_bracketed_paste());
+                }
+                RenderCommand::ModeMouseSgr(tx) => {
+                    let _ = tx.send(self.mode_mouse_sgr());
+                }
+                RenderCommand::ModeMouseButtonEvent(tx) => {
+                    let _ = tx.send(self.mode_mouse_button_event());
+                }
+                RenderCommand::ScrollbackRows(tx) => {
+                    let _ = tx.send(self.scrollback_rows());
+                }
+                RenderCommand::Text(row, start, end, tx) => {
+                    let _ = tx.send(self.text(row, start, end));
+                }
+                RenderCommand::WordBoundsAt(column, row, tx) => {
+                    let _ = tx.send(self.word_bounds_at(column, row));
+                }
+                RenderCommand::WordAt(column, row, tx) => {
+                    let _ = tx.send(self.word_at(column, row));
+                }
+                RenderCommand::TranscriptText(joined, trim, tx) => {
+                    let _ = tx.send(self.transcript_text(joined, trim));
                 }
                 RenderCommand::CursorBlinkState(visible) => {
                     self.set_cursor_blink_phase(visible);
@@ -4516,6 +4838,76 @@ impl Renderer {
     /// 工单 30：推送光标闪烁相位（true = 可见相位；渲染层与核心光标可见性 AND）。
     pub fn set_cursor_blink_state(&self, visible: bool) {
         self.send(RenderCommand::CursorBlinkState(visible));
+    }
+
+    /// 工单 31：当前 mouse 是否 SGR 格式（DECSET 1006）。
+    pub fn mode_mouse_sgr(&self) -> bool {
+        let (tx, rx) = std::sync::mpsc::channel();
+        if self.send(RenderCommand::ModeMouseSgr(tx)) {
+            rx.recv().unwrap_or(false)
+        } else {
+            false
+        }
+    }
+
+    /// 工单 31：当前 mouse 是否 button-event（1002）或 any-event（1003）。
+    pub fn mode_mouse_button_event(&self) -> bool {
+        let (tx, rx) = std::sync::mpsc::channel();
+        if self.send(RenderCommand::ModeMouseButtonEvent(tx)) {
+            rx.recv().unwrap_or(false)
+        } else {
+            false
+        }
+    }
+
+    /// 工单 31：当前可向上回看的历史行数（视口之外）。
+    pub fn scrollback_rows(&self) -> u32 {
+        let (tx, rx) = std::sync::mpsc::channel();
+        if self.send(RenderCommand::ScrollbackRows(tx)) {
+            rx.recv().unwrap_or(0)
+        } else {
+            0
+        }
+    }
+
+    /// 工单 31：外部行列区间文本（0 = 活动屏顶，负 = 历史）。
+    pub fn text(&self, row: i32, start_col: u32, end_col: u32) -> String {
+        let (tx, rx) = std::sync::mpsc::channel();
+        if self.send(RenderCommand::Text(row, start_col, end_col, tx)) {
+            rx.recv().unwrap_or_default()
+        } else {
+            String::new()
+        }
+    }
+
+    /// 工单 31：单词列边界（同行展开；无词返回 None）。
+    pub fn word_bounds_at(&self, column: u32, external_row: i32) -> Option<(u32, u32)> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        if self.send(RenderCommand::WordBoundsAt(column, external_row, tx)) {
+            rx.recv().unwrap_or(None)
+        } else {
+            None
+        }
+    }
+
+    /// 工单 31：取词（软换行整行语义）。
+    pub fn word_at(&self, column: u32, external_row: i32) -> String {
+        let (tx, rx) = std::sync::mpsc::channel();
+        if self.send(RenderCommand::WordAt(column, external_row, tx)) {
+            rx.recv().unwrap_or_default()
+        } else {
+            String::new()
+        }
+    }
+
+    /// 工单 31：完整转录文本。
+    pub fn transcript_text(&self, lines_joined: bool, trim: bool) -> String {
+        let (tx, rx) = std::sync::mpsc::channel();
+        if self.send(RenderCommand::TranscriptText(lines_joined, trim, tx)) {
+            rx.recv().unwrap_or_default()
+        } else {
+            String::new()
+        }
     }
 
     pub fn attach(&self, window: *mut c_void, width_px: u32, height_px: u32) -> Result<(), String> {

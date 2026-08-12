@@ -14,6 +14,8 @@ pub type GhosttyTerminal = *mut c_void;
 pub type GhosttyRenderState = *mut c_void;
 pub type GhosttyRenderStateRowIterator = *mut c_void;
 pub type GhosttyRenderStateRowCells = *mut c_void;
+/** screen.h：typedef uint64_t GhosttyRow。 */
+pub type GhosttyRow = u64;
 
 // GhosttyTerminalData（terminal_get 用）
 pub const TERMINAL_DATA_SCROLLBAR: i32 = 9;
@@ -47,6 +49,12 @@ pub const GHOSTTY_MODE_ALT_SCREEN: GhosttyMode = 1047;
 pub const GHOSTTY_MODE_ALT_SCREEN_SAVE: GhosttyMode = 1049;
 /** Bracketed paste（DECSET 2004）。 */
 pub const GHOSTTY_MODE_BRACKETED_PASTE: GhosttyMode = 2004;
+/** Button-event mouse tracking（DECSET 1002）。 */
+pub const GHOSTTY_MODE_BUTTON_MOUSE: GhosttyMode = 1002;
+/** Any-event mouse tracking（DECSET 1003）。 */
+pub const GHOSTTY_MODE_ANY_MOUSE: GhosttyMode = 1003;
+/** SGR mouse format（DECSET 1006）。 */
+pub const GHOSTTY_MODE_SGR_MOUSE: GhosttyMode = 1006;
 
 /** 借出字节串（terminal_get GHOSTTY_TERMINAL_DATA_TITLE 输出）。 */
 #[repr(C)]
@@ -209,6 +217,48 @@ pub const CELL_WIDE_WIDE: i32 = 1;
 pub const CELL_WIDE_SPACER_TAIL: i32 = 2;
 pub const CELL_WIDE_SPACER_HEAD: i32 = 3;
 
+// GhosttyPointTag（point.h）
+pub const POINT_TAG_ACTIVE: i32 = 0;
+pub const POINT_TAG_VIEWPORT: i32 = 1;
+/** 全屏坐标（含滚动历史；y 0 = 历史顶，活动屏顶 = scrollback_rows）。 */
+pub const POINT_TAG_SCREEN: i32 = 2;
+pub const POINT_TAG_HISTORY: i32 = 3;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct GhosttyPointCoordinate {
+    pub x: u16,
+    pub y: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub union GhosttyPointValue {
+    pub coordinate: GhosttyPointCoordinate,
+    pub _padding: [u64; 2],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct GhosttyPoint {
+    pub tag: i32,
+    pub value: GhosttyPointValue,
+}
+
+// GhosttyGridRef（grid_ref.h：sized struct，size 须设 sizeof）
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct GhosttyGridRef {
+    pub size: usize,
+    pub node: *mut c_void,
+    pub x: u16,
+    pub y: u16,
+}
+
+// GhosttyRowData（screen.h）
+/** 当前行是否为软换行的续行（旧 TerminalBuffer mLineWrap 同义）。 */
+pub const ROW_DATA_WRAP_CONTINUATION: i32 = 2;
+
 // GhosttySgrUnderline
 pub const SGR_UNDERLINE_NONE: i32 = 0;
 
@@ -251,6 +301,30 @@ extern "C" {
     );
     pub fn ghostty_terminal_get(
         terminal: GhosttyTerminal,
+        data: i32,
+        out: *mut c_void,
+    ) -> GhosttyResult;
+    /** 解析网格位置为（未跟踪）格引用；借用有效至下一次终端变更。 */
+    pub fn ghostty_terminal_grid_ref(
+        terminal: GhosttyTerminal,
+        point: GhosttyPoint,
+        out_ref: *mut GhosttyGridRef,
+    ) -> GhosttyResult;
+
+    /** 格引用的完整字素簇码点（两段式：先问长度，再取数据）。 */
+    pub fn ghostty_grid_ref_graphemes(
+        ref_: *const GhosttyGridRef,
+        buf: *mut u32,
+        buf_len: usize,
+        out_len: *mut usize,
+    ) -> GhosttyResult;
+    /** 格引用所在行句柄（screen.h GhosttyRow）。 */
+    pub fn ghostty_grid_ref_row(
+        ref_: *const GhosttyGridRef,
+        out_row: *mut GhosttyRow,
+    ) -> GhosttyResult;
+    pub fn ghostty_row_get(
+        row: GhosttyRow,
         data: i32,
         out: *mut c_void,
     ) -> GhosttyResult;

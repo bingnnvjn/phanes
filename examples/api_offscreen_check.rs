@@ -270,6 +270,91 @@ fn mailbox_checks() -> bool {
         &mut all_ok,
     );
 
+    // 工单 31：内容/几何缝能力（旧模拟器删除后由核心承担）。
+    renderer.write(
+        "l0\r\nl1\r\nl2\r\nl3\r\nl4\r\nl5 hello world\r\nl6\r\nl7\r\nl8\r\nl9\r\nl10\r\nl11\r\nl12\r\nl13\r\nl14\r\n"
+            .as_bytes(),
+    );
+    let scrollback = renderer.scrollback_rows();
+    println!("scrollback_rows={scrollback}");
+    print_case(
+        scrollback == 9,
+        "content: 18 行输出在 10 行屏上留 9 行历史（含当前空行，与旧语义一致）",
+        &mut all_ok,
+    );
+    print_case(
+        renderer.text(0, 0, 2) == "l6",
+        "content: 外部行 0 = 活动屏顶行 l6",
+        &mut all_ok,
+    );
+    print_case(
+        renderer.text(-9, 0, 2) == "第",
+        "content: 外部行 -9 = 历史顶（最早输出）",
+        &mut all_ok,
+    );
+    print_case(
+        renderer.text(-10, 0, 2).is_empty(),
+        "content: 越界历史行返回空",
+        &mut all_ok,
+    );
+    print_case(
+        renderer.text(-1, 9, 14) == "world",
+        "content: 活动屏行内列区间文本",
+        &mut all_ok,
+    );
+    print_case(
+        renderer.word_bounds_at(10, -1) == Some((9, 14)),
+        "word: 活动屏单词列边界",
+        &mut all_ok,
+    );
+    print_case(
+        renderer.word_at(10, -1) == "world",
+        "word: 活动屏取词",
+        &mut all_ok,
+    );
+    print_case(
+        renderer.word_bounds_at(5, -1) == Some((3, 8)),
+        "word: 活动屏 hello 边界",
+        &mut all_ok,
+    );
+    print_case(
+        renderer.word_bounds_at(8, -1).is_none(),
+        "word: 空格上无单词",
+        &mut all_ok,
+    );
+    let transcript = renderer.transcript_text(false, false);
+    println!("transcript={transcript:?}");
+    print_case(
+        transcript.starts_with("第一行\nline-two\n🚀 emoji 中文\nl0\nl1\nl2\nl3\nl4\nl5 hello world\nl6")
+            && transcript.ends_with("l14\n"),
+        "transcript: 全量转录按行连接",
+        &mut all_ok,
+    );
+    print_case(
+        renderer.transcript_text(true, false) == transcript,
+        "transcript: linesJoined 无软换行时与逐行一致",
+        &mut all_ok,
+    );
+    print_case(
+        renderer.transcript_text(false, true) == transcript.trim(),
+        "transcript: trim 去首尾空白",
+        &mut all_ok,
+    );
+
+    // 工单 31：mouse 协议模式（SGR 1006 / button-event 1002）。
+    renderer.write("\u{1b}[?1006h\u{1b}[?1002h".as_bytes());
+    print_case(
+        renderer.mode_mouse_sgr() && renderer.mode_mouse_button_event(),
+        "mouse: 1006h/1002h 开启 SGR 与 button-event",
+        &mut all_ok,
+    );
+    renderer.write("\u{1b}[?1006l\u{1b}[?1002l".as_bytes());
+    print_case(
+        !renderer.mode_mouse_sgr() && !renderer.mode_mouse_button_event(),
+        "mouse: 1006l/1002l 关闭",
+        &mut all_ok,
+    );
+
     let info = renderer.info();
     print_case(
         info.contains("title=") && info.contains("mode_alt_screen="),

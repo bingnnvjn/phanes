@@ -5,7 +5,7 @@ use jni::Env;
 use jni::EnvUnowned;
 use jni::errors::LogErrorAndDefault;
 use jni::objects::{JByteArray, JClass, JIntArray, JObject, JString};
-use jni::sys::{jboolean, jint, jlong, jobject, jstring, JNI_FALSE, JNI_TRUE};
+use jni::sys::{jboolean, jint, jintArray, jlong, jobject, jstring, JNI_FALSE, JNI_TRUE};
 use std::ffi::{CString, c_char, c_void};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -353,6 +353,114 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererSetCursorBlinkS
     visible: jboolean,
 ) {
     with_renderer(handle, |renderer| renderer.set_cursor_blink_state(visible));
+}
+
+/// 工单 31：当前 mouse 是否 SGR 格式（DECSET 1006）。
+#[no_mangle]
+pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetModeMouseSgr(
+    _env: EnvUnowned,
+    _class: JClass,
+    handle: jlong,
+) -> jboolean {
+    with_renderer(handle, |renderer| renderer.mode_mouse_sgr()) as jboolean
+}
+
+/// 工单 31：当前 mouse 是否 button-event（1002）或 any-event（1003）。
+#[no_mangle]
+pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetModeMouseButtonEvent(
+    _env: EnvUnowned,
+    _class: JClass,
+    handle: jlong,
+) -> jboolean {
+    with_renderer(handle, |renderer| renderer.mode_mouse_button_event()) as jboolean
+}
+
+/// 工单 31：当前可向上回看的历史行数。
+#[no_mangle]
+pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetScrollbackRows(
+    _env: EnvUnowned,
+    _class: JClass,
+    handle: jlong,
+) -> jint {
+    with_renderer(handle, |renderer| renderer.scrollback_rows() as jint)
+}
+
+/// 工单 31：外部行列区间文本（0 = 活动屏顶，负 = 历史）。
+#[no_mangle]
+pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetText(
+    mut env: EnvUnowned,
+    _class: JClass,
+    handle: jlong,
+    row: jint,
+    start_col: jint,
+    end_col: jint,
+) -> jstring {
+    let text = with_renderer(handle, |renderer| {
+        renderer.text(row, start_col.max(0) as u32, end_col.max(0) as u32)
+    });
+    with_jni_env(env, |env| {
+        let string = env.new_string(text)?;
+        Ok(string.into_raw())
+    })
+}
+
+/// 工单 31：单词列边界 {start, end}（无词返回 null）。
+#[no_mangle]
+pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetWordBoundsAt(
+    mut env: EnvUnowned,
+    _class: JClass,
+    handle: jlong,
+    column: jint,
+    row: jint,
+) -> jintArray {
+    let bounds = with_renderer(handle, |renderer| {
+        renderer.word_bounds_at(column.max(0) as u32, row)
+    });
+    match bounds {
+        Some((start, end)) => with_jni_env(env, |env| {
+            let array = env.new_int_array(2)?;
+            let values = [start as jint, end as jint];
+            env.set_int_array_region(&array, 0, &values)?;
+            Ok(array.into_raw())
+        }),
+        None => std::ptr::null_mut(),
+    }
+}
+
+/// 工单 31：取词（软换行整行语义；无词返回空串）。
+#[no_mangle]
+pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetWordAt(
+    mut env: EnvUnowned,
+    _class: JClass,
+    handle: jlong,
+    column: jint,
+    row: jint,
+) -> jstring {
+    let word = with_renderer(handle, |renderer| {
+        renderer.word_at(column.max(0) as u32, row)
+    });
+    with_jni_env(env, |env| {
+        let string = env.new_string(word)?;
+        Ok(string.into_raw())
+    })
+}
+
+/// 工单 31：完整转录文本。
+#[no_mangle]
+pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetTranscriptText(
+    mut env: EnvUnowned,
+    _class: JClass,
+    handle: jlong,
+    lines_joined: jboolean,
+    trim: jboolean,
+) -> jstring {
+    let text = with_renderer(handle, |renderer| {
+        renderer.transcript_text(lines_joined == JNI_TRUE, trim == JNI_TRUE)
+    });
+    with_jni_env(env, |env| {
+        let string = env.new_string(text)?;
+        Ok(string.into_raw())
+    })
 }
 
 #[no_mangle]
