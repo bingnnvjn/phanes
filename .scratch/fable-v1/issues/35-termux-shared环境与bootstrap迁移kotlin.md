@@ -92,3 +92,11 @@ Status: 进行中
 ### 当前结论与后续影响
 
 工单 35 的 Java→Kotlin 行为等价迁移、构建和 apt-android-7 产物核验已完成；状态继续保持“进行中”，等待 app 单测基线问题处置及 apt-android-5/真机验证后再改为“待验收”或“已完成”。工单 40 可继续依赖本工单提供的 Kotlin bootstrap/环境快照与 shell 入口，但不得假设 app Robolectric 基线或真机 bootstrap 已验收。
+
+2026-08-13 Robolectric 基线修复：
+
+- 将 app 测试依赖从 Robolectric 4.8.1 升级到 4.16.1，解决旧版 ASM 无法读取 JDK 25 产生的 class major version 65。
+- `FileReceiverActivityTest` 使用 `@ConscryptMode(OFF)`，避免当前 Termux ARM64 测试环境加载不存在的 Conscrypt native library。
+- 修复 Kotlin `CrashHandler`：`Thread.getDefaultUncaughtExceptionHandler()` 允许为 null，转发时改为安全调用，保持 Java 原行为。
+- `./gradlew :app:testDebugUnitTest --rerun-tasks` → `BUILD SUCCESSFUL`；原 `FileReceiverActivityTest.testIsSharedTextAnUrl` 已通过。
+- 该项不改变 Android App 运行时的会话层、CoreAdapter 或渲染状态边界。
