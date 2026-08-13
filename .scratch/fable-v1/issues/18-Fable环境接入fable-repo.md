@@ -4,7 +4,7 @@
 
 **Blocked by:** fable-v1/17
 
-**Status:** 待开工
+**Status:** 进行中
 
 ## 验收清单
 
@@ -18,3 +18,5 @@
 ## Comments
 
 2026-08-09 建单（决策窗口 5：Fable 包安装源，ADR-0005；依赖 fable-v1/17 的仓库端产物）。
+
+2026-08-13 实施启动：工单 17 的 stable 仓库已核实为 `fable-repo-current`（2026-08-13 03:58 UTC 更新，310 个 deb）；接入脚本采用签名公钥指纹 `97291249E5BE2D529939F7F7A960D6CE7BA2DBED`，开始进行 Fable 真机侧接入与补装验收。
