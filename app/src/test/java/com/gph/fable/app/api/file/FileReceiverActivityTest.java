@@ -5,12 +5,14 @@ import com.gph.fable.app.api.file.FileReceiverActivity;
 import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.robolectric.annotation.ConscryptMode;
 import org.robolectric.RobolectricTestRunner;
 
 import java.util.ArrayList;
 import java.util.List;
 
 @RunWith(RobolectricTestRunner.class)
+@ConscryptMode(ConscryptMode.Mode.OFF)
 public class FileReceiverActivityTest {
 
     @Test

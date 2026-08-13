@@ -18,7 +18,7 @@ class CrashHandler private constructor(
     private val mIsDefaultHandler: Boolean
 ) : Thread.UncaughtExceptionHandler {
 
-    private val mDefaultUEH: Thread.UncaughtExceptionHandler = Thread.getDefaultUncaughtExceptionHandler()
+    private val mDefaultUEH: Thread.UncaughtExceptionHandler? = Thread.getDefaultUncaughtExceptionHandler()
 
     override fun uncaughtException(@NonNull thread: Thread, @NonNull throwable: Throwable) {
         Logger.logInfo(LOG_TAG, "uncaughtException() for " + thread + ": " + throwable.message)
@@ -26,7 +26,7 @@ class CrashHandler private constructor(
 
         // Don't stop the app if not on the main thread
         if (mIsDefaultHandler)
-            mDefaultUEH.uncaughtException(thread, throwable)
+            mDefaultUEH?.uncaughtException(thread, throwable)
     }
 
     fun logCrash(@NonNull thread: Thread, @NonNull throwable: Throwable) {
