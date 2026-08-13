@@ -14,6 +14,8 @@ awk -v s="$s_ms" -v e="$e_ms" '{ if ($1+0 >= s && $1+0 <= e) print }' "$LOG" > "
 echo "-- fable-render-debug.log 窗口事件（$1 → $2）--"
 echo "窗口日志行数: $(wc -l < "$W")"
 for ev in "surfaceDestroyed" "autoRecreateSurface" "scheduleAutoRecreate" "attachSession switch" "selection:copyModeChanged" "== Fable diagnostics start =="; do
-  c=$(grep -c "$ev" "$W")
+  # grep returns 1 when there is no match. Zero matches are valid here and
+  # must not abort verification when the caller inherits errexit.
+  c=$(grep -c "$ev" "$W" || true)
   echo "$ev: $c"
 done

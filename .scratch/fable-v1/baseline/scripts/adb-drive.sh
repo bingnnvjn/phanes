@@ -4,7 +4,8 @@
 # 前置：手机开「无线调试」，配对后 adb devices 可见设备。
 #
 # 用法:
-#   bash adb-drive.sh connect <port> <code>   # 配对并连接（无线调试对话框里的端口+配对码）
+#   bash adb-drive.sh connect <pair-host:port> <code> <connect-host:port>
+#                                              # 配对端口与“IP 地址和端口”的连接端口通常不同
 #   bash adb-drive.sh prep                     # 启动 App + 开 4 会话 + 起工作负载
 #   bash adb-drive.sh stress                   # 12 分钟自动化操作（4 周期）
 #   bash adb-drive.sh finish                   # 等 DONE + verify + 拉取全部结果
@@ -13,7 +14,7 @@
 set -u
 ADB=adb
 PKG=com.gph.fable
-ACT=.app.TermuxActivity
+ACT=.app.FableActivity
 BASE="${FABLE_BASELINE_BASE:-/storage/emulated/0/Download/fable-baseline-23}"
 NSESS="${FABLE_SESSIONS:-4}"          # 会话数：4 = 与 fable-v1/23 同口径；8 = 余量数据
 DONE_TARGET="${FABLE_DONE_TARGET:-$NSESS}"
@@ -218,14 +219,14 @@ cmd_status() {
 
 case "${1:-}" in
   connect)
-    adb pair "localhost:$2" "$3" && adb connect "localhost:$2"
+    adb pair "$2" "$3" && adb connect "$4"
     ;;
   prep) cmd_prep ;;
   stress) cmd_stress ;;
   finish) cmd_finish ;;
   status) cmd_status ;;
   *)
-    echo "用法: $0 connect <port> <code> | prep | stress | finish | status"
+    echo "用法: $0 connect <pair-host:port> <code> <connect-host:port> | prep | stress | finish | status"
     exit 1
     ;;
 esac

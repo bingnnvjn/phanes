@@ -3,6 +3,7 @@
 BASE="${FABLE_BASELINE_BASE:-/storage/emulated/0/Download/fable-baseline-23}"
 RUN="$BASE/current"
 if [ ! -d "$RUN" ]; then echo "没有 $RUN —— 先运行 start-run.sh"; exit 1; fi
+exec > >(tee -a "$RUN/run.log" "$RUN/verify.log") 2>&1
 echo "== verify $(date '+%F %T') ==" | tee -a "$RUN/run.log"
 pass=0
 fail=0

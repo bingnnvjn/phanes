@@ -24,7 +24,7 @@ close_ime() {
   i=$(SA dumpsys input_method 2>/dev/null | grep -oE "mInputShown=(true|false)" | head -1)
   [ "$i" = "mInputShown=true" ] && { SA input keyevent 4; sleep 1; }
 }
-front() { SA am start -n com.gph.fable/.app.TermuxActivity >/dev/null 2>&1; sleep 2; }
+front() { SA am start -n com.gph.fable/.app.FableActivity >/dev/null 2>&1; sleep 2; }
 
 # 实测缓存坐标（2026-08-11 真机核实；失败自动重定位）
 DRAWER_KEY="236 2200"
