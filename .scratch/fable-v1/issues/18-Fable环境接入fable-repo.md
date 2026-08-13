@@ -25,3 +25,5 @@
 `/storage/emulated/0/Download/fable-migration-2026-08-06/fable-repo-install.sh`。
 
 脚本行为：默认幂等执行 Phase B 本地 deb 安装（不重跑 restore，避免覆盖 Fable home）→公钥校验→停用官方源→启用 `[signed-by=...]` 的固定 stable 源→`apt update`→安装首批 21 个包→核验 git/node/java/rustc。显式 `--restore` 才会重跑 restore。
+
+2026-08-13 真机反馈：首次一键执行发现停用官方源的 `sed` 表达式错误；公钥、fable-repo 与 InRelease 验签均 PASS，但 `sources.list` 未注释，`apt update` 同时命中官方源，脚本正确阻止继续安装。已修复表达式并重新复制共享存储脚本；再次运行会幂等注释官方源后继续。
