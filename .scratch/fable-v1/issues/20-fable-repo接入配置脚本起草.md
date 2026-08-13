@@ -9,9 +9,9 @@ Status: 已完成
 ## 验收清单
 
 - [ ] 脚本含环境守卫（HOME 必须 /data/data/com.gph.fable/*），非 Fable 环境拒绝执行
-- [ ] 公钥获取：从工单 17 最新快照资产下载 fable-repo-pub.asc（含 URL 模式与校验和核对逻辑；GitHub 走镜像前缀）
+- [ ] 公钥获取：从工单 17 stable tag 资产下载 fable-repo-pub.asc（含 URL 模式与校验和核对逻辑；GitHub 走镜像前缀）
 - [ ] 公钥写入 Fable 信任区（trusted.gpg.d/fable-repo.gpg）
-- [ ] sources.list 配置：指向 fable-repo（releases/latest/download 扁平源）且带 `[signed-by=...]`，不用 trusted=yes；官方 termux-main 源停用
+- [ ] sources.list 配置：指向 fable-repo 固定 stable tag `releases/download/fable-repo-current/` 且带 `[signed-by=...]`，不用 trusted=yes；官方 termux-main 源停用
 - [ ] 幂等：重复运行不报错、不重复添加条目
 - [ ] 离屏验证：`bash -n` / shellcheck 通过；dry-run 断言输出符合预期（不实写 Fable 环境）
 - [ ] 说明文档：与工单 18 的衔接（17 快照就绪后真机执行 apt update/install 首批清单）
@@ -28,13 +28,13 @@ Status: 已完成
 验收逐项结果（离屏验证，未实写 Fable 环境）：
 
 1. 环境守卫 PASS：HOME 非 `/data/data/com.gph.fable/*` 拒绝执行（实测旧 Termux HOME 下 exit 1）。
-2. 公钥获取 PASS：按 `releases/latest/download/<name>` 下载 fable-repo-pub.asc + SHA256SUMS，
+2. 公钥获取 PASS：按 `releases/download/fable-repo-current/<name>` 下载 fable-repo-pub.asc + SHA256SUMS，
    双重校验一致（脚本锚定 sha256 `88c72816...` + SHA256SUMS 清单值）；篡改公钥实测在校验和
    环节即中止（exit 1，未写任何文件）；GitHub 走 ghfast.top / gh-proxy.com 镜像，直连兜底
    （本环境直连 25s 超时实测，ghfast 2.7s）。
 3. 信任区写入 PASS：dearmor 二进制 `trusted.gpg.d/fable-repo.gpg`（292B，chmod 644），
    指纹复验 = `97291249E5BE2D529939F7F7A960D6CE7BA2DBED`。
-4. sources 配置 PASS：`deb [signed-by=...] .../releases/latest/download/ ./`，无 trusted=yes；
+4. sources 配置 PASS：`deb [signed-by=...] .../releases/download/fable-repo-current/ ./`，无 trusted=yes；
    官方 termux-main 注释（sources.list 与 sources.list.d/*.list 都处理；首次运行备份
    `sources.list.fable-bak`，只备份不删除）。
 5. 幂等 PASS：同一临时前缀连跑两次，第二次 exit 0、备份不覆盖、fable-repo.list 单条目无重复。

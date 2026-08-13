@@ -4,17 +4,17 @@
 
 **Blocked by:** None
 
-**Status:** 进行中
+**Status:** 已完成
 
 ## 验收清单
 
-- [ ] 按需构建：workflow 输入包名列表即可构建指定包及其依赖闭包；actions/cache 增量生效（二次构建明显变快）
-- [ ] 发布产物完整：最新 Release 含全部 debs + Packages/Packages.gz + Release + InRelease
-- [ ] 签名有效：InRelease 用仓库公钥 `gpg --verify` 通过，Packages 与 debs 与签名一致
-- [ ] 索引可解析：离线自检（PASS/FAIL 断言）——apt 逻辑可列出首批清单包，版本与依赖解析正确，无 com.termux 前缀路径包
-- [ ] 首批清单 21 个全部构建成功并出现在最新快照（2026-08-09 定稿：git、gh、openssh、openssh-sftp-server、nodejs、npm、openjdk-17/-x、openjdk-21/-x、openjdk-25/-x、rust、rust-std-aarch64-linux-android、clang、runit、termux-services、wget、zip、python-pip、jq）
-- [ ] 追加构建：同一 workflow 再次输入新包名可增量构建并发布新快照（"按需补装"闭环成立）
-- [ ] 安全红线：GPG 私钥只存在于 Actions secret，不出现在仓库、日志、Release 或任何提交中；workflow permissions 最小化（沿用工单 06 安全清单）
+- [x] 按需构建：workflow 输入包名列表即可构建指定包及其依赖闭包；actions/cache 增量生效（二次构建明显变快）
+- [x] 发布产物完整：stable Release `fable-repo-current` 含 310 个 debs + Packages/Packages.gz + Release + InRelease；日期审计快照为 `fable-repo-2026.08.13-r3`
+- [x] 签名有效：InRelease/Release.gpg 用仓库公钥 `gpgv` 通过，Release/Packages 哈希一致
+- [x] 索引可解析：真实 apt 使用固定 stable URL 完成 update，21 个首批包均解析出候选版本，无 `com.termux` 前缀路径
+- [x] 首批清单 21 个全部构建成功并出现在 stable 快照（git、gh、openssh、openssh-sftp-server、nodejs、npm、openjdk-17/-x、openjdk-21/-x、openjdk-25/-x、rust、rust-std-aarch64-linux-android、clang、runit、termux-services、wget、zip、python-pip、jq）
+- [x] 追加构建：同一 workflow 输入 `openjdk-25 openjdk-25-x` 后保留既有快照并发布 stable tag，"按需补装"闭环成立
+- [x] 安全红线：GPG 私钥只存在于 Actions secret；仓库扫描、Release 资产与日志未发现私钥；workflow 顶层 permissions 为空，build/publish 分别最小授权
 
 ## Comments
 
@@ -29,3 +29,12 @@
 - 生产快照独立验证（本机 apt 2.8.1 + 真实公钥）：gpgv InRelease/Release.gpg 通过；SHA256SUMS 全 OK；apt update 0 退出；wget/zip/jq/openssl/ca-certificates-java 候选版本正确（含 epoch `1:3.6.3`）；`apt-get download` 拉取成功；dpkg-deb 扫描 0 处 com.termux 路径
 - 关键坑（实测定位）：① builder 容器 AppArmor 禁 apt 的 setgroups/setuid，容器内装不了 dpkg-dev/apt-utils → 组装/验签/apt 自检全部移到 runner 宿主；② GitHub Releases 会把资产名里的 `:`（epoch 版本）改名（实测 `openssl_1:3.6.3` → `openssl_1.3.6.3`）→ 组装时 deb 文件名净化到 `[A-Za-z0-9._-]`，apt 扁平仓库按 Packages 的 Filename 字段抓取（http 实测实证），语义不受影响；③ 新版 apt 的 signed-by 拒绝相对路径 → realpath 归一化；④ 本机 apt 2.8.1 的 file:// method 下载时本地文件名按包版本命名（曾误导判断），http 请求日志证明实际按 Filename 抓取
 - 首批 21 包全量构建已派发（run `31280231793`），监控中
+
+2026-08-13 完成记录：
+
+- 最终 workflow 提交：远端 `e95cf631`（通过 GitHub Contents API 推送；本地 Git HTTPS 推送遇 TLS EOF），核心改动另有本地提交 `dfe2192`。
+- 最终成功 run：`31660896153`，输入 `openjdk-25 openjdk-25-x`，build/publish 全部 success；job 硬超时已收紧为 345 分钟，低于 GitHub 6 小时上限 15 分钟。
+- 发布结果：日期审计快照 `fable-repo-2026.08.13-r3`，固定 stable tag `fable-repo-current`；stable 快照 310 个 deb、310 条 Packages 索引记录，包含首批 21 个目标包。
+- 程序化验收：`gpgv` 验证 InRelease/Release.gpg 通过（ed25519 指纹 `97291249E5BE2D529939F7F7A960D6CE7BA2DBED`）；Release SHA256 与 Packages/Packages.gz 一致；真实 apt 使用 `https://github.com/bingnnvjn/fable-bootstrap/releases/download/fable-repo-current/` 执行 `apt update` 通过，21 个候选版本全部 PASS；Filename 扫描无 `./` 或 `com.termux`。
+- 踩坑与解法：① `apr-util` 上游地址 404，后续缓存命中后恢复；② `libgnutls` 原地址被 GitHub runner 403，MIT 镜像超时，改用 Fossies 同 SHA256 镜像；③ 增量发布最初只上传新增闭包导致最新快照丢旧包，workflow 改为从 stable/最近 `fable-repo-*` 快照导入全部 deb 后再组装；④ 仓库同时发布 bootstrap Release，不能使用仓库级 `releases/latest/download/`，改为固定 `fable-repo-current` stable tag。
+- 结论写回：工单 18/20 必须使用 `releases/download/fable-repo-current/`；后续增量构建继续复用 stable tag，不得从仓库级 latest 或 bootstrap Release 取种子。

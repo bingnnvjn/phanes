@@ -13,12 +13,12 @@
 - 工单 06 已验证：termux-packages fork（`bingnnvjn/fable-bootstrap`）以 Fable 前缀重建 bootstrap 可行，Release 附 219 个 fable 前缀 .deb（`debs-aarch64.tar.gz`，119MB，可作包仓库种子）。
 - 旧环境当前已装 227 个包（2026-08-09 `dpkg -l` 核实；08-06 快照为 224）；08-06 归档只覆盖 107 个，缺口含 git / gh / openssh / nodejs / npm / openjdk-17·21·25 / rust / clang / runit / termux-services 等自举与日常必需包。
 - `fable-bootstrap` 目前只有一个手动触发的 bootstrap 全量构建 workflow（约 1h15m、无缓存），**没有**"按需构建指定包"能力，也**没有** apt 仓库发布机制（无 Packages 索引、无签名）。
-- GitHub Releases 单资产上限 2GB、URL 稳定（`releases/latest/download/<name>`）；GitHub Pages 有 1GB 站点/100MB 单文件软限制，openjdk 等大 deb 有越限风险。
+- GitHub Releases 单资产上限 2GB；用专用 stable tag `releases/download/fable-repo-current/<name>` 提供稳定 URL（避免同仓 bootstrap Release 改变仓库级 `latest`）；GitHub Pages 有 1GB 站点/100MB 单文件软限制，openjdk 等大 deb 有越限风险。
 
 ## 决策
 
 1. **Fable 自建包仓库（fable-repo）**：以 `com.gph.fable` 前缀构建的 apt 仓库，作为 Fable 环境唯一的装包/更新源；v1 阶段不做 termux-main 全量镜像或定期同步。
-2. **仓库形态 = 扁平 apt 仓库（flat repo），托管于 fable-bootstrap 的 GitHub Releases**：每次发布 = 全量快照（全部 .deb + `Packages`/`Packages.gz` + `Release`/`InRelease`）；Fable 侧 sources.list 指向 `https://github.com/bingnnvjn/fable-bootstrap/releases/latest/download/`（稳定 URL，`apt update` 自动取最新快照）。
+2. **仓库形态 = 扁平 apt 仓库（flat repo），托管于 fable-bootstrap 的 GitHub Releases**：每次发布 = 全量快照（全部 .deb + `Packages`/`Packages.gz` + `Release`/`InRelease`），另更新固定 stable Release tag `fable-repo-current`；Fable 侧 sources.list 指向 `https://github.com/bingnnvjn/fable-bootstrap/releases/download/fable-repo-current/`（稳定 URL，`apt update` 自动取最新快照）。
 3. **GPG 签名（私钥归 CI）**：自签 GPG，密钥类型 ed25519（实施时复验 gpgv 兼容，必要时回退 rsa4096）；**私钥只存 GitHub Actions secret，workflow 构建后自动 `gpg --clearsign` 生成 `InRelease`**（CI 自动签名，发布全自动）；公钥提交进仓库，先经工单 18 配置脚本分发到 Fable 的 `/data/data/com.gph.fable/files/usr/etc/apt/trusted.gpg.d/`，后续 bootstrap 重建时顺手内嵌；Fable 侧用 `[signed-by=...]`，不用 `trusted=yes`。私钥丢失/泄露：重新生成密钥、更新 secret、公钥随新快照重新分发、Fable 侧更新信任区（轮换/撤销流程记录于本 ADR）。
 4. **更新流 = 按需构建**：`fable-bootstrap` 新增 `build-package` workflow（`workflow_dispatch` 输入包名），用 termux-packages 原生 `build-package.sh` 构建指定包及其依赖闭包，成功并入仓库快照、重生成索引并发布新 Release；加 `actions/cache` 做增量加速。bootstrap 全量重建流程保留不动（后置）。
 5. **首批补齐范围（自举 + 日常，2026-08-09 刷新）**：git、gh、openssh、openssh-sftp-server、nodejs、npm、openjdk-17/-x、openjdk-21/-x、openjdk-25/-x、rust、rust-std-aarch64-linux-android、clang、runit、termux-services、wget、zip、python-pip、jq（21 个）；实施时以迁移时点 `dpkg -l` 刷新缺口。ffmpeg 全家、proot、redis 等其余缺口经同一机制按需补。
