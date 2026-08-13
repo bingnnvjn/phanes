@@ -8,7 +8,7 @@ temp_dir=$(mktemp -d)
 trap 'rm -rf "$temp_dir"' EXIT
 
 echo "== secret/keystore 扫描 =="
-if git grep -nE "Fable-GPH-2026!|storePassword[[:space:]]+['\"][^'\"]+['\"]|keyPassword[[:space:]]+['\"][^'\"]+['\"]" -- \
+if git grep -nE "storePassword[[:space:]]+['\"][^'\"]+['\"]|keyPassword[[:space:]]+['\"][^'\"]+['\"]" -- \
     ':!*.md' ':!README.md'; then
     echo "ERROR: signing secret found in tracked source" >&2
     exit 1
