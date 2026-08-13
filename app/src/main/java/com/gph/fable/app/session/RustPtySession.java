@@ -90,6 +90,7 @@ public final class RustPtySession implements FableSession {
                     mRunning = false;
                     mCallbacks.onExit(mExitStatus);
                 }
+                logDispatcherDiagnostics("native-session-closed");
                 // 会话已结束：释放 Rust 侧会话记录（幂等；kill 流程的
                 // sessionClose 已在 close() 先行，此处仅自然退出时执行）。
                 releaseHandle();
@@ -150,6 +151,19 @@ public final class RustPtySession implements FableSession {
         mExited = true;
         mRunning = false;
         mCallbacks.onExit(mExitStatus);
+        logDispatcherDiagnostics("caller-close");
+    }
+
+    /** 工单 44 真机验收：仅在会话终态输出一行 dispatcher 汇总。 */
+    private void logDispatcherDiagnostics(String reason) {
+        MainThreadEventDispatcher.Diagnostics d = mEventDispatcher.getDiagnostics();
+        Logger.logInfo(LOG_TAG, "dispatcher reason=" + reason
+            + " delivered_bytes=" + d.deliveredBytes
+            + " peak_queued_bytes=" + d.peakQueuedOutputBytes
+            + " drain_runnables=" + d.drainRunnableCount
+            + " merged_chunks=" + d.mergedOutputChunkCount
+            + " copied_input_bytes=" + d.copiedInputBytes
+            + " merge_alloc_bytes=" + d.mergeAllocationBytes);
     }
 
     /** 释放 Rust 侧会话记录（会话结束后调用；幂等）。 */

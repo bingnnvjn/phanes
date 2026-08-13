@@ -102,7 +102,7 @@ public class FableApplication extends Application {
         // Load the log level from shared preferences and set it to the {@link Logger.CURRENT_LOG_LEVEL}
         FableAppSharedPreferences preferences = FableAppSharedPreferences.build(context);
         if (preferences == null) return;
-        preferences.setLogLevel(null, preferences.getLogLevel());
+        preferences.setLogLevel(context, preferences.getLogLevel());
     }
 
 }

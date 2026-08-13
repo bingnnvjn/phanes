@@ -22,6 +22,26 @@ final class MainThreadEventDispatcher {
                      int exitCode, String message, String[] extra);
     }
 
+    static final class Diagnostics {
+        final long deliveredBytes;
+        final int peakQueuedOutputBytes;
+        final long drainRunnableCount;
+        final long mergedOutputChunkCount;
+        final long copiedInputBytes;
+        final long mergeAllocationBytes;
+
+        Diagnostics(long deliveredBytes, int peakQueuedOutputBytes, long drainRunnableCount,
+                    long mergedOutputChunkCount, long copiedInputBytes,
+                    long mergeAllocationBytes) {
+            this.deliveredBytes = deliveredBytes;
+            this.peakQueuedOutputBytes = peakQueuedOutputBytes;
+            this.drainRunnableCount = drainRunnableCount;
+            this.mergedOutputChunkCount = mergedOutputChunkCount;
+            this.copiedInputBytes = copiedInputBytes;
+            this.mergeAllocationBytes = mergeAllocationBytes;
+        }
+    }
+
     private static final class Event {
         final long sessionId;
         final String name;
@@ -56,6 +76,11 @@ final class MainThreadEventDispatcher {
     private long mGeneration;
     private int mQueuedOutputBytes;
     private long mDeliveredBytes;
+    private int mPeakQueuedOutputBytes;
+    private long mDrainRunnableCount;
+    private long mMergedOutputChunkCount;
+    private long mCopiedInputBytes;
+    private long mMergeAllocationBytes;
 
     MainThreadEventDispatcher(Scheduler scheduler, Consumer consumer) {
         mScheduler = scheduler;
@@ -85,6 +110,9 @@ final class MainThreadEventDispatcher {
             int chunkLen = Math.min(MAX_DRAIN_OUTPUT_BYTES, safeLen - offset);
             byte[] chunk = new byte[chunkLen];
             System.arraycopy(data, offset, chunk, 0, chunkLen);
+            synchronized (this) {
+                mCopiedInputBytes += chunkLen;
+            }
             if (!enqueueOne(sessionId, "output_chunk", timestampMs, chunk, -1, null, null)) {
                 return false;
             }
@@ -114,7 +142,10 @@ final class MainThreadEventDispatcher {
 
             mQueue.addLast(new Event(sessionId, event, timestampMs, payload,
                 exitCode, message, extra));
-            if ("output_chunk".equals(event)) mQueuedOutputBytes += payload.length;
+            if ("output_chunk".equals(event)) {
+                mQueuedOutputBytes += payload.length;
+                mPeakQueuedOutputBytes = Math.max(mPeakQueuedOutputBytes, mQueuedOutputBytes);
+            }
             return scheduleDrainLocked();
         }
     }
@@ -138,6 +169,9 @@ final class MainThreadEventDispatcher {
         System.arraycopy(payload, 0, merged, tail.data.length, payload.length);
         tail.data = merged;
         mQueuedOutputBytes += payload.length;
+        mPeakQueuedOutputBytes = Math.max(mPeakQueuedOutputBytes, mQueuedOutputBytes);
+        mMergedOutputChunkCount++;
+        mMergeAllocationBytes += merged.length;
         return true;
     }
 
@@ -145,7 +179,10 @@ final class MainThreadEventDispatcher {
         if (mDrainScheduled) return true;
         mDrainScheduled = true;
         final long scheduledGeneration = mGeneration;
-        if (mScheduler.post(() -> drain(scheduledGeneration))) return true;
+        if (mScheduler.post(() -> drain(scheduledGeneration))) {
+            mDrainRunnableCount++;
+            return true;
+        }
 
         mDrainScheduled = false;
         mClosed = true;
@@ -178,7 +215,10 @@ final class MainThreadEventDispatcher {
                     drainedOutputBytes += next.data.length;
                 }
                 if (!mClosed && drainedOutputBytes >= MAX_DRAIN_OUTPUT_BYTES && !mQueue.isEmpty()) {
-                    if (mScheduler.post(() -> drain(scheduledGeneration))) return;
+                    if (mScheduler.post(() -> drain(scheduledGeneration))) {
+                        mDrainRunnableCount++;
+                        return;
+                    }
 
                     mDrainScheduled = false;
                     mClosed = true;
@@ -194,6 +234,13 @@ final class MainThreadEventDispatcher {
     long getDeliveredBytesForTest() {
         synchronized (this) {
             return mDeliveredBytes;
+        }
+    }
+
+    Diagnostics getDiagnostics() {
+        synchronized (this) {
+            return new Diagnostics(mDeliveredBytes, mPeakQueuedOutputBytes, mDrainRunnableCount,
+                mMergedOutputChunkCount, mCopiedInputBytes, mMergeAllocationBytes);
         }
     }
 

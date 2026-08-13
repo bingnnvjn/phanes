@@ -121,6 +121,8 @@ public class MainThreadEventDispatcherTest {
         scheduler.runNext();
 
         assertEquals("首个 drain 达到预算后应让出主线程并投递下一轮", 2, scheduler.postCount);
+        assertEquals("诊断值应计入续投的 drain runnable", 2,
+            dispatcher.getDiagnostics().drainRunnableCount);
         assertEquals(MainThreadEventDispatcher.MAX_DRAIN_OUTPUT_BYTES,
             dispatcher.getDeliveredBytesForTest());
         scheduler.runAll();
@@ -160,5 +162,27 @@ public class MainThreadEventDispatcherTest {
         assertTrue(closeReturned.await(1, TimeUnit.SECONDS));
         drain.join(1000);
         closer.join(1000);
+    }
+
+    @Test
+    public void diagnosticsReportQueuePeakDrainsMergesAndAllocationProxy() {
+        RecordingScheduler scheduler = new RecordingScheduler();
+        MainThreadEventDispatcher dispatcher = new MainThreadEventDispatcher(
+            scheduler,
+            (sessionId, event, ts, data, exitCode, message, extra) -> {
+            });
+
+        dispatcher.enqueueOutput("alpha".getBytes(StandardCharsets.UTF_8), 5);
+        dispatcher.enqueueOutput("beta".getBytes(StandardCharsets.UTF_8), 4);
+        dispatcher.enqueueOutput("gamma".getBytes(StandardCharsets.UTF_8), 5);
+        scheduler.runAll();
+
+        MainThreadEventDispatcher.Diagnostics diagnostics = dispatcher.getDiagnostics();
+        assertEquals(14, diagnostics.deliveredBytes);
+        assertEquals(14, diagnostics.peakQueuedOutputBytes);
+        assertEquals(1, diagnostics.drainRunnableCount);
+        assertEquals(2, diagnostics.mergedOutputChunkCount);
+        assertEquals(14, diagnostics.copiedInputBytes);
+        assertEquals(23, diagnostics.mergeAllocationBytes);
     }
 }
