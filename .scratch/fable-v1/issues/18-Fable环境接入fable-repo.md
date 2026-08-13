@@ -29,3 +29,5 @@
 2026-08-13 真机反馈：首次一键执行发现停用官方源的 `sed` 表达式错误；公钥、fable-repo 与 InRelease 验签均 PASS，但 `sources.list` 未注释，`apt update` 同时命中官方源，脚本正确阻止继续安装。已修复表达式并重新复制共享存储脚本；再次运行会幂等注释官方源后继续。
 
 2026-08-13 真机反馈：官方源停用后，首批 `apt install` 正确显示 Phase B 遗留的 dpkg 未满足依赖；但脚本经 `tee` 管道掩盖了 apt 的失败退出码，错误地继续输出命令核验。已加 `pipefail`，统一改用 `apt-get`，并在首批安装前执行 `apt-get -f install -y` 修复遗留依赖；任一步失败都会立即退出并保留日志。
+
+2026-08-13 运行日志核查：`fable-repo-install-20260813-135105.log` 证明源配置、GPG 验签、索引下载都通过；失败仅在 GitHub Release 大 `.deb` 下载，49 分钟只取回 4.5MB，连接被远端关闭，重试期间一个临时重定向 URL 过期（`618 jwt:expired`）。脚本已改为完整 apt 输出仅写日志、终端只显示阶段/结论，并默认将 apt 源改到 `ghfast.top` 下载镜像（可用 `FABLE_REPO_MIRROR` 覆盖）；生成固定摘要 `fable-repo-install-summary-latest.md` 供 Agent 直接读取。
