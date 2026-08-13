@@ -1,0 +1,13 @@
+package com.gph.fable.shared.shell.command.result
+
+import com.gph.fable.shared.errors.Errno
+
+class ResultSenderErrno(type: String, code: Int, message: String) : Errno(type, code, message) {
+    companion object {
+        const val TYPE = "ResultSender Error"
+        @JvmField val ERROR_RESULT_FILE_BASENAME_NULL_OR_INVALID = Errno(TYPE, 100, "The result file basename \"%1\$s\" is null, empty or contains forward slashes \"/\".")
+        @JvmField val ERROR_RESULT_FILES_SUFFIX_INVALID = Errno(TYPE, 101, "The result files suffix \"%1\$s\" contains forward slashes \"/\".")
+        @JvmField val ERROR_FORMAT_RESULT_ERROR_FAILED_WITH_EXCEPTION = Errno(TYPE, 102, "Formatting result error failed.\nException: %1\$s")
+        @JvmField val ERROR_FORMAT_RESULT_OUTPUT_FAILED_WITH_EXCEPTION = Errno(TYPE, 103, "Formatting result output failed.\nException: %1\$s")
+    }
+}
