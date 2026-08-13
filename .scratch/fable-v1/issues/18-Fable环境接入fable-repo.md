@@ -20,3 +20,8 @@
 2026-08-09 建单（决策窗口 5：Fable 包安装源，ADR-0005；依赖 fable-v1/17 的仓库端产物）。
 
 2026-08-13 实施启动：工单 17 的 stable 仓库已核实为 `fable-repo-current`（2026-08-13 03:58 UTC 更新，310 个 deb）；接入脚本采用签名公钥指纹 `97291249E5BE2D529939F7F7A960D6CE7BA2DBED`，开始进行 Fable 真机侧接入与补装验收。
+
+2026-08-13 真机反馈：旧快照中的 `~/CODEX/Fable` 不含工单 20 之后新增的接入脚本，导致首次命令报“文件不存在”；`apt update` 仍命中官方 `termux-main`，直接安装 clang/nodejs/openjdk/rust 产生未满足依赖。已新增一键脚本 `fable-repo-install.sh`，同时复制到共享迁移目录：
+`/storage/emulated/0/Download/fable-migration-2026-08-06/fable-repo-install.sh`。
+
+脚本行为：默认幂等执行 Phase B 本地 deb 安装（不重跑 restore，避免覆盖 Fable home）→公钥校验→停用官方源→启用 `[signed-by=...]` 的固定 stable 源→`apt update`→安装首批 21 个包→核验 git/node/java/rustc。显式 `--restore` 才会重跑 restore。
