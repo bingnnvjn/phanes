@@ -117,7 +117,10 @@ fn with_jni_env<R: Default>(
     mut env: EnvUnowned,
     f: impl FnOnce(&mut Env) -> jni::errors::Result<R>,
 ) -> R {
-    env.with_env(f).resolve::<LogErrorAndDefault>()
+    catch_unwind(AssertUnwindSafe(|| {
+        env.with_env(f).resolve::<LogErrorAndDefault>()
+    }))
+    .unwrap_or_default()
 }
 
 fn jbytes_to_vec(env: &Env, data: JByteArray, len: jint) -> Vec<u8> {
@@ -616,6 +619,8 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererAttach(
         };
         let env_ptr = env.get_raw();
         let surface_raw = surface.into_raw();
+        // SAFETY: `env_ptr` 属于当前 JNI 线程，`surface_raw` 来自本次 Java 调用；
+        // Android API 返回一份独立 window 引用，后续由 attach 失败路径或 renderer 接管释放。
         let window = unsafe { ANativeWindow_fromSurface(env_ptr, surface_raw) };
         if window.is_null() {
             log_error("ANativeWindow_fromSurface returned null");
@@ -624,6 +629,7 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererAttach(
         if let Err(error) = renderer.attach(window, width_px.max(1) as u32, height_px.max(1) as u32)
         {
             // 命令未进入 mailbox 时 RendererCore 不会接管 window 引用。
+            // SAFETY: attach 返回错误表示 renderer 未接管该引用，本路径恰好释放一次。
             unsafe {
                 ANativeWindow_release(window);
             }
@@ -732,6 +738,8 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_ptySpawn(
         let value = shell.mutf8_chars(env)?;
         let shell_text = value.to_str().into_owned();
         let c_shell = CString::new(shell_text).map_err(|_| jni::errors::Error::NullPtr("shell"))?;
+        // SAFETY: `c_shell` is NUL-terminated and alive for the call; shim copies/owns
+        // the spawned PTY state behind returned opaque handle.
         Ok(unsafe { fable_pty_spawn(c_shell.as_ptr(), cols, rows) })
     })
 }
@@ -749,6 +757,8 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_ptyRead(
             return Ok(0);
         }
         let mut raw = vec![0i8; arr_len];
+        // SAFETY: `raw` has `arr_len` initialized bytes and remains mutable for call;
+        // shim writes no more than supplied length and returns count.
         let n = unsafe { fable_pty_read(handle, raw.as_mut_ptr() as *mut u8, arr_len) };
         if n > 0 {
             let _ = buf.set_region(env, 0, &raw[..n as usize]);
@@ -769,7 +779,11 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_ptyWrite(
     if bytes.is_empty() {
         return 0;
     }
-    unsafe { fable_pty_write(handle, bytes.as_ptr(), bytes.len()) }
+    catch_unwind(AssertUnwindSafe(|| {
+        // SAFETY: `bytes` 在本次 C 调用期间保持有效；shim 只读取给定长度。
+        unsafe { fable_pty_write(handle, bytes.as_ptr(), bytes.len()) }
+    }))
+    .unwrap_or(0)
 }
 
 #[no_mangle]
@@ -780,7 +794,11 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_ptyResize(
     cols: jint,
     rows: jint,
 ) {
-    unsafe { fable_pty_resize(handle, cols, rows) };
+    catch_unwind(AssertUnwindSafe(|| {
+        // SAFETY: PTY shim 以 opaque handle 处理列行整数；迟到/无效 handle 由 shim 安全忽略。
+        unsafe { fable_pty_resize(handle, cols, rows) };
+    }))
+    .ok();
 }
 
 #[no_mangle]
@@ -789,7 +807,11 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_ptyClose(
     _class: JClass,
     handle: jlong,
 ) {
-    unsafe { fable_pty_close(handle) };
+    catch_unwind(AssertUnwindSafe(|| {
+        // SAFETY: close 接受 opaque handle，重复关闭由 shim 保证幂等。
+        unsafe { fable_pty_close(handle) };
+    }))
+    .ok();
 }
 
 #[cfg(test)]
