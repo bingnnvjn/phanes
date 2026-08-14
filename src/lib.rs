@@ -1,3 +1,13 @@
+#![deny(unsafe_op_in_unsafe_fn)]
+#![deny(clippy::undocumented_unsafe_blocks)]
+#![deny(clippy::missing_safety_doc)]
+#![deny(rustdoc::broken_intra_doc_links)]
+#![deny(rustdoc::private_intra_doc_links)]
+#![deny(improper_ctypes)]
+#![deny(improper_ctypes_definitions)]
+#![deny(ffi_unwind_calls)]
+#![deny(clippy::todo, clippy::unimplemented, clippy::dbg_macro)]
+
 //! fable-session：会话层生产实现（工单 25）。
 //!
 //! 产出 `libfable-session.so`：
@@ -10,12 +20,12 @@
 //! termux-shared 环境逻辑（ADR-0008 决策 8）。
 
 pub mod event;
+mod jni;
+mod jni_handle;
 pub mod log;
 pub mod manager;
 pub mod session;
-mod jni;
-mod jni_handle;
 
-pub use event::{Event, EventKind, EventMeta, SessionId, now_ms};
+pub use event::{now_ms, Event, EventKind, EventMeta, SessionId};
 pub use manager::SessionManager;
 pub use session::{Session, SessionConfig, SessionInfo, SessionState};

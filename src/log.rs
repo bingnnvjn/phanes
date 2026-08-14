@@ -1,9 +1,9 @@
 //! 诊断日志订阅（JNI 边界项）：全局有界通道，Rust 侧 publish，
 //! Kotlin 经 `sessionSetLogCallback` 订阅（第一版只接诊断/日志，ADR-0008 决策 7）。
 
-use crate::event::SessionId;
 use crate::event::now_ms;
-use crossbeam_channel::{Receiver, Sender, bounded};
+use crate::event::SessionId;
+use crossbeam_channel::{bounded, Receiver, Sender};
 use std::sync::LazyLock;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

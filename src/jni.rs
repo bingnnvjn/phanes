@@ -7,13 +7,13 @@
 
 use jni::errors::LogErrorAndDefault;
 use jni::objects::{JByteArray, JClass, JObjectArray, JString};
-use jni::EnvUnowned;
 use jni::sys::{jint, jlong, jstring};
-use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
+use jni::EnvUnowned;
+use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use std::collections::HashMap;
 use std::io::Write;
-use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::LazyLock;
 use std::sync::{Arc, Mutex};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
@@ -25,6 +25,7 @@ struct Session {
     master: Box<dyn MasterPty>,
     child: Option<Box<dyn Child + Send + Sync>>,
     read_fd: i32,
+    read_guard: Arc<Mutex<()>>,
     writer: Box<dyn Write + Send>,
 }
 
@@ -58,10 +59,9 @@ fn env_vec(env: &mut jni::Env, arr: &JObjectArray<JString>) -> Vec<(String, Stri
             Ok(s) => s,
             Err(_) => continue,
         };
-        let Ok(kv) = env.get_string(&s) else {
+        let Ok(kv) = s.try_to_string(env) else {
             continue;
         };
-        let kv: String = kv.into();
         if let Some(eq) = kv.find('=') {
             let (k, v) = kv.split_at(eq);
             out.push((k.to_string(), v[1..].to_string()));
@@ -81,10 +81,10 @@ pub extern "system" fn Java_com_gph_fable_app_SessionProbe_ptySpawn(
     rows: jint,
 ) -> jlong {
     let shell_str: String = env
-        .with_env(|env| env.get_string(&shell).map(|s| s.into()))
+        .with_env(|env| shell.try_to_string(env))
         .resolve::<LogErrorAndDefault>();
     let cwd_str: String = env
-        .with_env(|env| env.get_string(&cwd).map(|s| s.into()))
+        .with_env(|env| cwd.try_to_string(env))
         .resolve::<LogErrorAndDefault>();
     let envs: Vec<(String, String)> = env
         .with_env(|env| Ok::<Vec<(String, String)>, jni::errors::Error>(env_vec(env, &env_arr)))
@@ -121,18 +121,19 @@ pub extern "system" fn Java_com_gph_fable_app_SessionProbe_ptySpawn(
             .as_raw_fd()
             .ok_or_else(|| anyhow::anyhow!("master pty 无 raw fd"))?;
         // dup 一份专供阻塞读；close 它即可解除 reader 阻塞（见模块注释）。
+        // SAFETY: `master_fd` is a live PTY descriptor owned by `pair.master`;
+        // `dup` creates an independent descriptor that this session owns.
         let read_fd = unsafe { libc::dup(master_fd) };
         if read_fd < 0 {
             let _ = child.kill();
-            anyhow::bail!(
-                "dup(master_fd) 失败: {}",
-                std::io::Error::last_os_error()
-            );
+            anyhow::bail!("dup(master_fd) 失败: {}", std::io::Error::last_os_error());
         }
         let writer = match pair.master.take_writer() {
             Ok(w) => w,
             Err(e) => {
                 let _ = child.kill();
+                // SAFETY: `read_fd` was returned by `dup` above and has not
+                // been transferred elsewhere after `take_writer` failed.
                 unsafe {
                     libc::close(read_fd);
                 }
@@ -146,11 +147,14 @@ pub extern "system" fn Java_com_gph_fable_app_SessionProbe_ptySpawn(
                 master: pair.master,
                 child: Some(child),
                 read_fd,
+                read_guard: Arc::new(Mutex::new(())),
                 writer,
             };
             map.insert(id, Arc::new(Mutex::new(session)));
         } else {
             let _ = child.kill();
+            // SAFETY: `read_fd` was returned by `dup` above and is owned by
+            // this failed session construction path.
             unsafe {
                 libc::close(read_fd);
             }
@@ -178,14 +182,20 @@ pub extern "system" fn Java_com_gph_fable_app_SessionProbe_ptyRead(
     let Some(session) = get_session(handle) else {
         return -1;
     };
-    let read_fd = match session.lock() {
-        Ok(s) => s.read_fd,
+    let (read_guard, read_fd) = match session.lock() {
+        Ok(s) => (s.read_guard.clone(), s.read_fd),
+        Err(_) => return -1,
+    };
+    let _read_guard = match read_guard.lock() {
+        Ok(g) => g,
         Err(_) => return -1,
     };
     if read_fd < 0 {
         return 0; // 已关闭
     }
     let mut data = [0u8; 4096];
+    // SAFETY: `read_fd` is a valid descriptor while the session is open;
+    // `data` is an initialized writable buffer of exactly `data.len()` bytes.
     let n = unsafe { libc::read(read_fd, data.as_mut_ptr() as *mut libc::c_void, data.len()) };
     if n < 0 {
         let err = std::io::Error::last_os_error();
@@ -200,7 +210,7 @@ pub extern "system" fn Java_com_gph_fable_app_SessionProbe_ptyRead(
     }
     let n = n as usize;
     _env.with_env(|env| {
-        let cap = buf.len(env).unwrap_or(0) as usize;
+        let cap = buf.len(env).unwrap_or(0);
         let take = n.min(cap);
         let i8data: Vec<i8> = data[..take].iter().map(|b| *b as i8).collect();
         buf.set_region(env, 0, &i8data).map(|_| take as jint)
@@ -218,7 +228,7 @@ pub extern "system" fn Java_com_gph_fable_app_SessionProbe_ptyWrite(
 ) -> jint {
     let bytes: Vec<u8> = env
         .with_env(|env| {
-            let arr_len = data.len(env).unwrap_or(0) as usize;
+            let arr_len = data.len(env).unwrap_or(0);
             let take = if len < 0 {
                 arr_len
             } else {
@@ -289,24 +299,29 @@ pub extern "system" fn Java_com_gph_fable_app_SessionProbe_ptyClose(
     let Some(session) = removed else {
         return;
     };
-    // 1) 先 close 读 fd：阻塞中的 reader 线程立刻返回 EIO/0 退出。
-    let read_fd = match session.lock() {
-        Ok(s) => s.read_fd,
-        Err(p) => p.into_inner().read_fd,
-    };
-    if read_fd >= 0 {
-        unsafe {
-            libc::close(read_fd);
+    // 1) kill child first; an in-flight PTY read then returns EIO/EOF.
+    let (child, read_guard) = match session.lock() {
+        Ok(mut s) => (s.child.take(), s.read_guard.clone()),
+        Err(poisoned) => {
+            let mut s = poisoned.into_inner();
+            (s.child.take(), s.read_guard.clone())
         }
+    };
+    if let Some(mut child) = child {
+        let _ = child.kill();
     }
-    // 2) 取锁 kill child；Session 随后随 Arc 全部释放而 drop（master/writer 关闭）。
+    let _read_guard = read_guard.lock().unwrap_or_else(|p| p.into_inner());
     let mut session = match session.lock() {
         Ok(s) => s,
         Err(poisoned) => poisoned.into_inner(),
     };
-    session.read_fd = -1;
-    if let Some(child) = session.child.as_mut() {
-        let _ = child.kill();
+    if session.read_fd >= 0 {
+        // SAFETY: the read guard excludes `ptyRead`; this descriptor is owned
+        // by the removed session and is closed exactly once.
+        unsafe {
+            libc::close(session.read_fd);
+        }
+        session.read_fd = -1;
     }
     drop(session);
 }

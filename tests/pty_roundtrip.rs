@@ -3,7 +3,7 @@
 //! spawn/read/write/resize/并行/长输出 行为验证。与 JNI 桥走同一套
 //! native_pty_system + CommandBuilder 路径。
 
-use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
+use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};

@@ -14,14 +14,14 @@ use crate::event::{Event, EventKind, SessionId};
 use crate::log::LogEntry;
 use crate::manager::SessionManager;
 use crate::session::SessionConfig;
+use crossbeam_channel::RecvTimeoutError;
 use jni::errors::LogErrorAndDefault;
 use jni::objects::{JByteArray, JClass, JObject, JObjectArray, JString};
-use jni::EnvUnowned;
-use jni::sys::{jint, jlong, jstring};
 use jni::signature::RuntimeMethodSignature;
 use jni::strings::JNIString;
+use jni::sys::{jint, jlong, jstring};
+use jni::EnvUnowned;
 use jni::{Env, JValue, JavaVM};
-use crossbeam_channel::RecvTimeoutError;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
@@ -70,10 +70,9 @@ fn env_vec(env: &mut Env, arr: &JObjectArray<JString>) -> Vec<(String, String)> 
             Ok(s) => s,
             Err(_) => continue,
         };
-        let Ok(kv) = env.get_string(&s) else {
+        let Ok(kv) = s.try_to_string(env) else {
             continue;
         };
-        let kv: String = kv.into();
         if let Some(eq) = kv.find('=') {
             let (k, v) = kv.split_at(eq);
             out.push((k.to_string(), v[1..].to_string()));
@@ -87,7 +86,7 @@ fn string_array(env: &mut Env, arr: &JObjectArray<JString>) -> jni::errors::Resu
     let len = arr.len(env)?;
     for i in 0..len {
         let s = arr.get_element(env, i)?;
-        out.push(env.get_string(&s).map(|s| s.into())?);
+        out.push(s.try_to_string(env)?);
     }
     Ok(out)
 }
@@ -99,12 +98,8 @@ fn build_extra<'env>(
     if extra.is_empty() {
         return Ok(None);
     }
-    let class = env.find_class(&JNIString::from("java/lang/String"))?;
-    let arr = env.new_object_array(
-        extra.len() as jni::sys::jsize,
-        &class,
-        &JObject::null(),
-    )?;
+    let class = env.find_class(JNIString::from("java/lang/String"))?;
+    let arr = env.new_object_array(extra.len() as jni::sys::jsize, &class, JObject::null())?;
     for (i, (k, v)) in extra.iter().enumerate() {
         let s = env.new_string(format!("{k}={v}"))?;
         arr.set_element(env, i, &s)?;
@@ -159,15 +154,20 @@ fn dispatch_event(
     Ok(())
 }
 
-/// 在 callbacks 锁保护内调用 Java：sessionClose/sessionSetEventCallback(null) 会先
-/// 取得同一把锁并撤销槽位，所以其返回后不会再有旧 callback 进入 Java。
+/// 先复制 callback 槽位再调用 Java，避免 Java 回调重入
+/// `sessionClose`/`sessionSetEventCallback` 时持锁死锁。关闭会撤销后续投递；
+/// 已经复制出的在途调用允许完成。
 fn dispatch_registered_event(
     env: &mut Env,
     session_id: SessionId,
     ev: &Event,
 ) -> jni::errors::Result<bool> {
-    let callbacks = EVENT_CALLBACKS.lock().unwrap_or_else(|p| p.into_inner());
-    let Some(slot) = callbacks.get(&session_id) else {
+    let slot = EVENT_CALLBACKS
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .get(&session_id)
+        .cloned();
+    let Some(slot) = slot else {
         return Ok(false);
     };
     dispatch_event(env, slot.callback.as_ref(), ev)?;
@@ -189,8 +189,7 @@ fn dispatch_log(
         JValue::Long(entry.timestamp_ms as jlong),
     ];
     let name = JNIString::from("onLog");
-    let sig =
-        RuntimeMethodSignature::from_str("(JILjava/lang/String;Ljava/lang/String;J)V")?;
+    let sig = RuntimeMethodSignature::from_str("(JILjava/lang/String;Ljava/lang/String;J)V")?;
     env.call_method(
         callback.as_obj(),
         name.as_ref(),
@@ -216,8 +215,7 @@ fn merge_output_batch(pending: &mut Option<Event>, event: Event) -> Option<Event
         current_bytes.extend_from_slice(incoming);
         None
     } else {
-        let previous = pending.replace(event);
-        previous
+        pending.replace(event)
     }
 }
 
@@ -225,9 +223,7 @@ fn merge_output_batch(pending: &mut Option<Event>, event: Event) -> Option<Event
 /// 回调槽被清空或收到 session_closed 后退出。
 fn spawn_event_dispatcher(session_id: SessionId, slot: CallbackSlot) {
     let Some(session) = MANAGER.get(session_id) else {
-        let _ = EVENT_CALLBACKS
-            .lock()
-            .map(|mut m| m.remove(&session_id));
+        let _ = EVENT_CALLBACKS.lock().map(|mut m| m.remove(&session_id));
         return;
     };
     let rx = session.subscribe();
@@ -293,14 +289,10 @@ fn spawn_event_dispatcher(session_id: SessionId, slot: CallbackSlot) {
                 }
                 Ok(())
             });
-            let _ = EVENT_CALLBACKS
-                .lock()
-                .map(|mut m| m.remove(&session_id));
+            let _ = EVENT_CALLBACKS.lock().map(|mut m| m.remove(&session_id));
         });
     if spawn.is_err() {
-        let _ = EVENT_CALLBACKS
-            .lock()
-            .map(|mut m| m.remove(&session_id));
+        let _ = EVENT_CALLBACKS.lock().map(|mut m| m.remove(&session_id));
     }
 }
 
@@ -319,10 +311,7 @@ fn spawn_log_dispatcher(vm: Arc<JavaVM>) {
                 loop {
                     match rx.recv_timeout(Duration::from_millis(250)) {
                         Ok(entry) => {
-                            let slot = LOG_CALLBACK
-                                .lock()
-                                .map(|g| g.clone())
-                                .unwrap_or(None);
+                            let slot = LOG_CALLBACK.lock().map(|g| g.clone()).unwrap_or(None);
                             if let Some(slot) = slot {
                                 env.with_local_frame(4, |env| {
                                     dispatch_log(env, slot.callback.as_ref(), &entry)
@@ -347,50 +336,6 @@ fn register_event_callback(session_id: SessionId, slot: CallbackSlot) {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::event::{EventMeta, now_ms};
-
-    fn output(bytes: &[u8]) -> Event {
-        Event {
-            kind: EventKind::OutputChunk,
-            session_id: 7,
-            timestamp_ms: now_ms(),
-            meta: EventMeta {
-                bytes: Some(bytes.to_vec()),
-                ..EventMeta::default()
-            },
-        }
-    }
-
-    #[test]
-    fn consecutive_output_chunks_coalesce_without_losing_order() {
-        let mut pending = None;
-        assert!(merge_output_batch(&mut pending, output(b"alpha")).is_none());
-        assert!(merge_output_batch(&mut pending, output(b"-beta")).is_none());
-        assert!(merge_output_batch(&mut pending, output(b"-gamma")).is_none());
-
-        let batch = pending.take().expect("应有合并后的输出批次");
-        assert_eq!(batch.kind, EventKind::OutputChunk);
-        assert_eq!(batch.meta.bytes.as_deref(), Some(b"alpha-beta-gamma".as_slice()));
-    }
-
-    #[test]
-    fn output_batch_flushes_before_exceeding_bound() {
-        let first = vec![b'a'; MAX_JNI_OUTPUT_BATCH_BYTES];
-        let mut pending = None;
-        assert!(merge_output_batch(&mut pending, output(&first)).is_none());
-
-        let flushed = merge_output_batch(&mut pending, output(b"b")).expect("满批后应先送旧批");
-        assert_eq!(
-            flushed.meta.bytes.as_ref().map(Vec::len),
-            Some(MAX_JNI_OUTPUT_BATCH_BYTES)
-        );
-        assert_eq!(pending.unwrap().meta.bytes.as_deref(), Some(b"b".as_slice()));
-    }
-}
-
 // ---------- SessionHandle JNI 导出 ----------
 
 #[no_mangle]
@@ -407,10 +352,10 @@ pub extern "system" fn Java_com_gph_fable_app_SessionHandle_sessionCreate(
 ) -> jlong {
     let (shell_str, args, envs, cwd_str, slot) = env
         .with_env(|env| {
-            let shell_str: String = env.get_string(&shell).map(|s| s.into())?;
+            let shell_str: String = shell.try_to_string(env)?;
             let args = string_array(env, &args_arr)?;
             let envs = env_vec(env, &env_arr);
-            let cwd_str: String = env.get_string(&cwd).map(|s| s.into())?;
+            let cwd_str: String = cwd.try_to_string(env)?;
             let slot = if callback.as_raw().is_null() {
                 None
             } else {
@@ -467,7 +412,7 @@ pub extern "system" fn Java_com_gph_fable_app_SessionHandle_sessionWrite(
 ) -> jint {
     let bytes: Vec<u8> = env
         .with_env(|env| {
-            let arr_len = data.len(env).unwrap_or(0) as usize;
+            let arr_len = data.len(env).unwrap_or(0);
             let take = if len < 0 {
                 arr_len
             } else {
@@ -513,7 +458,7 @@ pub extern "system" fn Java_com_gph_fable_app_SessionHandle_sessionRead(
         }
     };
     env.with_env(|env| {
-        let cap = buf.len(env).unwrap_or(0) as usize;
+        let cap = buf.len(env).unwrap_or(0);
         let take = n.min(cap);
         let i8data: Vec<i8> = local[..take].iter().map(|b| *b as i8).collect();
         buf.set_region(env, 0, &i8data).map(|_| take as jint)
@@ -561,30 +506,28 @@ pub extern "system" fn Java_com_gph_fable_app_SessionHandle_sessionSetEventCallb
     handle: jlong,
     callback: JObject,
 ) {
-    let result = env
-        .with_env(|env| {
-            if handle <= 0 {
-                return Ok::<_, jni::errors::Error>(());
-            }
-            if callback.as_raw().is_null() {
-                let _ = EVENT_CALLBACKS
-                    .lock()
-                    .map(|mut m| m.remove(&(handle as u64)));
-                return Ok(());
-            }
-            let vm = Arc::new(env.get_java_vm()?);
-            let cb = env.new_global_ref(&callback)?;
-            register_event_callback(
-                handle as u64,
-                CallbackSlot {
-                    vm,
-                    callback: Arc::new(cb),
-                },
-            );
-            Ok(())
-        })
-        .resolve::<LogErrorAndDefault>();
-    let _ = result;
+    env.with_env(|env| {
+        if handle <= 0 {
+            return Ok::<_, jni::errors::Error>(());
+        }
+        if callback.as_raw().is_null() {
+            let _ = EVENT_CALLBACKS
+                .lock()
+                .map(|mut m| m.remove(&(handle as u64)));
+            return Ok(());
+        }
+        let vm = Arc::new(env.get_java_vm()?);
+        let cb = env.new_global_ref(&callback)?;
+        register_event_callback(
+            handle as u64,
+            CallbackSlot {
+                vm,
+                callback: Arc::new(cb),
+            },
+        );
+        Ok(())
+    })
+    .resolve::<LogErrorAndDefault>();
 }
 
 #[no_mangle]
@@ -593,24 +536,22 @@ pub extern "system" fn Java_com_gph_fable_app_SessionHandle_sessionSetLogCallbac
     _class: JClass,
     callback: JObject,
 ) {
-    let result = env
-        .with_env(|env| {
-            if callback.as_raw().is_null() {
-                *LOG_CALLBACK.lock().unwrap_or_else(|p| p.into_inner()) = None;
-                return Ok::<_, jni::errors::Error>(());
-            }
-            let vm = Arc::new(env.get_java_vm()?);
-            let cb = env.new_global_ref(&callback)?;
-            let slot = CallbackSlot {
-                vm: vm.clone(),
-                callback: Arc::new(cb),
-            };
-            *LOG_CALLBACK.lock().unwrap_or_else(|p| p.into_inner()) = Some(slot);
-            spawn_log_dispatcher(vm);
-            Ok(())
-        })
-        .resolve::<LogErrorAndDefault>();
-    let _ = result;
+    env.with_env(|env| {
+        if callback.as_raw().is_null() {
+            *LOG_CALLBACK.lock().unwrap_or_else(|p| p.into_inner()) = None;
+            return Ok::<_, jni::errors::Error>(());
+        }
+        let vm = Arc::new(env.get_java_vm()?);
+        let cb = env.new_global_ref(&callback)?;
+        let slot = CallbackSlot {
+            vm: vm.clone(),
+            callback: Arc::new(cb),
+        };
+        *LOG_CALLBACK.lock().unwrap_or_else(|p| p.into_inner()) = Some(slot);
+        spawn_log_dispatcher(vm);
+        Ok(())
+    })
+    .resolve::<LogErrorAndDefault>();
 }
 
 #[no_mangle]
@@ -628,4 +569,54 @@ pub extern "system" fn Java_com_gph_fable_app_SessionHandle_sessionLastError(
         .unwrap_or_default();
     env.with_env(|env| env.new_string(&msg).map(|s| s.into_raw()))
         .resolve::<LogErrorAndDefault>()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::event::{now_ms, EventMeta};
+
+    fn output(bytes: &[u8]) -> Event {
+        Event {
+            kind: EventKind::OutputChunk,
+            session_id: 7,
+            timestamp_ms: now_ms(),
+            meta: EventMeta {
+                bytes: Some(bytes.to_vec()),
+                ..EventMeta::default()
+            },
+        }
+    }
+
+    #[test]
+    fn consecutive_output_chunks_coalesce_without_losing_order() {
+        let mut pending = None;
+        assert!(merge_output_batch(&mut pending, output(b"alpha")).is_none());
+        assert!(merge_output_batch(&mut pending, output(b"-beta")).is_none());
+        assert!(merge_output_batch(&mut pending, output(b"-gamma")).is_none());
+
+        let batch = pending.take().expect("应有合并后的输出批次");
+        assert_eq!(batch.kind, EventKind::OutputChunk);
+        assert_eq!(
+            batch.meta.bytes.as_deref(),
+            Some(b"alpha-beta-gamma".as_slice())
+        );
+    }
+
+    #[test]
+    fn output_batch_flushes_before_exceeding_bound() {
+        let first = vec![b'a'; MAX_JNI_OUTPUT_BATCH_BYTES];
+        let mut pending = None;
+        assert!(merge_output_batch(&mut pending, output(&first)).is_none());
+
+        let flushed = merge_output_batch(&mut pending, output(b"b")).expect("满批后应先送旧批");
+        assert_eq!(
+            flushed.meta.bytes.as_ref().map(Vec::len),
+            Some(MAX_JNI_OUTPUT_BATCH_BYTES)
+        );
+        assert_eq!(
+            pending.unwrap().meta.bytes.as_deref(),
+            Some(b"b".as_slice())
+        );
+    }
 }

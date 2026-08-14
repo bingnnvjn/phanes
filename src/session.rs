@@ -11,12 +11,12 @@
 //! join，reader 已发 session_closed 则跳过重复——保证六事件序列顺序。
 
 use crate::event::{
-    Event, EventKind, EventMeta, EventReceiver, EventSender, SessionId, event_channel, now_ms,
+    event_channel, now_ms, Event, EventKind, EventMeta, EventReceiver, EventSender, SessionId,
 };
 use crate::log::{log_error, log_info, log_warn};
 use anyhow::{anyhow, bail, Context, Result};
 use crossbeam_channel::SendTimeoutError;
-use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
+use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use std::collections::VecDeque;
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -31,8 +31,9 @@ pub const DEFAULT_OUTPUT_BUF_CAP: usize = 1 << 20;
 pub struct SessionConfig {
     /// 可执行路径（如 /data/data/com.gph.fable/files/usr/bin/bash）。
     pub shell: String,
-    /// argv[0] 名 + 真实参数：args[0] = argv0（登录 shell 为 "-bash"，与 Java
-    /// createSubprocess / execvp 同语义），args[1..] = 真实参数（如 --noprofile）。
+    /// `argv[0]` 名 + 真实参数：`args[0]` = argv0（登录 shell 为 "-bash"，与
+    /// Java createSubprocess / execvp 同语义），`args[1..]` = 真实参数（如
+    /// `--noprofile`）。
     pub args: Vec<String>,
     /// 环境快照（Kotlin 构造传入，本 crate 不重建 AndroidShellEnvironment）。
     pub env: Vec<(String, String)>,
@@ -84,6 +85,7 @@ pub struct SessionInfo {
 struct ReaderShared {
     id: SessionId,
     read_fd: Mutex<i32>,
+    read_guard: Mutex<()>,
     child: Mutex<Option<Box<dyn Child + Send + Sync>>>,
     events_tx: EventSender,
     output_buf: Mutex<VecDeque<u8>>,
@@ -162,7 +164,11 @@ impl Session {
     /// 非阻塞读取只读侧输出缓冲（JNI `sessionRead` 数据源；与事件流同源）。
     /// 返回写入 buf 的字节数；0 = 暂无输出。
     pub fn read_output(&self, buf: &mut [u8]) -> Result<usize> {
-        let mut out = self.reader.output_buf.lock().unwrap_or_else(|p| p.into_inner());
+        let mut out = self
+            .reader
+            .output_buf
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         let take = out.len().min(buf.len());
         for b in buf.iter_mut().take(take) {
             *b = out.pop_front().unwrap_or(0);
@@ -170,7 +176,7 @@ impl Session {
         Ok(take)
     }
 
-    /// 关闭会话：置 close 标志 → close 读 fd（解除阻塞读）→ kill 子进程 →
+    /// 关闭会话：置 close 标志 → kill 子进程 → 等待读取结束并关闭 fd →
     /// join reader → 状态 Closed → 发 session_closed。幂等。
     pub fn close(&self) {
         {
@@ -182,18 +188,29 @@ impl Session {
         self.reader.close_flag.store(true, Ordering::SeqCst);
 
         {
-            let mut fd = self.reader.read_fd.lock().unwrap_or_else(|p| p.into_inner());
+            let mut child = self.reader.child.lock().unwrap_or_else(|p| p.into_inner());
+            if let Some(c) = child.as_mut() {
+                let _ = c.kill();
+            }
+        }
+        let _read_guard = self
+            .reader
+            .read_guard
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        {
+            let mut fd = self
+                .reader
+                .read_fd
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
             if *fd >= 0 {
+                // SAFETY: the read guard excludes reader_loop; this
+                // descriptor is owned by the reader state and closed once.
                 unsafe {
                     libc::close(*fd);
                 }
                 *fd = -1;
-            }
-        }
-        {
-            let mut child = self.reader.child.lock().unwrap_or_else(|p| p.into_inner());
-            if let Some(c) = child.as_mut() {
-                let _ = c.kill();
             }
         }
         if let Some(handle) = self
@@ -213,9 +230,15 @@ impl Session {
         };
         if !already_closed {
             send_terminal_event(&self.reader, self.id);
-            log_info(Some(self.id), "session_closed 已发出（close 路径），句柄回收完成");
+            log_info(
+                Some(self.id),
+                "session_closed 已发出（close 路径），句柄回收完成",
+            );
         } else {
-            log_info(Some(self.id), "session_closed 已由 reader 自然退出发出，跳过重复");
+            log_info(
+                Some(self.id),
+                "session_closed 已由 reader 自然退出发出，跳过重复",
+            );
         }
     }
 
@@ -232,18 +255,18 @@ impl Session {
             .master
             .as_raw_fd()
             .ok_or_else(|| anyhow!("master pty 无 raw fd"))?;
+        // SAFETY: `master_fd` is a live PTY descriptor from `pair.master`;
+        // the duplicated descriptor becomes owned by `ReaderShared`.
         let read_fd = unsafe { libc::dup(master_fd) };
         if read_fd < 0 {
             let _ = child.kill();
-            bail!(
-                "dup(master_fd) 失败: {}",
-                std::io::Error::last_os_error()
-            );
+            bail!("dup(master_fd) 失败: {}", std::io::Error::last_os_error());
         }
         let (tx, rx) = event_channel(cfg.event_capacity);
         let reader = Arc::new(ReaderShared {
             id,
             read_fd: Mutex::new(read_fd),
+            read_guard: Mutex::new(()),
             child: Mutex::new(Some(child)),
             events_tx: tx,
             output_buf: Mutex::new(VecDeque::new()),
@@ -268,18 +291,17 @@ impl Session {
             .name(format!("fable-session-reader-{}", self.id))
             .spawn(move || reader_loop(shared))
             .context("spawn reader 线程失败")?;
-        *self
-            .reader_thread
-            .lock()
-            .unwrap_or_else(|p| p.into_inner()) = Some(handle);
+        *self.reader_thread.lock().unwrap_or_else(|p| p.into_inner()) = Some(handle);
         Ok(())
     }
 
     /// create 用：发 session_created / command_started（同步，先于 create 返回）。
     pub(crate) fn emit_start_events(&self, cfg: &SessionConfig) {
-        let mut created = EventMeta::default();
-        created.message = Some(format!("shell={}", cfg.shell));
-        created.extra = cfg.extra.clone();
+        let created = EventMeta {
+            message: Some(format!("shell={}", cfg.shell)),
+            extra: cfg.extra.clone(),
+            ..Default::default()
+        };
         let _ = self.reader.events_tx.send(Event {
             kind: EventKind::SessionCreated,
             session_id: self.id,
@@ -287,14 +309,16 @@ impl Session {
             meta: created,
         });
 
-        let mut started = EventMeta::default();
         let args = cfg.args.join(" ");
-        started.message = Some(if args.is_empty() {
-            cfg.shell.clone()
-        } else {
-            format!("{} {}", cfg.shell, args)
-        });
-        started.extra = cfg.extra.clone();
+        let started = EventMeta {
+            message: Some(if args.is_empty() {
+                cfg.shell.clone()
+            } else {
+                format!("{} {}", cfg.shell, args)
+            }),
+            extra: cfg.extra.clone(),
+            ..Default::default()
+        };
         let _ = self.reader.events_tx.send(Event {
             kind: EventKind::CommandStarted,
             session_id: self.id,
@@ -306,14 +330,11 @@ impl Session {
 }
 
 /// 构造并启动会话（由 SessionManager::create 调用）。
-pub(crate) fn spawn_session(
-    id: SessionId,
-    cfg: &SessionConfig,
-) -> Result<Arc<Session>> {
+pub(crate) fn spawn_session(id: SessionId, cfg: &SessionConfig) -> Result<Arc<Session>> {
     if cfg.shell.trim().is_empty() {
         bail!("shell 为空");
     }
-    // args[0] 是 argv0 名（Java createSubprocess / execvp 同语义：
+    // `args[0]` 是 argv0 名（Java createSubprocess / execvp 同语义：
     // 登录 shell 为 "-bash"；program 仍是 cfg.shell）。argv0 与真实参数分离，
     // 由本地补丁的 CommandBuilder::argv0 支持（上游 portable-pty 0.9.0 无此 API）。
     let mut cmd = CommandBuilder::new(&cfg.shell);
@@ -342,23 +363,22 @@ pub(crate) fn spawn_session(
     // 与 Java create_subprocess（termux.c）一致：IUTF8 + 清 IXON/IXOFF，
     // 否则 Ctrl+S 冻结显示、UTF-8 行规程与 Java 模式不一致（工单 26 真机审查）。
     if let Some(master_fd) = pair.master.as_raw_fd() {
+        // SAFETY: `master_fd` is the live PTY master descriptor. `tios` is
+        // zero-initialized to the C ABI layout before libc fills it.
         unsafe {
-        let mut tios: libc::termios = std::mem::zeroed();
-        if libc::tcgetattr(master_fd, &mut tios) == 0 {
-            tios.c_iflag |= libc::IUTF8;
-            tios.c_iflag &= !(libc::IXON | libc::IXOFF);
-            libc::tcsetattr(master_fd, libc::TCSANOW, &tios);
-        }
+            let mut tios: libc::termios = std::mem::zeroed();
+            if libc::tcgetattr(master_fd, &mut tios) == 0 {
+                tios.c_iflag |= libc::IUTF8;
+                tios.c_iflag &= !(libc::IXON | libc::IXOFF);
+                libc::tcsetattr(master_fd, libc::TCSANOW, &tios);
+            }
         }
     }
     let child = pair
         .slave
         .spawn_command(cmd)
         .context("spawn_command 失败")?;
-    let writer = pair
-        .master
-        .take_writer()
-        .context("take_writer 失败")?;
+    let writer = pair.master.take_writer().context("take_writer 失败")?;
 
     let session = Session::new(id, now_ms(), cfg, pair, child, writer)?;
     if let Err(e) = session.start_reader() {
@@ -374,18 +394,15 @@ fn reader_loop(shared: Arc<ReaderShared>) {
     log_info(Some(id), "reader 线程启动");
     // 1) 阻塞读 master dup fd；close() close 该 fd 时 read 返回 EIO/0 退出。
     loop {
+        let _read_guard = shared.read_guard.lock().unwrap_or_else(|p| p.into_inner());
         let read_fd = *shared.read_fd.lock().unwrap_or_else(|p| p.into_inner());
         if read_fd < 0 || shared.close_flag.load(Ordering::SeqCst) {
             break;
         }
         let mut data = [0u8; 4096];
-        let n = unsafe {
-            libc::read(
-                read_fd,
-                data.as_mut_ptr() as *mut libc::c_void,
-                data.len(),
-            )
-        };
+        // SAFETY: the read guard excludes close; `read_fd` is checked
+        // non-negative and `data` is a writable initialized buffer.
+        let n = unsafe { libc::read(read_fd, data.as_mut_ptr() as *mut libc::c_void, data.len()) };
         if n > 0 {
             let bytes = data[..n as usize].to_vec();
             push_output(&shared, &bytes);
@@ -480,6 +497,8 @@ fn reader_loop(shared: Arc<ReaderShared>) {
     {
         let mut fd = shared.read_fd.lock().unwrap_or_else(|p| p.into_inner());
         if *fd >= 0 {
+            // SAFETY: `fd` is owned by `ReaderShared` and this branch marks
+            // it invalid immediately after the one close operation.
             unsafe {
                 libc::close(*fd);
             }
@@ -491,7 +510,10 @@ fn reader_loop(shared: Arc<ReaderShared>) {
         let mut child = shared.child.lock().unwrap_or_else(|p| p.into_inner());
         *child = None;
     }
-    log_info(Some(id), "session_closed 已发出（自然退出），reader 线程退出");
+    log_info(
+        Some(id),
+        "session_closed 已发出（自然退出），reader 线程退出",
+    );
 }
 
 /// 有界事件发送：关闭中（或通道断开）即停止产出，避免 reader 永久阻塞。

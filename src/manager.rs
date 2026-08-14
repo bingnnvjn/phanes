@@ -2,7 +2,7 @@
 
 use crate::event::SessionId;
 use crate::log::log_info;
-use crate::session::{Session, SessionConfig, SessionInfo, spawn_session};
+use crate::session::{spawn_session, Session, SessionConfig, SessionInfo};
 use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};

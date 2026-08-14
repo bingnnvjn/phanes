@@ -6,9 +6,7 @@
 //! 覆盖验收项：SessionManager API（create/close/list/get）、六事件序列断言、
 //! 8 会话并发余量（2–4 硬指标内含）、进程生命周期（退出码/回收/close/kill）。
 
-use fable_session::{
-    EventKind, SessionConfig, SessionManager,
-};
+use fable_session::{EventKind, SessionConfig, SessionManager};
 use std::time::{Duration, Instant};
 
 const BASH: &str = "/data/data/com.termux/files/usr/bin/bash";
@@ -89,7 +87,10 @@ fn manager_create_close_list_get() {
     let listed = m.list();
     assert_eq!(listed.len(), 1, "create 后 list 应有 1 条");
     assert_eq!(listed[0].id, id);
-    assert!(matches!(listed[0].state, fable_session::SessionState::Running));
+    assert!(matches!(
+        listed[0].state,
+        fable_session::SessionState::Running
+    ));
 
     let s = m.get(id).expect("get(id) 应返回会话");
     assert_eq!(s.id(), id);
@@ -134,7 +135,7 @@ fn six_event_sequence_with_exit_code() {
         "事件流必须以 session_created → command_started 开头"
     );
     assert!(
-        kinds.iter().any(|k| *k == EventKind::OutputChunk),
+        kinds.contains(&EventKind::OutputChunk),
         "echo 输出应产生 output_chunk，实际: {kinds:?}"
     );
     let text = text_of(&events);
@@ -208,8 +209,7 @@ fn eight_sessions_concurrent_independent() {
     }
 
     for (i, _id, s) in &sessions {
-        let events =
-            collect_until(s, EventKind::OutputChunk, Duration::from_secs(15));
+        let events = collect_until(s, EventKind::OutputChunk, Duration::from_secs(15));
         // 标记可能跨 chunk：把 output_chunk 字节拼起来看
         let deadline = Instant::now() + Duration::from_secs(15);
         let mut all = events;
@@ -268,8 +268,10 @@ fn exit_code_captured_and_reaped() {
     assert!(
         matches!(
             info.state,
-            fable_session::SessionState::Exited { exit_code: Some(3), .. }
-                | fable_session::SessionState::Closed
+            fable_session::SessionState::Exited {
+                exit_code: Some(3),
+                ..
+            } | fable_session::SessionState::Closed
         ),
         "状态应为 Exited{{exit_code:Some(3)}} 或 Closed，实际: {:?}",
         info.state
