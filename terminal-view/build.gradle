@@ -39,6 +39,7 @@ dependencies {
 
 task sourceJar(type: Jar) {
     from android.sourceSets.main.java.srcDirs
+    from "src/main/kotlin"
     archiveClassifier = "sources"
 }
 
