@@ -86,7 +86,12 @@ fn main() {
 
     // 模拟输入法逐词提交：分块写入，并在输入中途开始连续放大（快速 resize），
     // 贴近真机"边打字边放大"的时序。
-    let chunks = ["白日依山尽，", "黄河入海流", "。欲穷千里目，", "更上一层楼。"];
+    let chunks = [
+        "白日依山尽，",
+        "黄河入海流",
+        "。欲穷千里目，",
+        "更上一层楼。",
+    ];
     let mut cols: u16 = 60;
     for (i, chunk) in chunks.iter().enumerate() {
         unsafe { fable_pty_write(pty, chunk.as_ptr(), chunk.len()) };
@@ -113,7 +118,10 @@ fn main() {
             renderer.write(&out3);
         }
         let rows_now = dump_rows(&renderer, cols, (24u16 * cols / 60).max(8));
-        let full: Vec<&String> = rows_now.iter().filter(|r| r.contains("黄河入海流")).collect();
+        let full: Vec<&String> = rows_now
+            .iter()
+            .filter(|r| r.contains("黄河入海流"))
+            .collect();
         if full.len() > 1 {
             println!("chunk={i} cols={cols} 出现重复: {rows_now:?}");
         }
@@ -142,7 +150,10 @@ fn main() {
         .iter()
         .filter(|r| !r.is_empty() && (r.contains("白日依山尽") || r.contains("黄河入海流")))
         .collect();
-    println!("最终渲染器行（前 8 行）: {:?}", &final_rows[..final_rows.len().min(8)]);
+    println!(
+        "最终渲染器行（前 8 行）: {:?}",
+        &final_rows[..final_rows.len().min(8)]
+    );
     println!(
         "最终 full_line_count={} fragment_rows={}",
         full.len(),

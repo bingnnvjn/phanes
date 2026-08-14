@@ -10,6 +10,11 @@
 //! 把 font 单位映射到 device px；NO_SCALE outline 是 26.6 font 单位，
 //! 因此对 outline 应用矩阵时乘 64 修正（A × 64 × 65536，见实现）。
 
+#![expect(
+    clippy::too_many_arguments,
+    reason = "工单 50：COLRv1 采样函数参数对应固定 FreeType paint ABI"
+)]
+
 use crate::freetype_ffi::*;
 use std::os::raw::{c_int, c_long};
 
@@ -29,7 +34,14 @@ pub struct Affine {
 
 impl Affine {
     pub fn identity() -> Self {
-        Self { a: 1.0, b: 0.0, c: 0.0, d: 1.0, e: 0.0, f: 0.0 }
+        Self {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            e: 0.0,
+            f: 0.0,
+        }
     }
 
     fn from_23(af: &FT_Affine23) -> Self {
@@ -44,20 +56,48 @@ impl Affine {
     }
 
     fn translate(tx: f64, ty: f64) -> Self {
-        Self { a: 1.0, b: 0.0, c: 0.0, d: 1.0, e: tx, f: ty }
+        Self {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            e: tx,
+            f: ty,
+        }
     }
 
     fn scale(sx: f64, sy: f64) -> Self {
-        Self { a: sx, b: 0.0, c: 0.0, d: sy, e: 0.0, f: 0.0 }
+        Self {
+            a: sx,
+            b: 0.0,
+            c: 0.0,
+            d: sy,
+            e: 0.0,
+            f: 0.0,
+        }
     }
 
     fn rotate(rad: f64) -> Self {
         let (s, c) = rad.sin_cos();
-        Self { a: c, b: s, c: -s, d: c, e: 0.0, f: 0.0 }
+        Self {
+            a: c,
+            b: s,
+            c: -s,
+            d: c,
+            e: 0.0,
+            f: 0.0,
+        }
     }
 
     fn skew(x_rad: f64, y_rad: f64) -> Self {
-        Self { a: 1.0, b: y_rad.tan(), c: x_rad.tan(), d: 1.0, e: 0.0, f: 0.0 }
+        Self {
+            a: 1.0,
+            b: y_rad.tan(),
+            c: x_rad.tan(),
+            d: 1.0,
+            e: 0.0,
+            f: 0.0,
+        }
     }
 
     /// self = self ∘ m（先应用 m，再应用 self 原有的变换）。
@@ -72,7 +112,10 @@ impl Affine {
     }
 
     fn apply(&self, x: f64, y: f64) -> (f64, f64) {
-        (self.a * x + self.c * y + self.e, self.b * x + self.d * y + self.f)
+        (
+            self.a * x + self.c * y + self.e,
+            self.b * x + self.d * y + self.f,
+        )
     }
 
     fn invert(&self) -> Option<Affine> {
@@ -86,7 +129,14 @@ impl Affine {
         let id = self.a / det;
         let ie = -(ia * self.e + ic * self.f);
         let if_ = -(ib * self.e + id * self.f);
-        Some(Affine { a: ia, b: ib, c: ic, d: id, e: ie, f: if_ })
+        Some(Affine {
+            a: ia,
+            b: ib,
+            c: ic,
+            d: id,
+            e: ie,
+            f: if_,
+        })
     }
 }
 
@@ -109,10 +159,6 @@ impl RgbaImage {
             height,
             pixels: vec![0u8; (width * height * 4) as usize],
         }
-    }
-
-    fn empty() -> Self {
-        Self { offset_x: 0, offset_y: 0, width: 0, height: 0, pixels: Vec::new() }
     }
 
     pub fn to_bitmap(&self) -> crate::emoji::RgbaBitmap {
@@ -166,14 +212,26 @@ pub fn render_color_glyph(ctx: &ColrCtx, glyph_id: u32, pixels_per_em: u16) -> O
         return None;
     }
     let mut root = FT_OpaquePaint::default();
-    if unsafe { FT_Get_Color_Glyph_Paint(ctx.face, glyph_id, FT_COLOR_INCLUDE_ROOT_TRANSFORM, &mut root) } == 0 {
+    if unsafe {
+        FT_Get_Color_Glyph_Paint(
+            ctx.face,
+            glyph_id,
+            FT_COLOR_INCLUDE_ROOT_TRANSFORM,
+            &mut root,
+        )
+    } == 0
+    {
         return None;
     }
     render_paint(ctx, root, &Affine::identity(), 0)
 }
 
-
-fn render_paint(ctx: &ColrCtx, op: FT_OpaquePaint, affine: &Affine, depth: u32) -> Option<RgbaImage> {
+fn render_paint(
+    ctx: &ColrCtx,
+    op: FT_OpaquePaint,
+    affine: &Affine,
+    depth: u32,
+) -> Option<RgbaImage> {
     if depth > MAX_DEPTH {
         return None;
     }
@@ -208,7 +266,10 @@ fn render_paint(ctx: &ColrCtx, op: FT_OpaquePaint, affine: &Affine, depth: u32) 
         FT_COLR_PAINTFORMAT_COLR_GLYPH => {
             let gid = unsafe { paint.u.colr_glyph.glyph_id };
             let mut sub = FT_OpaquePaint::default();
-            if unsafe { FT_Get_Color_Glyph_Paint(ctx.face, gid, FT_COLOR_NO_ROOT_TRANSFORM, &mut sub) } != 0 {
+            if unsafe {
+                FT_Get_Color_Glyph_Paint(ctx.face, gid, FT_COLOR_NO_ROOT_TRANSFORM, &mut sub)
+            } != 0
+            {
                 render_paint(ctx, sub, affine, depth + 1)
             } else {
                 None
@@ -222,7 +283,10 @@ fn render_paint(ctx: &ColrCtx, op: FT_OpaquePaint, affine: &Affine, depth: u32) 
         FT_COLR_PAINTFORMAT_TRANSLATE => {
             let t = unsafe { paint.u.translate };
             let mut m = *affine;
-            m.compose(&Affine::translate(t.dx as f64 / 65536.0, t.dy as f64 / 65536.0));
+            m.compose(&Affine::translate(
+                t.dx as f64 / 65536.0,
+                t.dy as f64 / 65536.0,
+            ));
             render_paint(ctx, t.paint, &m, depth + 1)
         }
         FT_COLR_PAINTFORMAT_SCALE => {
@@ -231,7 +295,10 @@ fn render_paint(ctx: &ColrCtx, op: FT_OpaquePaint, affine: &Affine, depth: u32) 
             let cy = s.center_y as f64 / 65536.0;
             let mut m = *affine;
             m.compose(&Affine::translate(cx, cy));
-            m.compose(&Affine::scale(s.scale_x as f64 / 65536.0, s.scale_y as f64 / 65536.0));
+            m.compose(&Affine::scale(
+                s.scale_x as f64 / 65536.0,
+                s.scale_y as f64 / 65536.0,
+            ));
             m.compose(&Affine::translate(-cx, -cy));
             render_paint(ctx, s.paint, &m, depth + 1)
         }
@@ -264,10 +331,7 @@ fn render_paint(ctx: &ColrCtx, op: FT_OpaquePaint, affine: &Affine, depth: u32) 
             let mut source = render_paint(ctx, c.source_paint, affine, depth + 1);
             let mut dst = match backdrop {
                 Some(b) => b,
-                None => match source {
-                    Some(s) => return Some(s),
-                    None => return None,
-                },
+                None => return source,
             };
             // 裸渐变/纯色 paint 作为 composite 操作数时，铺满 backdrop 区域
             //（COLRv1 允许；旗帜 emoji 的 SRC_IN 渐变源即此用法）。
@@ -292,9 +356,15 @@ fn read_fill(ctx: &ColrCtx, op: FT_OpaquePaint, depth: u32) -> Option<Fill> {
         return None;
     }
     match paint.format {
-        FT_COLR_PAINTFORMAT_SOLID => Some(Fill::Solid(palette_color(ctx, unsafe { paint.u.solid.color }))),
-        FT_COLR_PAINTFORMAT_LINEAR_GRADIENT => Some(Fill::Linear(unsafe { paint.u.linear_gradient })),
-        FT_COLR_PAINTFORMAT_RADIAL_GRADIENT => Some(Fill::Radial(unsafe { paint.u.radial_gradient })),
+        FT_COLR_PAINTFORMAT_SOLID => Some(Fill::Solid(palette_color(ctx, unsafe {
+            paint.u.solid.color
+        }))),
+        FT_COLR_PAINTFORMAT_LINEAR_GRADIENT => {
+            Some(Fill::Linear(unsafe { paint.u.linear_gradient }))
+        }
+        FT_COLR_PAINTFORMAT_RADIAL_GRADIENT => {
+            Some(Fill::Radial(unsafe { paint.u.radial_gradient }))
+        }
         FT_COLR_PAINTFORMAT_SWEEP_GRADIENT => Some(Fill::Sweep(unsafe { paint.u.sweep_gradient })),
         _ => None,
     }
@@ -308,7 +378,9 @@ fn render_glyph(ctx: &ColrCtx, gid: u32, affine: &Affine, fill: &Fill) -> Option
             return None;
         }
         let slot = (*ctx.face).glyph;
-        if slot.is_null() || (*slot).format != 0x6F75746C /* FT_GLYPH_FORMAT_OUTLINE = 'outl' */ {
+        if slot.is_null() || (*slot).format != 0x6F75746C
+        /* FT_GLYPH_FORMAT_OUTLINE = 'outl' */
+        {
             return None;
         }
         if (*slot).outline.n_points <= 0 {
@@ -332,7 +404,10 @@ fn render_glyph(ctx: &ColrCtx, gid: u32, affine: &Affine, fill: &Fill) -> Option
             return None;
         }
         let bmp = &(*slot).bitmap;
-        if bmp.pixel_mode != FT_PIXEL_MODE_GRAY || bmp.width == 0 || bmp.rows == 0 || bmp.buffer.is_null()
+        if bmp.pixel_mode != FT_PIXEL_MODE_GRAY
+            || bmp.width == 0
+            || bmp.rows == 0
+            || bmp.buffer.is_null()
         {
             return None;
         }
@@ -420,7 +495,12 @@ fn fill_paint_bounds(
     if unsafe { FT_Get_Paint(ctx.face, op, &mut paint) } == 0 {
         return None;
     }
-    let mut img = RgbaImage::new(bounds.offset_x, bounds.offset_y, bounds.width, bounds.height);
+    let mut img = RgbaImage::new(
+        bounds.offset_x,
+        bounds.offset_y,
+        bounds.width,
+        bounds.height,
+    );
     let inv = affine.invert();
     let left = bounds.offset_x as f64;
     let top = bounds.offset_y as f64 + bounds.height as f64; // y-up 顶
@@ -555,7 +635,13 @@ fn gradient_color_sweep(
 }
 
 /// 像素 (x,y)（y-down）→ 反变换回 font 单位（y-up）。
-fn pixel_to_font(inv: Option<&Affine>, x: usize, y: usize, left: f64, top: f64) -> Option<(f64, f64)> {
+fn pixel_to_font(
+    inv: Option<&Affine>,
+    x: usize,
+    y: usize,
+    left: f64,
+    top: f64,
+) -> Option<(f64, f64)> {
     let inv = inv?;
     let dx = left + x as f64;
     let dy = top - y as f64;
@@ -572,7 +658,10 @@ fn colorline_color(ctx: &ColrCtx, colorline: &FT_ColorLine, t: f64) -> [u8; 4] {
     let mut it = colorline.color_stop_iterator;
     let mut st = FT_ColorStop::default();
     while unsafe { FT_Get_Colorline_Stops(ctx.face, &mut st, &mut it) } != 0 {
-        stops.push((st.stop_offset as f64 / 65536.0, palette_color(ctx, st.color)));
+        stops.push((
+            st.stop_offset as f64 / 65536.0,
+            palette_color(ctx, st.color),
+        ));
         st = FT_ColorStop::default();
     }
     if stops.is_empty() {
@@ -641,18 +730,39 @@ pub fn composite(dst: &mut RgbaImage, src: &RgbaImage, mode: c_int) {
             }
             let si = ((y * src.width + x) * 4) as usize;
             let di = ((oy as u32 * nw + ox as u32) * 4) as usize;
-            let s = [src.pixels[si], src.pixels[si + 1], src.pixels[si + 2], src.pixels[si + 3]];
+            let s = [
+                src.pixels[si],
+                src.pixels[si + 1],
+                src.pixels[si + 2],
+                src.pixels[si + 3],
+            ];
             let mut d = [out[di], out[di + 1], out[di + 2], out[di + 3]];
             blend_pixel(&mut d, s, mode);
             out[di..di + 4].copy_from_slice(&d);
         }
     }
-    *dst = RgbaImage { offset_x: x0, offset_y: y0, width: nw, height: nh, pixels: out };
+    *dst = RgbaImage {
+        offset_x: x0,
+        offset_y: y0,
+        width: nw,
+        height: nh,
+        pixels: out,
+    };
 }
 
 fn blend_pixel(dst: &mut [u8; 4], src: [u8; 4], mode: c_int) {
-    let cs = [src[0] as f64 / 255.0, src[1] as f64 / 255.0, src[2] as f64 / 255.0, src[3] as f64 / 255.0];
-    let cb = [dst[0] as f64 / 255.0, dst[1] as f64 / 255.0, dst[2] as f64 / 255.0, dst[3] as f64 / 255.0];
+    let cs = [
+        src[0] as f64 / 255.0,
+        src[1] as f64 / 255.0,
+        src[2] as f64 / 255.0,
+        src[3] as f64 / 255.0,
+    ];
+    let cb = [
+        dst[0] as f64 / 255.0,
+        dst[1] as f64 / 255.0,
+        dst[2] as f64 / 255.0,
+        dst[3] as f64 / 255.0,
+    ];
     let (as_, ab) = (cs[3], cb[3]);
     let put = |d: &mut [u8; 4], r: f64, g: f64, b: f64, a: f64| {
         d[0] = (r.clamp(0.0, 1.0) * 255.0).round() as u8;
@@ -729,7 +839,13 @@ fn blend_pixel(dst: &mut [u8; 4], src: [u8; 4], mode: c_int) {
             if a <= 0.0 {
                 put(dst, 0.0, 0.0, 0.0, 0.0);
             } else {
-                put(dst, cs[0] * as_ + cb[0] * (1.0 - as_), cs[1] * as_ + cb[1] * (1.0 - as_), cs[2] * as_ + cb[2] * (1.0 - as_), a);
+                put(
+                    dst,
+                    cs[0] * as_ + cb[0] * (1.0 - as_),
+                    cs[1] * as_ + cb[1] * (1.0 - as_),
+                    cs[2] * as_ + cb[2] * (1.0 - as_),
+                    a,
+                );
             }
         }
         FT_COLR_COMPOSITE_DEST_ATOP => {
@@ -737,7 +853,13 @@ fn blend_pixel(dst: &mut [u8; 4], src: [u8; 4], mode: c_int) {
             if a <= 0.0 {
                 put(dst, 0.0, 0.0, 0.0, 0.0);
             } else {
-                put(dst, cb[0] * ab + cs[0] * (1.0 - ab), cb[1] * ab + cs[1] * (1.0 - ab), cb[2] * ab + cs[2] * (1.0 - ab), a);
+                put(
+                    dst,
+                    cb[0] * ab + cs[0] * (1.0 - ab),
+                    cb[1] * ab + cs[1] * (1.0 - ab),
+                    cb[2] * ab + cs[2] * (1.0 - ab),
+                    a,
+                );
             }
         }
         FT_COLR_COMPOSITE_XOR => {

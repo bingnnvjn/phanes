@@ -262,12 +262,6 @@ pub const ROW_DATA_WRAP_CONTINUATION: i32 = 2;
 // GhosttySgrUnderline
 pub const SGR_UNDERLINE_NONE: i32 = 0;
 
-#[link(name = "ghostty-vt", kind = "static")]
-#[link(name = "tls_shim", kind = "static")]
-#[link(name = "pty_shim", kind = "static")]
-#[link(name = "m")]
-#[link(name = "log")]
-#[link(name = "android")]
 extern "C" {
     pub fn ghostty_terminal_new(
         allocator: *const c_void,
@@ -323,11 +317,7 @@ extern "C" {
         ref_: *const GhosttyGridRef,
         out_row: *mut GhosttyRow,
     ) -> GhosttyResult;
-    pub fn ghostty_row_get(
-        row: GhosttyRow,
-        data: i32,
-        out: *mut c_void,
-    ) -> GhosttyResult;
+    pub fn ghostty_row_get(row: GhosttyRow, data: i32, out: *mut c_void) -> GhosttyResult;
 
     pub fn ghostty_render_state_new(
         allocator: *const c_void,

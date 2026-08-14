@@ -68,8 +68,6 @@ unsafe fn cell_text(cells: GhosttyRenderStateRowCells) -> String {
         );
         bytes.truncate(buf2.len);
         String::from_utf8_lossy(&bytes).into_owned()
-    } else if r == GHOSTTY_SUCCESS {
-        String::new()
     } else {
         String::new()
     }
@@ -179,14 +177,12 @@ struct Cell {
     text: String,
     fg: Option<GhosttyColorRgb>,
     bg: Option<GhosttyColorRgb>,
-    selected: bool,
     underline: bool,
     /// SGR 4 下划线颜色（样式显式指定；None = 用前景色，工单 13 更高对比）。
     underline_color: Option<GhosttyColorRgb>,
     strikethrough: bool,
     overline: bool,
     /// 占几列（工单 13：merge_emoji_runs 归一 emoji 为 2 格）。
-    col_span: usize,
     /// 核心宽属性（工单 26：唯一宽度权威；0=窄 1=宽 2/3=占位格）。
     wide: i32,
 }
@@ -197,12 +193,10 @@ impl Default for Cell {
             text: String::new(),
             fg: None,
             bg: None,
-            selected: false,
             underline: false,
             underline_color: None,
             strikethrough: false,
             overline: false,
-            col_span: 1,
             wide: CELL_WIDE_NARROW,
         }
     }
@@ -264,6 +258,10 @@ fn load_font() -> Option<fontdue::Font> {
 }
 
 /// 逐格光栅化并合成到帧缓冲。
+#[expect(
+    clippy::too_many_arguments,
+    reason = "工单 50：离屏诊断入口参数对应独立渲染输入"
+)]
 fn rasterize_grid(
     rows: &[Vec<Cell>],
     cols: usize,
@@ -381,11 +379,9 @@ fn rasterize_grid(
                     // 与 GPU 路径一致（工单 22 修复）：目标 em 边长，画布=em 盒
                     // 缩放到 2 格宽内、垂直居中于行；不再用内容 bbox fit。
                     let em_px = (CELL_H as f32 * 0.9)
-                        .min((px_per_em as f32).max(target_w as f32 * 0.95))
+                        .min(px_per_em.max(target_w as f32 * 0.95))
                         .clamp(8.0, 512.0);
-                    if let Some(bitmap) =
-                        emoji_font.rasterize_cluster(&cell.text, em_px as u16)
-                    {
+                    if let Some(bitmap) = emoji_font.rasterize_cluster(&cell.text, em_px as u16) {
                         let scale = (target_w as f32 / bitmap.width.max(1) as f32).min(1.0);
                         let draw_w = (bitmap.width as f32 * scale).round() as usize;
                         let draw_h = (bitmap.height as f32 * scale).round() as usize;
@@ -412,11 +408,14 @@ fn rasterize_grid(
                                     continue;
                                 }
                                 let i = (dy * width + dx) * 4;
-                                let blend =
-                                    |dst: u8, src: u8| (dst as f32 * (1.0 - a) + src as f32 * a) as u8;
+                                let blend = |dst: u8, src: u8| {
+                                    (dst as f32 * (1.0 - a) + src as f32 * a) as u8
+                                };
                                 framebuffer[i] = blend(framebuffer[i], bitmap.pixels[si]);
-                                framebuffer[i + 1] = blend(framebuffer[i + 1], bitmap.pixels[si + 1]);
-                                framebuffer[i + 2] = blend(framebuffer[i + 2], bitmap.pixels[si + 2]);
+                                framebuffer[i + 1] =
+                                    blend(framebuffer[i + 1], bitmap.pixels[si + 1]);
+                                framebuffer[i + 2] =
+                                    blend(framebuffer[i + 2], bitmap.pixels[si + 2]);
                                 framebuffer[i + 3] = 255;
                             }
                         }
@@ -468,8 +467,8 @@ fn rasterize_grid(
             if !drew {
                 let glyph_index = font.lookup_glyph_index(ch);
                 let (metrics, bitmap) = font.rasterize_indexed(glyph_index, px_per_em);
-                let glyph_w = metrics.width as usize;
-                let glyph_h = metrics.height as usize;
+                let glyph_w = metrics.width;
+                let glyph_h = metrics.height;
                 let x_offset =
                     origin_x + ((CELL_W as i32 - metrics.width as i32) / 2).max(0) as usize;
                 let y_offset =
@@ -522,7 +521,6 @@ fn rasterize_grid(
                         framebuffer[i + 3] = 255;
                     }
                 }
-                drew = true;
             }
 
             // 程序化下划线/删除线/上划线。工单 13 真机反馈：12% 太粗 → 减半
@@ -539,9 +537,9 @@ fn rasterize_grid(
                     .map(|m| (m.ascent, m.descent, m.line_gap))
                     .unwrap_or((px_per_em * 0.8, -px_per_em * 0.2, 0.0));
                 let line_h_px = (ascent_px - descent_px + line_gap_px).max(px_per_em);
-                let baseline_y =
-                    (origin_y as f32 + ((CELL_H as f32 - line_h_px) / 2.0).max(0.0) + ascent_px)
-                        as usize;
+                let baseline_y = (origin_y as f32
+                    + ((CELL_H as f32 - line_h_px) / 2.0).max(0.0)
+                    + ascent_px) as usize;
                 for x in 0..CELL_W {
                     for t in 0..thickness {
                         let dy = baseline_y + 1 + t;
@@ -1169,12 +1167,6 @@ fn main() {
                 let text = cell_text(cells);
                 let fg = cell_color(cells, CELL_DATA_FG_COLOR);
                 let bg = cell_color(cells, CELL_DATA_BG_COLOR);
-                let mut selected: bool = false;
-                let _ = ghostty_render_state_row_cells_get(
-                    cells,
-                    CELL_DATA_SELECTED,
-                    &mut selected as *mut bool as *mut c_void,
-                );
                 let mut style = GhosttyStyle {
                     size: std::mem::size_of::<GhosttyStyle>(),
                     fg_color: GhosttyStyleColor {
@@ -1217,16 +1209,14 @@ fn main() {
                         GHOSTTY_CELL_DATA_WIDE,
                         &mut wide as *mut i32 as *mut c_void,
                     ) == GHOSTTY_SUCCESS
+                    && !(CELL_WIDE_NARROW..=CELL_WIDE_SPACER_HEAD).contains(&wide)
                 {
-                    if wide < CELL_WIDE_NARROW || wide > CELL_WIDE_SPACER_HEAD {
-                        wide = CELL_WIDE_NARROW;
-                    }
+                    wide = CELL_WIDE_NARROW;
                 }
                 line_cells.push(Cell {
                     text,
                     fg,
                     bg,
-                    selected,
                     underline: style.underline != SGR_UNDERLINE_NONE,
                     underline_color: match style.underline_color.tag {
                         2 => Some(style.underline_color.value.rgb),
@@ -1234,7 +1224,6 @@ fn main() {
                     },
                     strikethrough: style.strikethrough,
                     overline: style.overline,
-                    col_span: 1,
                     wide,
                 });
             }
@@ -1392,8 +1381,7 @@ fn main() {
         // 预热 50 个热门（2s 内达标）。
         let (prewarm_ok, prewarm_ms) = {
             let t0 = std::time::Instant::now();
-            let (decoded, total, _) =
-                emoji_fonts.prewarm(&emoji::POPULAR_EMOJI_50);
+            let (decoded, total, _) = emoji_fonts.prewarm(emoji::POPULAR_EMOJI_50);
             let elapsed = t0.elapsed().as_secs_f32() * 1000.0;
             println!(
                 "  {} : 预热 {decoded}/{total} 个热门 emoji（{elapsed:.1}ms ≤2000ms）",
@@ -1412,14 +1400,42 @@ fn main() {
         // 至少一维 ≥0.7em（⚽ 等 Apple 图样本就是黑白球，不做彩色断言；
         // 彩色能力由 ✅/🚀/旗帜等其他断言覆盖）。
         let category_samples: [&str; 36] = [
-            "🇨🇳", "🇺🇸", "🇯🇵", "🇬🇧", "🇫🇷", "🇩🇪", "🇧🇷", "🇰🇷",
-            "👨‍👩‍👧‍👦", "👨‍👩‍👦", "👨‍👩‍👧", "👨‍👩‍👦‍👦",
-            "👍🏻", "👍🏽", "👋🏾", "🧑🏿",
-            "🧑‍🚀", "🧑‍💻", "👩‍🎓", "👨‍🍳",
-            "1️⃣", "9️⃣", "#️⃣", "*️⃣",
+            "🇨🇳",
+            "🇺🇸",
+            "🇯🇵",
+            "🇬🇧",
+            "🇫🇷",
+            "🇩🇪",
+            "🇧🇷",
+            "🇰🇷",
+            "👨‍👩‍👧‍👦",
+            "👨‍👩‍👦",
+            "👨‍👩‍👧",
+            "👨‍👩‍👦‍👦",
+            "👍🏻",
+            "👍🏽",
+            "👋🏾",
+            "🧑🏿",
+            "🧑‍🚀",
+            "🧑‍💻",
+            "👩‍🎓",
+            "👨‍🍳",
+            "1️⃣",
+            "9️⃣",
+            "#️⃣",
+            "*️⃣",
             "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
-            "🫖", "🫶", "🥷", "🦩",
-            "⌨️", "🚀", "✅", "⚽", "🐶", "🍎", "🎄",
+            "🫖",
+            "🫶",
+            "🥷",
+            "🦩",
+            "⌨️",
+            "🚀",
+            "✅",
+            "⚽",
+            "🐶",
+            "🍎",
+            "🎄",
         ];
         let mut category_ok = true;
         for s in category_samples {
@@ -1448,16 +1464,12 @@ fn main() {
 
         // 行高稳定（工单 22 修复）：emoji 画布（em 盒）不超出 1 格高 / 2 格宽；
         // 行高由主字体度量决定，emoji 只画在格内，有无 emoji 行高一致。
-        let line_height_ok = ["🚀", "👨‍👩‍👧‍👦", "🇨🇳", "⌨️", "🏴󠁧󠁢󠁥󠁮󠁧󠁿"]
-            .iter()
-            .all(|s| {
-                emoji_fonts
-                    .rasterize_cluster(s, 16)
-                    .map(|b| {
-                        b.height <= 16 && b.width <= 32
-                    })
-                    .unwrap_or(false)
-            });
+        let line_height_ok = ["🚀", "👨‍👩‍👧‍👦", "🇨🇳", "⌨️", "🏴󠁧󠁢󠁥󠁮󠁧󠁿"].iter().all(|s| {
+            emoji_fonts
+                .rasterize_cluster(s, 16)
+                .map(|b| b.height <= 16 && b.width <= 32)
+                .unwrap_or(false)
+        });
         println!(
             "  {} : 行高稳定（emoji 画布=em 盒 ≤1格高/2格宽，不顶天立地）",
             if line_height_ok { "PASS" } else { "FAIL" }
@@ -1466,19 +1478,16 @@ fn main() {
 
         // 新码位（Apple 有图且 Noto 无映射 → Emoji 17 时代新图样），抽查前 4 个。
         let new_cps = emoji_fonts.apple_only_codepoints();
-        let new_ok = new_cps
-            .iter()
-            .take(4)
-            .all(|&cp| {
-                let s = char::from_u32(cp)
-                    .map(|c| c.to_string())
-                    .unwrap_or_default();
-                !s.is_empty()
-                    && emoji_fonts
-                        .rasterize_cluster(&s, 24)
-                        .map(|b| b.pixels.chunks_exact(4).any(|p| p[3] > 0))
-                        .unwrap_or(false)
-            });
+        let new_ok = new_cps.iter().take(4).all(|&cp| {
+            let s = char::from_u32(cp)
+                .map(|c| c.to_string())
+                .unwrap_or_default();
+            !s.is_empty()
+                && emoji_fonts
+                    .rasterize_cluster(&s, 24)
+                    .map(|b| b.pixels.chunks_exact(4).any(|p| p[3] > 0))
+                    .unwrap_or(false)
+        });
         println!(
             "  {} : Emoji 17 新码位抽查（Apple-only {}/{} 个，抽查前 4 个）",
             if new_ok { "PASS" } else { "FAIL" },
@@ -1581,14 +1590,19 @@ fn main() {
         // Noto 兜底路径：取覆盖差异中第一个 Apple 无图/Noto 有映射的码位，
         // 断言整段 cluster 仍能出图（走 Noto COLRv1）。
         let (diff_count, diff) = emoji_fonts.coverage_diff();
-        let fallback_ok = diff.first().map(|&cp| {
-            let s = char::from_u32(cp).map(|c| c.to_string()).unwrap_or_default();
-            !s.is_empty()
-                && emoji_fonts
-                    .rasterize_cluster(&s, 24)
-                    .map(|b| b.pixels.chunks_exact(4).any(|p| p[3] > 0))
-                    .unwrap_or(false)
-        }).unwrap_or(false);
+        let fallback_ok = diff
+            .first()
+            .map(|&cp| {
+                let s = char::from_u32(cp)
+                    .map(|c| c.to_string())
+                    .unwrap_or_default();
+                !s.is_empty()
+                    && emoji_fonts
+                        .rasterize_cluster(&s, 24)
+                        .map(|b| b.pixels.chunks_exact(4).any(|p| p[3] > 0))
+                        .unwrap_or(false)
+            })
+            .unwrap_or(false);
         println!(
             "  {} : Noto 兜底路径（覆盖差异 {diff_count} 个，抽查 U+{:04X}）",
             if fallback_ok { "PASS" } else { "FAIL" },
@@ -1623,17 +1637,23 @@ fn main() {
         let _ = std::fs::write("coverage_report.txt", &report);
         println!(
             "  {} : 覆盖差异报告已写 coverage_report.txt（diff={diff_count}，报告前 {} 个）",
-            if !diff.is_empty() || apple_cov > 0 { "PASS" } else { "FAIL" },
+            if !diff.is_empty() || apple_cov > 0 {
+                "PASS"
+            } else {
+                "FAIL"
+            },
             diff.len().min(40)
         );
-        all_ok &= (!diff.is_empty() || apple_cov > 0);
+        all_ok &= !diff.is_empty() || apple_cov > 0;
 
         // 工单 13 回归：✅ 绿勾、家庭 ZWJ ≠ 单人、肤色、旗帜红色（Apple 图样重写）。
         let check_ok = emoji_fonts
             .rasterize_cluster("✅", 24)
             .map(|bmp| {
                 let green = bmp.pixels.chunks_exact(4).any(|p| {
-                    p[1] >= 120 && p[1] as u16 >= p[0] as u16 + 30 && p[1] as u16 >= p[2] as u16 + 30
+                    p[1] >= 120
+                        && p[1] as u16 >= p[0] as u16 + 30
+                        && p[1] as u16 >= p[2] as u16 + 30
                 });
                 green
             })
@@ -1653,9 +1673,9 @@ fn main() {
             let flag_red = flag
                 .as_ref()
                 .map(|f| {
-                    f.pixels.chunks_exact(4).any(|p| {
-                        p[0] >= 150 && p[1] <= 110 && p[2] <= 110
-                    })
+                    f.pixels
+                        .chunks_exact(4)
+                        .any(|p| p[0] >= 150 && p[1] <= 110 && p[2] <= 110)
                 })
                 .unwrap_or(false);
             (
@@ -1666,9 +1686,9 @@ fn main() {
                         // Apple 图样重写：家庭 = 彩色全家福（≠ 单人；Noto 时代
                         // 的“灰卡更宽”断言不再适用）。
                         f.pixels != p.pixels
-                            && f.pixels.chunks_exact(4).any(|px| {
-                                px[3] > 0 && (px[0] != px[1] || px[1] != px[2])
-                            })
+                            && f.pixels
+                                .chunks_exact(4)
+                                .any(|px| px[3] > 0 && (px[0] != px[1] || px[1] != px[2]))
                             && f.width as f32 >= 24.0 * 0.7
                     })
                     .unwrap_or(false),
@@ -1698,8 +1718,32 @@ fn main() {
 
         // 扩展测试集（工单 13 保留）：27 个代表性码位。断言：非空 + 彩色 + 尺寸 ≥0.7em。
         let ext: [&str; 27] = [
-            "😀", "😢", "😂", "😍", "😡", "🥺", "🐶", "🐱", "🐼", "🦊", "🍎", "🍕", "🍜",
-            "⚽", "🎮", "🎵", "📱", "💻", "☕", "❤️", "⭐", "⚠️", "🎄", "🎂", "💯", "👋🏻",
+            "😀",
+            "😢",
+            "😂",
+            "😍",
+            "😡",
+            "🥺",
+            "🐶",
+            "🐱",
+            "🐼",
+            "🦊",
+            "🍎",
+            "🍕",
+            "🍜",
+            "⚽",
+            "🎮",
+            "🎵",
+            "📱",
+            "💻",
+            "☕",
+            "❤️",
+            "⭐",
+            "⚠️",
+            "🎄",
+            "🎂",
+            "💯",
+            "👋🏻",
             "🏳️‍🌈",
         ];
         let ext_ok = ext.iter().all(|s| {
@@ -1760,25 +1804,19 @@ fn main() {
                 let text = cell_text(cells);
                 let fg = cell_color(cells, CELL_DATA_FG_COLOR);
                 let bg = cell_color(cells, CELL_DATA_BG_COLOR);
-                let mut selected: bool = false;
-                let _ = ghostty_render_state_row_cells_get(
-                    cells,
-                    CELL_DATA_SELECTED,
-                    &mut selected as *mut bool as *mut c_void,
-                );
                 let mut style = GhosttyStyle {
                     size: std::mem::size_of::<GhosttyStyle>(),
                     fg_color: GhosttyStyleColor {
                         tag: 0,
-                    value: GhosttyStyleColorValue { palette: 0 },
+                        value: GhosttyStyleColorValue { palette: 0 },
                     },
                     bg_color: GhosttyStyleColor {
                         tag: 0,
-                    value: GhosttyStyleColorValue { palette: 0 },
+                        value: GhosttyStyleColorValue { palette: 0 },
                     },
                     underline_color: GhosttyStyleColor {
                         tag: 0,
-                    value: GhosttyStyleColorValue { palette: 0 },
+                        value: GhosttyStyleColorValue { palette: 0 },
                     },
                     bold: false,
                     italic: false,
@@ -1808,16 +1846,14 @@ fn main() {
                         GHOSTTY_CELL_DATA_WIDE,
                         &mut wide as *mut i32 as *mut c_void,
                     ) == GHOSTTY_SUCCESS
+                    && !(CELL_WIDE_NARROW..=CELL_WIDE_SPACER_HEAD).contains(&wide)
                 {
-                    if wide < CELL_WIDE_NARROW || wide > CELL_WIDE_SPACER_HEAD {
-                        wide = CELL_WIDE_NARROW;
-                    }
+                    wide = CELL_WIDE_NARROW;
                 }
                 row_cells.push(Cell {
                     text,
                     fg,
                     bg,
-                    selected,
                     underline: style.underline != SGR_UNDERLINE_NONE,
                     underline_color: match style.underline_color.tag {
                         2 => Some(style.underline_color.value.rgb),
@@ -1825,7 +1861,6 @@ fn main() {
                     },
                     strikethrough: style.strikethrough,
                     overline: style.overline,
-                    col_span: 1,
                     wide,
                 });
             }
@@ -1833,10 +1868,7 @@ fn main() {
         }
         ghostty_render_state_row_iterator_free(row_it3);
 
-        let underline_seen = grid
-            .iter()
-            .flatten()
-            .any(|cell| cell.underline);
+        let underline_seen = grid.iter().flatten().any(|cell| cell.underline);
         println!(
             "  {} : 下划线样式从核心解析（SGR 4）",
             if underline_seen { "PASS" } else { "FAIL" }
@@ -1905,8 +1937,9 @@ fn main() {
                     .map(|m| (m.ascent, m.descent, m.line_gap))
                     .unwrap_or((16.0 * 0.8, -16.0 * 0.2, 0.0));
                 let line_h_px = (ascent_px - descent_px + line_gap_px).max(16.0);
-                let ul_baseline =
-                    (ul_row * CELL_H) as f32 + ((CELL_H as f32 - line_h_px) / 2.0).max(0.0) + ascent_px;
+                let ul_baseline = (ul_row * CELL_H) as f32
+                    + ((CELL_H as f32 - line_h_px) / 2.0).max(0.0)
+                    + ascent_px;
                 let ul_start = (ul_baseline + 1.0) as usize;
                 let ul_pixels = (ul_start..ul_start + ul_thickness)
                     .flat_map(|y| (0..CELL_W * 20).map(move |x| (y, x)))

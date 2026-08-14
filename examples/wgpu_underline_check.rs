@@ -93,7 +93,10 @@ fn main() {
         // 与探针 [u-line] 按钮相同的命令：SGR 4 underline。
         let cmd = b"printf '\x1b[4munderline\x1b[0m\n'";
         ghostty_terminal_vt_write(terminal, cmd.as_ptr(), cmd.len());
-        assert_eq!(ghostty_render_state_update(state, terminal), GHOSTTY_SUCCESS);
+        assert_eq!(
+            ghostty_render_state_update(state, terminal),
+            GHOSTTY_SUCCESS
+        );
         let snapshot = collect(state);
         let mut any_underline = false;
         for row in &snapshot.lines {
@@ -118,11 +121,13 @@ fn main() {
         let solid_verts = store
             .payload()
             .chunks_exact(VERTEX_STRIDE as usize)
-            .filter(|v| v[32..36].iter().enumerate().any(|(i, b)| {
-                // mode 是最后一个 f32（offset 32）
-                let mode = f32::from_le_bytes([v[32], v[33], v[34], v[35]]);
-                i == 0 && mode.abs() < f32::EPSILON
-            }))
+            .filter(|v| {
+                v[32..36].iter().enumerate().any(|(i, _b)| {
+                    // mode 是最后一个 f32（offset 32）
+                    let mode = f32::from_le_bytes([v[32], v[33], v[34], v[35]]);
+                    i == 0 && mode.abs() < f32::EPSILON
+                })
+            })
             .count();
         println!("draw_ranges={draw_ranges:?} solid_vertices={solid_verts}");
 
@@ -142,7 +147,11 @@ fn main() {
 
         let target = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("ul-check-target"),
-            size: wgpu::Extent3d { width: W, height: H, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: W,
+                height: H,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -194,28 +203,27 @@ fn main() {
             label: Some("ul-check-shader"),
             source: wgpu::ShaderSource::Wgsl(SURFACE_SHADER.into()),
         });
-        let bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("ul-check-bgl"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            view_dimension: wgpu::TextureViewDimension::D2Array,
-                            multisampled: false,
-                        },
-                        count: None,
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("ul-check-bgl"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
                     },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
-                    },
-                ],
-            });
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("ul-check-pl"),
             bind_group_layouts: &[Some(&bind_group_layout)],
@@ -313,7 +321,11 @@ fn main() {
         });
         for (offset, len) in &ranges {
             let start = *offset as usize;
-            queue.write_buffer(&vertex_buffer, *offset, &store.payload()[start..start + *len]);
+            queue.write_buffer(
+                &vertex_buffer,
+                *offset,
+                &store.payload()[start..start + *len],
+            );
         }
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -325,7 +337,12 @@ fn main() {
                 depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }),
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    }),
                     store: wgpu::StoreOp::Store,
                 },
             })];
@@ -367,7 +384,11 @@ fn main() {
                     rows_per_image: Some(H),
                 },
             },
-            wgpu::Extent3d { width: W, height: H, depth_or_array_layers: 1 },
+            wgpu::Extent3d {
+                width: W,
+                height: H,
+                depth_or_array_layers: 1,
+            },
         );
         queue.submit(Some(encoder.finish()));
         readback.slice(..).map_async(wgpu::MapMode::Read, |_| {});
@@ -389,7 +410,7 @@ fn main() {
         for col in 0..W {
             for dy in 0..row_h {
                 let y = dy as f32;
-                let i = (y as usize * row_pitch as usize + col as usize * 4) as usize;
+                let i = y as usize * row_pitch as usize + col as usize * 4;
                 let px = &data[i..i + 4];
                 if px[0] > 200 && px[1] > 200 && px[2] > 200 {
                     *white_rows.entry(dy).or_insert(0u32) += 1;

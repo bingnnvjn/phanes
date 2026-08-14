@@ -26,7 +26,10 @@ pub struct MappedFont {
     len: usize,
 }
 
+// SAFETY: mmap 区域只读；指针/长度来自成功的 fable_mmap_file，Drop 只在最后一个
+// 所有者释放映射。并发访问仅产生不可变切片，不修改映射内容。
 unsafe impl Send for MappedFont {}
+// SAFETY: 同上；只读映射可在多个线程共享，释放由唯一 Drop 所有者完成。
 unsafe impl Sync for MappedFont {}
 
 impl MappedFont {
@@ -159,8 +162,12 @@ pub fn cmap_codepoints(data: &[u8]) -> Vec<(u32, u32)> {
         if rec + 8 > cmap.len() {
             break;
         }
-        let Some(sub_off) = u32be(cmap, rec + 4) else { break };
-        let Some(sub) = cmap.get(sub_off as usize..) else { break };
+        let Some(sub_off) = u32be(cmap, rec + 4) else {
+            break;
+        };
+        let Some(sub) = cmap.get(sub_off as usize..) else {
+            break;
+        };
         match u16be(sub, 0).unwrap_or(0) {
             4 => parse_cmap4(sub, &mut out),
             12 => parse_cmap12(sub, &mut out),
@@ -173,7 +180,9 @@ pub fn cmap_codepoints(data: &[u8]) -> Vec<(u32, u32)> {
 }
 
 fn parse_cmap4(sub: &[u8], out: &mut Vec<(u32, u32)>) {
-    let Some(seg_count_x2) = u16be(sub, 6) else { return };
+    let Some(seg_count_x2) = u16be(sub, 6) else {
+        return;
+    };
     let seg_count = seg_count_x2 as usize / 2;
     if seg_count == 0 || sub.len() < 14 + seg_count * 8 {
         return;
@@ -201,7 +210,9 @@ fn parse_cmap4(sub: &[u8], out: &mut Vec<(u32, u32)>) {
             let base = range_off + i * 2;
             for c in start..=end {
                 let gid_addr = base + range_offset + (c - start) as usize * 2;
-                let Some(raw) = u16be(sub, gid_addr) else { break };
+                let Some(raw) = u16be(sub, gid_addr) else {
+                    break;
+                };
                 if raw != 0 {
                     let gid = (raw as i64 + delta as i64) & 0xFFFF;
                     if gid != 0 {
@@ -214,12 +225,18 @@ fn parse_cmap4(sub: &[u8], out: &mut Vec<(u32, u32)>) {
 }
 
 fn parse_cmap12(sub: &[u8], out: &mut Vec<(u32, u32)>) {
-    let Some(n_groups) = u32be(sub, 12) else { return };
+    let Some(n_groups) = u32be(sub, 12) else {
+        return;
+    };
     for i in 0..n_groups as usize {
         let off = 16 + i * 12;
         let Some(start) = u32be(sub, off) else { break };
-        let Some(end) = u32be(sub, off + 4) else { break };
-        let Some(gid0) = u32be(sub, off + 8) else { break };
+        let Some(end) = u32be(sub, off + 4) else {
+            break;
+        };
+        let Some(gid0) = u32be(sub, off + 8) else {
+            break;
+        };
         if start > end {
             continue;
         }
@@ -256,7 +273,9 @@ pub fn name_version(data: &[u8]) -> Option<String> {
         if name_id != 5 {
             continue;
         }
-        let Some(bytes) = name.get(off..off + len) else { continue };
+        let Some(bytes) = name.get(off..off + len) else {
+            continue;
+        };
         let text = if platform == 0 || platform == 3 {
             decode_utf16be(bytes)
         } else {
@@ -311,7 +330,7 @@ pub struct SbixStrike {
 }
 
 impl SbixStrike {
-    /// glyphDataOffsets[i] == glyphDataOffsets[i+1] -> 无图（dupe/缺失）。
+    /// `glyphDataOffsets[i] == glyphDataOffsets[i+1]` 表示无图（dupe/缺失）。
     /// 边界保护：损坏/过短的 glyph 记录返回 None（决策 7：单字形失败回退，
     /// 不崩溃）。
     pub fn glyph_data<'a>(&self, data: &'a [u8], gid: u32) -> Option<SbixGlyph<'a>> {
@@ -633,7 +652,9 @@ impl<T> LruCache<T> {
             return;
         }
         while self.map.len() >= self.cap {
-            let Some(k) = self.clock.pop_front() else { break };
+            let Some(k) = self.clock.pop_front() else {
+                break;
+            };
             if self.map.remove(&k).is_some() {
                 break;
             }
@@ -648,6 +669,10 @@ impl<T> LruCache<T> {
 
     pub fn len(&self) -> usize {
         self.map.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
     }
 
     pub fn clear(&mut self) {
@@ -776,7 +801,7 @@ mod tests {
 
     #[test]
     fn scale_half_keeps_shape() {
-        let src = vec![255u8, 0, 0, 255].repeat(16);
+        let src = [255u8, 0, 0, 255].repeat(16);
         let out = scale_rgba(&src, 4, 4, 2, 2).unwrap();
         assert_eq!(out.len(), 2 * 2 * 4);
         assert_eq!(out[3], 255);

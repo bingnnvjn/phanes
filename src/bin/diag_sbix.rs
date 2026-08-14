@@ -26,6 +26,7 @@ fn i16be(data: &[u8], off: usize) -> Option<i16> {
     Some(i16::from_be_bytes([data[off], data[off + 1]]))
 }
 
+#[expect(dead_code, reason = "工单 50：诊断工具保留供后续表字段探针")]
 fn u32be(data: &[u8], off: usize) -> Option<u32> {
     if off + 4 > data.len() {
         return None;
@@ -38,7 +39,7 @@ fn u32be(data: &[u8], off: usize) -> Option<u32> {
     ]))
 }
 
-fn table<'a>(data: &'a [u8], tag: &[u8; 4]) -> Option<(usize, usize)> {
+fn table(data: &[u8], tag: &[u8; 4]) -> Option<(usize, usize)> {
     let (face_base, tables) = sbix::table_directory(data)?;
     for t in &tables {
         if &t.tag == tag {
@@ -50,7 +51,7 @@ fn table<'a>(data: &'a [u8], tag: &[u8; 4]) -> Option<(usize, usize)> {
 
 fn hmtx_advance(data: &[u8], gid: u32) -> Option<i32> {
     let (_, maxp) = table(data, b"maxp")?;
-    let num_glyphs = u16be(data, maxp + 4)? as u32;
+    let _num_glyphs = u16be(data, maxp + 4)? as u32;
     let (hmtx_off, _) = table(data, b"hmtx")?;
     let (_, hhea) = table(data, b"hhea")?;
     let num_h_metrics = u16be(data, hhea + 34)? as u32;
@@ -100,10 +101,37 @@ fn main() {
     println!();
 
     let samples: &[&str] = &[
-        "🇨🇳", "🇺🇸", "🇧🇷", "🇯🇵", "🏳️‍🌈", "🚩", "🎌", // 旗帜族
-        "🔋", "⚡", "🔌", "📱", "⌨️", "🖥️", "🖱️", "🖨️", // 竖条/横条硬件族
-        "🚀", "😀", "😂", "❤️", "👍🏻", "👨‍👩‍👧‍👦", "👩‍❤️‍👨", "🧑‍💻", // 通用/ZWJ
-        "☠️", "⚙️", "♻️", "🀄", "🕐", "1️⃣", "㊗️", "🈲", // 冷门/组合
+        "🇨🇳",
+        "🇺🇸",
+        "🇧🇷",
+        "🇯🇵",
+        "🏳️‍🌈",
+        "🚩",
+        "🎌", // 旗帜族
+        "🔋",
+        "⚡",
+        "🔌",
+        "📱",
+        "⌨️",
+        "🖥️",
+        "🖱️",
+        "🖨️", // 竖条/横条硬件族
+        "🚀",
+        "😀",
+        "😂",
+        "❤️",
+        "👍🏻",
+        "👨‍👩‍👧‍👦",
+        "👩‍❤️‍👨",
+        "🧑‍💻", // 通用/ZWJ
+        "☠️",
+        "⚙️",
+        "♻️",
+        "🀄",
+        "🕐",
+        "1️⃣",
+        "㊗️",
+        "🈲", // 冷门/组合
     ];
 
     for text in samples {
@@ -113,7 +141,11 @@ fn main() {
         let glyphs = rustybuzz::shape(&face, &[], buffer);
         let infos = glyphs.glyph_infos();
         let positions = glyphs.glyph_positions();
-        println!("  shaped: gids={} glyphs={:?}", infos.len(), infos.iter().map(|g| g.glyph_id).collect::<Vec<_>>());
+        println!(
+            "  shaped: gids={} glyphs={:?}",
+            infos.len(),
+            infos.iter().map(|g| g.glyph_id).collect::<Vec<_>>()
+        );
         let scale = 160.0 / upem;
         let mut pen_x = 0.0f32;
         let mut rows: Vec<String> = Vec::new();
@@ -123,20 +155,19 @@ fn main() {
         let mut max_y = i32::MIN;
         let mut advance_units = 0i32;
         for (info, pos) in infos.iter().zip(positions.iter()) {
-            let gid = info.glyph_id as u32;
+            let gid = info.glyph_id;
             let adv = hmtx_advance(&data, gid).unwrap_or(0);
             advance_units += adv;
             let d = font.decode(gid);
             println!(
                 "    gid={} pos.x_advance={} pos.x_offset={} (fixed 26.6)",
-                gid,
-                pos.x_advance,
-                pos.x_offset
+                gid, pos.x_advance, pos.x_offset
             );
             match d {
                 Some(d) => {
                     let x = pen_x + pos.x_offset as f32 * scale + d.origin_x as f32;
-                    let y = 160.0 + pos.y_offset as f32 * scale - d.origin_y as f32 - d.height as f32;
+                    let y =
+                        160.0 + pos.y_offset as f32 * scale - d.origin_y as f32 - d.height as f32;
                     rows.push(format!(
                         "gid={:<4} canvas={}x{} bbox={:?} origin=({},{}) adv={}units place=({},{})",
                         gid,

@@ -13,6 +13,7 @@ fn check(result: GhosttyResult, what: &str) {
     assert_eq!(result, GHOSTTY_SUCCESS, "{what} 失败: {result}");
 }
 
+#[expect(dead_code, reason = "工单 50：诊断例程保留供手工探针调用")]
 unsafe fn get_u16(state: GhosttyRenderState, data: i32) -> u16 {
     let mut v: u16 = 0;
     check(
@@ -130,10 +131,7 @@ fn main() {
         let mut first_failure: Option<(u16, String)> = None;
 
         for &cols in &cols_seq {
-            check(
-                ghostty_terminal_resize(terminal, cols, 24, 0, 0),
-                "resize",
-            );
+            check(ghostty_terminal_resize(terminal, cols, 24, 0, 0), "resize");
             check(
                 ghostty_render_state_update(state, terminal),
                 "render_state_update",
@@ -142,9 +140,7 @@ fn main() {
             let full: Vec<&String> = rows.iter().filter(|r| r.contains(LINE)).collect();
             let wrapped_fragments = rows
                 .iter()
-                .filter(|r| {
-                    !r.is_empty() && r.contains("白日依山尽") || r.contains("黄河入海流")
-                })
+                .filter(|r| !r.is_empty() && r.contains("白日依山尽") || r.contains("黄河入海流"))
                 .count();
             if full.len() > 1 || wrapped_fragments > 2 {
                 let snapshot: Vec<String> = rows.iter().take(6).cloned().collect();
@@ -157,12 +153,14 @@ fn main() {
         let full: Vec<&String> = rows.iter().filter(|r| r.contains(LINE)).collect();
         let fragments: Vec<&String> = rows
             .iter()
-            .filter(|r| {
-                !r.is_empty() && (r.contains("白日依山尽") || r.contains("黄河入海流"))
-            })
+            .filter(|r| !r.is_empty() && (r.contains("白日依山尽") || r.contains("黄河入海流")))
             .collect();
         println!("final rows (前 8 行): {:?}", &rows[..rows.len().min(8)]);
-        println!("final full_line_count={} fragment_rows={}", full.len(), fragments.len());
+        println!(
+            "final full_line_count={} fragment_rows={}",
+            full.len(),
+            fragments.len()
+        );
 
         let ok = full.len() == 1 && fragments.len() == 1;
         if let Some((cols, detail)) = first_failure {

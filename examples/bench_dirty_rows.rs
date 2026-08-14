@@ -28,7 +28,10 @@ fn main() {
             max_scrollback: 10000,
         };
         let mut terminal: GhosttyTerminal = std::ptr::null_mut();
-        check(ghostty_terminal_new(std::ptr::null(), &mut terminal, opts), "terminal_new");
+        check(
+            ghostty_terminal_new(std::ptr::null(), &mut terminal, opts),
+            "terminal_new",
+        );
         let mut state: GhosttyRenderState = std::ptr::null_mut();
         check(
             ghostty_render_state_new(std::ptr::null(), &mut state),
@@ -75,17 +78,19 @@ fn main() {
             let start = Instant::now();
             let mut ranges = Vec::new();
             let all: Vec<usize> = (0..snapshot.rows as usize).collect();
-            let dirty: Vec<usize> = if snapshot.dirty == DIRTY_FULL || snapshot.dirty_rows.is_empty() {
-                all
-            } else {
-                snapshot.dirty_rows.clone()
-            };
+            let dirty: Vec<usize> =
+                if snapshot.dirty == DIRTY_FULL || snapshot.dirty_rows.is_empty() {
+                    all
+                } else {
+                    snapshot.dirty_rows.clone()
+                };
             for row in dirty {
                 ranges.push(store.rebuild_row(row, &snapshot, &mut atlas, 800, 480));
             }
             ranges.push(store.rebuild_overlays(&snapshot, &[], 800, 480));
             incr_us = incr_us.saturating_add(start.elapsed().as_micros());
-            incr_bytes = incr_bytes.saturating_add(ranges.iter().map(|(_, len)| len).sum::<usize>());
+            incr_bytes =
+                incr_bytes.saturating_add(ranges.iter().map(|(_, len)| len).sum::<usize>());
             frames += 1;
         }
 
@@ -95,10 +100,7 @@ fn main() {
         println!("frames={frames} 80x24 800x480");
         println!("full_build   avg={full_avg:.1}us/frame total={full_us}us bytes={full_bytes}");
         println!("incr_build   avg={incr_avg:.1}us/frame total={incr_us}us bytes={incr_bytes}");
-        println!(
-            "speedup      {:.2}x",
-            full_avg / incr_avg.max(0.001)
-        );
+        println!("speedup      {:.2}x", full_avg / incr_avg.max(0.001));
         println!(
             "upload_bytes {:.1}%",
             incr_bytes as f64 * 100.0 / full_bytes.max(1) as f64
@@ -142,7 +144,8 @@ fn main() {
             }
             ranges.push(store2.rebuild_overlays(&snapshot, &[], 800, 480));
             incr_us2 = incr_us2.saturating_add(start.elapsed().as_micros());
-            incr_bytes2 = incr_bytes2.saturating_add(ranges.iter().map(|(_, len)| len).sum::<usize>());
+            incr_bytes2 =
+                incr_bytes2.saturating_add(ranges.iter().map(|(_, len)| len).sum::<usize>());
             frames2 += 1;
         }
         let full_avg2 = full_us2 as f64 / frames2 as f64;
@@ -151,10 +154,7 @@ fn main() {
         println!("frames={frames2} 80x24 800x480");
         println!("full_build   avg={full_avg2:.1}us/frame total={full_us2}us bytes={full_bytes2}");
         println!("incr_build   avg={incr_avg2:.1}us/frame total={incr_us2}us bytes={incr_bytes2}");
-        println!(
-            "speedup      {:.2}x",
-            full_avg2 / incr_avg2.max(0.001)
-        );
+        println!("speedup      {:.2}x", full_avg2 / incr_avg2.max(0.001));
         println!(
             "upload_bytes {:.1}%",
             incr_bytes2 as f64 * 100.0 / full_bytes2.max(1) as f64
@@ -178,11 +178,7 @@ unsafe fn reset_dirty(state: GhosttyRenderState) {
     );
     let mut it: GhosttyRenderStateRowIterator = std::ptr::null_mut();
     let _ = ghostty_render_state_row_iterator_new(std::ptr::null(), &mut it);
-    let _ = ghostty_render_state_get(
-        state,
-        DATA_ROW_ITERATOR,
-        &mut it as *mut _ as *mut c_void,
-    );
+    let _ = ghostty_render_state_get(state, DATA_ROW_ITERATOR, &mut it as *mut _ as *mut c_void);
     while ghostty_render_state_row_iterator_next(it) {
         let _ =
             ghostty_render_state_row_set(it, ROW_OPTION_DIRTY, &f as *const bool as *const c_void);

@@ -4,6 +4,11 @@
 //! 由调用方写进灰度字形图集。官方 Ghostty 用 src/font/sprite/Face.zig +
 //! z2d canvas 做同样的事（box/block/braille + cursor/underline sprites）。
 
+#![expect(
+    clippy::manual_range_patterns,
+    reason = "工单 50：Unicode box drawing 分支按连续码点分组，保持既有位掩码语义"
+)]
+
 #[derive(Debug, Clone)]
 pub struct SpriteBitmap {
     pub width: u32,
@@ -78,7 +83,8 @@ fn set_px(alpha: &mut [u8], size: u32, x: i32, y: i32, value: u8) {
     if x < 0 || y < 0 || x >= size as i32 || y >= size as i32 {
         return;
     }
-    alpha[(y as u32 * size + x as u32) as usize] = value.max(alpha[(y as u32 * size + x as u32) as usize]);
+    alpha[(y as u32 * size + x as u32) as usize] =
+        value.max(alpha[(y as u32 * size + x as u32) as usize]);
 }
 
 fn fill_rect(alpha: &mut [u8], size: u32, x0: i32, y0: i32, w: i32, h: i32) {
@@ -170,20 +176,20 @@ fn draw_box(alpha: &mut [u8], size: u32, code: u16) {
     let dirs: u8 = match code {
         0x2500 | 0x2501 | 0x2504 | 0x2508 => 0x04 | 0x08, // ─ ━ ┄ ┈
         0x2502 | 0x2503 | 0x2506 | 0x250A => 0x01 | 0x02, // │ ┃ ┆ ┊
-        0x250C..=0x250F => 0x02 | 0x04, // ┌
-        0x2510..=0x2513 => 0x02 | 0x08, // ┐
-        0x2514..=0x2517 => 0x01 | 0x04, // └
-        0x2518..=0x251B => 0x01 | 0x08, // ┘
-        0x251C..=0x2523 => 0x01 | 0x02 | 0x04, // ├
-        0x2524..=0x252B => 0x01 | 0x02 | 0x08, // ┤
-        0x252C..=0x2533 => 0x02 | 0x04 | 0x08, // ┬
-        0x2534..=0x253B => 0x01 | 0x04 | 0x08, // ┴
-        0x253C..=0x254B => 0x01 | 0x02 | 0x04 | 0x08, // ┼
+        0x250C..=0x250F => 0x02 | 0x04,                   // ┌
+        0x2510..=0x2513 => 0x02 | 0x08,                   // ┐
+        0x2514..=0x2517 => 0x01 | 0x04,                   // └
+        0x2518..=0x251B => 0x01 | 0x08,                   // ┘
+        0x251C..=0x2523 => 0x01 | 0x02 | 0x04,            // ├
+        0x2524..=0x252B => 0x01 | 0x02 | 0x08,            // ┤
+        0x252C..=0x2533 => 0x02 | 0x04 | 0x08,            // ┬
+        0x2534..=0x253B => 0x01 | 0x04 | 0x08,            // ┴
+        0x253C..=0x254B => 0x01 | 0x02 | 0x04 | 0x08,     // ┼
         0x254C | 0x254D | 0x254E | 0x254F => 0x01 | 0x02 | 0x04 | 0x08,
-        0x2574 => 0x08, // ╴
-        0x2575 => 0x01, // ╵
-        0x2576 => 0x04, // ╶
-        0x2577 => 0x02, // ╷
+        0x2574 => 0x08,          // ╴
+        0x2575 => 0x01,          // ╵
+        0x2576 => 0x04,          // ╶
+        0x2577 => 0x02,          // ╷
         0x2578..=0x257F => 0x00, // 重线单边：当普通单边处理
         _ => 0x00,
     };
@@ -272,10 +278,10 @@ fn draw_box(alpha: &mut [u8], size: u32, code: u16) {
         // 圆角：普通角 + 角点加粗（近似圆角）
         0x256D..=0x2570 => {
             let (dx, dy, hdir, vdir) = match code {
-                0x256D => (1, 1, 0x04, 0x02), // ╭
+                0x256D => (1, 1, 0x04, 0x02),  // ╭
                 0x256E => (-1, 1, 0x08, 0x02), // ╮
                 0x256F => (1, -1, 0x04, 0x01), // ╯
-                _ => (-1, -1, 0x08, 0x01), // ╰
+                _ => (-1, -1, 0x08, 0x01),     // ╰
             };
             let hx0 = if hdir & 0x04 != 0 { cx } else { x0 };
             let hx1 = if hdir & 0x04 != 0 { x1 } else { cx };
@@ -312,7 +318,7 @@ fn draw_block(alpha: &mut [u8], size: u32, code: u16) {
             s,
             eighth * (code as i32 - 0x2580),
         ), // 下 1/8..7/8
-        0x2588 => fill_rect(alpha, size, 0, 0, s, s), // 全块
+        0x2588 => fill_rect(alpha, size, 0, 0, s, s),    // 全块
         0x2589..=0x258B => fill_rect(alpha, size, 0, 0, eighth * (code as i32 - 0x2588 + 1), s), // 左 1/8..3/8
         0x258C => fill_rect(alpha, size, 0, 0, half, s), // 左半
         0x2590 => fill_rect(alpha, size, half, 0, s - half, s), // 右半
@@ -346,7 +352,7 @@ fn draw_block(alpha: &mut [u8], size: u32, code: u16) {
         }
         0x2596 => fill_rect(alpha, size, 0, half, half, s - half), // ▖ 左下
         0x2597 => fill_rect(alpha, size, half, half, s - half, s - half), // ▗ 右下
-        0x2598 => fill_rect(alpha, size, 0, 0, half, half), // ▘ 左上
+        0x2598 => fill_rect(alpha, size, 0, 0, half, half),        // ▘ 左上
         0x2599 => {
             fill_rect(alpha, size, 0, 0, half, half);
             fill_rect(alpha, size, 0, half, s, s - half);
@@ -393,7 +399,7 @@ fn draw_geometric(alpha: &mut [u8], size: u32, code: u16) -> Option<()> {
         }
         0x25AA => fill_rect(alpha, size, s / 4, s / 4, s / 2, s / 2), // ▪
         0x25AC => fill_rect(alpha, size, m, s / 2 - t / 2, s - 2 * m, t), // ▬
-        0x25CF => fill_circle(alpha, size, s / 2, s / 2, s / 2 - m), // ●
+        0x25CF => fill_circle(alpha, size, s / 2, s / 2, s / 2 - m),  // ●
         0x25CB => {
             // ○ 描边环
             let r = s / 2 - m;
@@ -436,7 +442,15 @@ fn draw_arrow(alpha: &mut [u8], size: u32, code: u16) {
         }
         0x2192 => {
             fill_rect(alpha, size, head, s / 2 - t / 2, s - 2 * head, t);
-            draw_line(alpha, size, s - head, s / 2 - head, s - head, s / 2 + head, t);
+            draw_line(
+                alpha,
+                size,
+                s - head,
+                s / 2 - head,
+                s - head,
+                s / 2 + head,
+                t,
+            );
             draw_line(alpha, size, s - head, s / 2 + head, s, s / 2, t);
             draw_line(alpha, size, s, s / 2, s - head, s / 2 - head, t);
         }
@@ -448,7 +462,15 @@ fn draw_arrow(alpha: &mut [u8], size: u32, code: u16) {
         }
         0x2193 => {
             fill_rect(alpha, size, s / 2 - t / 2, head, t, s - 2 * head);
-            draw_line(alpha, size, s / 2 - head, s - head, s / 2 + head, s - head, t);
+            draw_line(
+                alpha,
+                size,
+                s / 2 - head,
+                s - head,
+                s / 2 + head,
+                s - head,
+                t,
+            );
             draw_line(alpha, size, s / 2 + head, s - head, s / 2, s, t);
             draw_line(alpha, size, s / 2, s, s / 2 - head, s - head, t);
         }
@@ -471,7 +493,7 @@ fn draw_arrow(alpha: &mut [u8], size: u32, code: u16) {
                 0x2196 => (s, 0, 0, s), // ↖
                 0x2197 => (0, 0, s, s), // ↗
                 0x2198 => (0, s, s, 0), // ↘
-                _ => (s, s, 0, 0), // ↙
+                _ => (s, s, 0, 0),      // ↙
             };
             draw_line(alpha, size, x0, y0, x1, y1, t / 2);
         }
@@ -485,7 +507,11 @@ mod tests {
 
     #[test]
     fn sprite_covers_core_symbols() {
-        for ch in ['─', '│', '┌', '┐', '└', '┘', '├', '┤', '┬', '┴', '┼', '═', '║', '╔', '╗', '╚', '╝', '╠', '╣', '╦', '╩', '╬', '╭', '╮', '╯', '╰', '╱', '╲', '╳', '■', '□', '●', '○', '▲', '▼', '▶', '◀', '◆', '⠿', '⡇', '←', '→', '↑', '↓'] {
+        for ch in [
+            '─', '│', '┌', '┐', '└', '┘', '├', '┤', '┬', '┴', '┼', '═', '║', '╔', '╗', '╚', '╝',
+            '╠', '╣', '╦', '╩', '╬', '╭', '╮', '╯', '╰', '╱', '╲', '╳', '■', '□', '●', '○', '▲',
+            '▼', '▶', '◀', '◆', '⠿', '⡇', '←', '→', '↑', '↓',
+        ] {
             assert!(is_sprite(ch), "missing sprite: {ch:?}");
             let bmp = sprite_bitmap(ch, 32).expect("sprite bitmap");
             assert!(bmp.alpha.iter().any(|&a| a > 0), "empty bitmap: {ch:?}");

@@ -22,6 +22,13 @@ extern "C" {
 }
 
 struct HandleRegistry<T> {
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "工单 50：JNI 创建路径由 Java 导出符号调用，Rust 静态分析看不到"
+        )
+    )]
     next_handle: AtomicI64,
     entries: Mutex<std::collections::HashMap<jlong, Arc<T>>>,
 }
@@ -34,6 +41,13 @@ impl<T> HandleRegistry<T> {
         }
     }
 
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "工单 50：JNI 创建路径由 Java 导出符号调用，Rust 静态分析看不到"
+        )
+    )]
     fn insert(&self, value: T) -> jlong {
         loop {
             let handle = self.next_handle.fetch_add(1, Ordering::Relaxed);
@@ -133,60 +147,6 @@ fn argb_to_rgb(argb: jint) -> Rgb {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::HandleRegistry;
-    use std::sync::Arc;
-    use std::thread;
-
-    #[test]
-    fn handles_are_registry_tokens_and_destroy_is_idempotent() {
-        let registry = HandleRegistry::new();
-        let first = registry.insert(String::from("renderer"));
-        assert!(first > 0);
-        assert_eq!(
-            registry.get(first).as_deref().map(String::as_str),
-            Some("renderer")
-        );
-        assert!(registry.remove(first).is_some());
-        assert!(registry.remove(first).is_none());
-        assert!(registry.get(first).is_none());
-        assert!(registry.get(0).is_none());
-        assert!(registry.get(-1).is_none());
-    }
-
-    #[test]
-    fn in_flight_lookup_keeps_value_alive_after_remove() {
-        let registry = Arc::new(HandleRegistry::new());
-        let handle = registry.insert(String::from("renderer"));
-        let in_flight = registry.get(handle).expect("registered handle");
-        assert!(registry.remove(handle).is_some());
-        assert_eq!(in_flight.as_str(), "renderer");
-        drop(in_flight);
-        assert!(registry.get(handle).is_none());
-    }
-
-    #[test]
-    fn concurrent_lookup_and_destroy_never_resurrects_handle() {
-        let registry = Arc::new(HandleRegistry::new());
-        let handle = registry.insert(7u32);
-        let readers = (0..8)
-            .map(|_| {
-                let registry = Arc::clone(&registry);
-                thread::spawn(move || {
-                    for _ in 0..10_000 {
-                        let _ = registry.get(handle);
-                    }
-                })
-            })
-            .collect::<Vec<_>>();
-        assert!(registry.remove(handle).is_some());
-        for reader in readers {
-            reader.join().expect("reader thread");
-        }
-        assert!(registry.get(handle).is_none());
-    }
-}
-
 #[no_mangle]
 pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererCreate(
     _env: EnvUnowned,
@@ -218,7 +178,7 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererDestroy(
 
 #[no_mangle]
 pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererWrite(
-    mut env: EnvUnowned,
+    env: EnvUnowned,
     _class: JClass,
     handle: jlong,
     data: JByteArray,
@@ -271,7 +231,7 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererSetSelection(
 
 #[no_mangle]
 pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererSelectionText(
-    mut env: EnvUnowned,
+    env: EnvUnowned,
     _class: JClass,
     handle: jlong,
 ) -> jstring {
@@ -294,7 +254,7 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererSetFontSize(
 
 #[no_mangle]
 pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererSetFontPaths(
-    mut env: EnvUnowned,
+    env: EnvUnowned,
     _class: JClass,
     handle: jlong,
     apple_path: JString,
@@ -302,9 +262,9 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererSetFontPaths(
 ) {
     with_jni_env(env, |env| {
         let apple_value = apple_path.mutf8_chars(env)?;
-        let apple = apple_value.to_str().to_owned();
+        let apple = apple_value.to_str().into_owned();
         let noto_value = noto_path.mutf8_chars(env)?;
-        let noto = noto_value.to_str().to_owned();
+        let noto = noto_value.to_str().into_owned();
         with_renderer(handle, |renderer| {
             renderer.set_font_paths(&apple, &noto);
         });
@@ -314,7 +274,7 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererSetFontPaths(
 
 #[no_mangle]
 pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetCellSize(
-    mut env: EnvUnowned,
+    env: EnvUnowned,
     _class: JClass,
     handle: jlong,
     out: JIntArray,
@@ -334,7 +294,7 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetCellSize(
 /// 均以核心 2027 列模型为准，供 CPR 应答），0=无光标（out 置 -1）。
 #[no_mangle]
 pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetCursor(
-    mut env: EnvUnowned,
+    env: EnvUnowned,
     _class: JClass,
     handle: jlong,
     out: JIntArray,
@@ -356,7 +316,7 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetCursor(
 /// 工单 29：当前核心标题（未设置为空串）。
 #[no_mangle]
 pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetTitle(
-    mut env: EnvUnowned,
+    env: EnvUnowned,
     _class: JClass,
     handle: jlong,
 ) -> jstring {
@@ -501,7 +461,7 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetScrollbackRo
 /// 工单 31：外部行列区间文本（0 = 活动屏顶，负 = 历史）。
 #[no_mangle]
 pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetText(
-    mut env: EnvUnowned,
+    env: EnvUnowned,
     _class: JClass,
     handle: jlong,
     row: jint,
@@ -520,7 +480,7 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetText(
 /// 工单 31：单词列边界 {start, end}（无词返回 null）。
 #[no_mangle]
 pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetWordBoundsAt(
-    mut env: EnvUnowned,
+    env: EnvUnowned,
     _class: JClass,
     handle: jlong,
     column: jint,
@@ -533,7 +493,7 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetWordBoundsAt
         Some((start, end)) => with_jni_env(env, |env| {
             let array = env.new_int_array(2)?;
             let values = [start as jint, end as jint];
-            env.set_int_array_region(&array, 0, &values)?;
+            array.set_region(env, 0, &values)?;
             Ok(array.into_raw())
         }),
         None => std::ptr::null_mut(),
@@ -543,7 +503,7 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetWordBoundsAt
 /// 工单 31：取词（软换行整行语义；无词返回空串）。
 #[no_mangle]
 pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetWordAt(
-    mut env: EnvUnowned,
+    env: EnvUnowned,
     _class: JClass,
     handle: jlong,
     column: jint,
@@ -561,7 +521,7 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetWordAt(
 /// 工单 31：完整转录文本。
 #[no_mangle]
 pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererGetTranscriptText(
-    mut env: EnvUnowned,
+    env: EnvUnowned,
     _class: JClass,
     handle: jlong,
     lines_joined: jboolean,
@@ -612,7 +572,7 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererSetPalette16(
         if ansi.is_null() {
             return Ok(DEFAULT_ANSI_16);
         }
-        let len = ansi.len(env).unwrap_or(0).min(16) as usize;
+        let len = ansi.len(env).unwrap_or(0).min(16);
         let mut raw = [0i32; 16];
         if len > 0 {
             let _ = ansi.get_region(env, 0, &mut raw[..len]);
@@ -641,7 +601,7 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererResetPalette(
 
 #[no_mangle]
 pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererAttach(
-    mut env: EnvUnowned,
+    env: EnvUnowned,
     _class: JClass,
     handle: jlong,
     surface: JObject,
@@ -731,7 +691,7 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererTestPattern(
 
 #[no_mangle]
 pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererInfo(
-    mut env: EnvUnowned,
+    env: EnvUnowned,
     _class: JClass,
     handle: jlong,
 ) -> jstring {
@@ -749,7 +709,7 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererInfo(
 
 #[no_mangle]
 pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererLastError(
-    mut env: EnvUnowned,
+    env: EnvUnowned,
     _class: JClass,
     handle: jlong,
 ) -> jstring {
@@ -762,7 +722,7 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererLastError(
 
 #[no_mangle]
 pub extern "system" fn Java_com_gph_fable_app_RenderCore_ptySpawn(
-    mut env: EnvUnowned,
+    env: EnvUnowned,
     _class: JClass,
     shell: JString,
     cols: jint,
@@ -778,7 +738,7 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_ptySpawn(
 
 #[no_mangle]
 pub extern "system" fn Java_com_gph_fable_app_RenderCore_ptyRead(
-    mut env: EnvUnowned,
+    env: EnvUnowned,
     _class: JClass,
     handle: jlong,
     buf: JByteArray,
@@ -799,7 +759,7 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_ptyRead(
 
 #[no_mangle]
 pub extern "system" fn Java_com_gph_fable_app_RenderCore_ptyWrite(
-    mut env: EnvUnowned,
+    env: EnvUnowned,
     _class: JClass,
     handle: jlong,
     data: JByteArray,
@@ -830,4 +790,59 @@ pub extern "system" fn Java_com_gph_fable_app_RenderCore_ptyClose(
     handle: jlong,
 ) {
     unsafe { fable_pty_close(handle) };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::HandleRegistry;
+    use std::sync::Arc;
+    use std::thread;
+
+    #[test]
+    fn handles_are_registry_tokens_and_destroy_is_idempotent() {
+        let registry = HandleRegistry::new();
+        let first = registry.insert(String::from("renderer"));
+        assert!(first > 0);
+        assert_eq!(
+            registry.get(first).as_deref().map(String::as_str),
+            Some("renderer")
+        );
+        assert!(registry.remove(first).is_some());
+        assert!(registry.remove(first).is_none());
+        assert!(registry.get(first).is_none());
+        assert!(registry.get(0).is_none());
+        assert!(registry.get(-1).is_none());
+    }
+
+    #[test]
+    fn in_flight_lookup_keeps_value_alive_after_remove() {
+        let registry = Arc::new(HandleRegistry::new());
+        let handle = registry.insert(String::from("renderer"));
+        let in_flight = registry.get(handle).expect("registered handle");
+        assert!(registry.remove(handle).is_some());
+        assert_eq!(in_flight.as_str(), "renderer");
+        drop(in_flight);
+        assert!(registry.get(handle).is_none());
+    }
+
+    #[test]
+    fn concurrent_lookup_and_destroy_never_resurrects_handle() {
+        let registry = Arc::new(HandleRegistry::new());
+        let handle = registry.insert(7u32);
+        let readers = (0..8)
+            .map(|_| {
+                let registry = Arc::clone(&registry);
+                thread::spawn(move || {
+                    for _ in 0..10_000 {
+                        let _ = registry.get(handle);
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+        assert!(registry.remove(handle).is_some());
+        for reader in readers {
+            reader.join().expect("reader thread");
+        }
+        assert!(registry.get(handle).is_none());
+    }
 }

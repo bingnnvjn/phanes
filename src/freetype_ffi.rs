@@ -4,7 +4,10 @@
 //! 静态链接进 `libfable-render.so`。结构体只保留访问到的字段前缀
 //! （repr(C) 前缀布局与 C 一致；不分配实例，故可安全截断尾部字段）。
 
-#![allow(non_camel_case_types, dead_code)]
+#![expect(
+    non_camel_case_types,
+    reason = "工单 50：FreeType C ABI 名称和保留布局字段必须原样保留"
+)]
 
 use std::os::raw::{c_char, c_int, c_long, c_short, c_uchar, c_uint, c_ulong, c_ushort, c_void};
 
@@ -98,6 +101,10 @@ pub struct FT_Generic {
 
 #[repr(C)]
 #[derive(Clone, Copy)]
+#[expect(
+    non_snake_case,
+    reason = "工单 50：字段名必须匹配 FreeType FT_Glyph_Metrics ABI"
+)]
 pub struct FT_Glyph_Metrics {
     pub width: FT_Pos,
     pub height: FT_Pos,
@@ -110,16 +117,10 @@ pub struct FT_Glyph_Metrics {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct FT_Vector {
     pub x: FT_Pos,
     pub y: FT_Pos,
-}
-
-impl Default for FT_Vector {
-    fn default() -> Self {
-        Self { x: 0, y: 0 }
-    }
 }
 
 #[repr(C)]
@@ -133,6 +134,10 @@ pub struct FT_Matrix {
 
 #[repr(C)]
 #[derive(Clone, Copy)]
+#[expect(
+    non_snake_case,
+    reason = "工单 50：字段名必须匹配 FreeType FT_BBox ABI"
+)]
 pub struct FT_BBox {
     pub xMin: FT_Pos,
     pub yMin: FT_Pos,
@@ -431,13 +436,12 @@ extern "C" {
         aface: *mut FT_Face,
     ) -> FT_Error;
     pub fn FT_Done_Face(face: FT_Face) -> FT_Error;
-    pub fn FT_Set_Pixel_Sizes(face: FT_Face, pixel_width: FT_UInt, pixel_height: FT_UInt)
-        -> FT_Error;
-    pub fn FT_Load_Glyph(
+    pub fn FT_Set_Pixel_Sizes(
         face: FT_Face,
-        glyph_index: FT_UInt,
-        load_flags: c_int,
+        pixel_width: FT_UInt,
+        pixel_height: FT_UInt,
     ) -> FT_Error;
+    pub fn FT_Load_Glyph(face: FT_Face, glyph_index: FT_UInt, load_flags: c_int) -> FT_Error;
     pub fn FT_Render_Glyph(slot: FT_GlyphSlot, render_mode: c_int) -> FT_Error;
     // COLRv1 / 颜色 API（ftcolor.h 2.13+）
     pub fn FT_Get_Color_Glyph_Paint(
@@ -468,6 +472,9 @@ extern "C" {
     ) -> FT_Error;
     pub fn FT_Palette_Data_Get(face: FT_Face, apalette: *mut FT_Palette_Data) -> FT_Error;
     pub fn FT_Outline_Transform(outline: *mut FT_Outline, matrix: *const FT_Matrix) -> FT_Error;
-    pub fn FT_Outline_Translate(outline: *mut FT_Outline, offset_x: FT_Pos, offset_y: FT_Pos)
-        -> FT_Error;
+    pub fn FT_Outline_Translate(
+        outline: *mut FT_Outline,
+        offset_x: FT_Pos,
+        offset_y: FT_Pos,
+    ) -> FT_Error;
 }

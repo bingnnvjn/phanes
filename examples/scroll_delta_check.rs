@@ -6,7 +6,11 @@ use std::ffi::c_void;
 unsafe fn collect_text(state: GhosttyRenderState) -> Vec<String> {
     let mut row_it: GhosttyRenderStateRowIterator = std::ptr::null_mut();
     ghostty_render_state_row_iterator_new(std::ptr::null(), &mut row_it);
-    ghostty_render_state_get(state, DATA_ROW_ITERATOR, &mut row_it as *mut _ as *mut c_void);
+    ghostty_render_state_get(
+        state,
+        DATA_ROW_ITERATOR,
+        &mut row_it as *mut _ as *mut c_void,
+    );
     let mut cells: GhosttyRenderStateRowCells = std::ptr::null_mut();
     ghostty_render_state_row_cells_new(std::ptr::null(), &mut cells);
     let mut rows = Vec::new();
@@ -66,8 +70,13 @@ fn main() {
         ghostty_render_state_new(std::ptr::null(), &mut state);
         ghostty_render_state_update(state, term);
         let bottom = collect_text(state);
-        let bottom_nonempty: Vec<String> = bottom.iter().filter(|s| !s.is_empty()).cloned().collect();
-        println!("bottom_first={} bottom_last={}", bottom_nonempty.first().unwrap_or(&String::new()), bottom_nonempty.last().unwrap_or(&String::new()));
+        let bottom_nonempty: Vec<String> =
+            bottom.iter().filter(|s| !s.is_empty()).cloned().collect();
+        println!(
+            "bottom_first={} bottom_last={}",
+            bottom_nonempty.first().unwrap_or(&String::new()),
+            bottom_nonempty.last().unwrap_or(&String::new())
+        );
 
         ghostty_terminal_scroll_viewport(
             term,
@@ -79,9 +88,20 @@ fn main() {
         ghostty_render_state_update(state, term);
         let after = collect_text(state);
         let after_nonempty: Vec<String> = after.iter().filter(|s| !s.is_empty()).cloned().collect();
-        println!("after_scroll_first={} after_scroll_last={}", after_nonempty.first().unwrap_or(&String::new()), after_nonempty.last().unwrap_or(&String::new()));
+        println!(
+            "after_scroll_first={} after_scroll_last={}",
+            after_nonempty.first().unwrap_or(&String::new()),
+            after_nonempty.last().unwrap_or(&String::new())
+        );
         let changed = bottom_nonempty != after_nonempty;
-        println!("RESULT: {}", if changed { "PASS viewport-moved" } else { "FAIL viewport-unchanged" });
+        println!(
+            "RESULT: {}",
+            if changed {
+                "PASS viewport-moved"
+            } else {
+                "FAIL viewport-unchanged"
+            }
+        );
         ghostty_render_state_free(state);
         ghostty_terminal_free(term);
         std::process::exit(if changed { 0 } else { 1 });

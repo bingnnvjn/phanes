@@ -9,8 +9,12 @@ use std::path::Path;
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let input = args.next().expect("usage: strip_apple_emoji <input.ttc> <output.ttf>");
-    let output = args.next().expect("usage: strip_apple_emoji <input.ttc> <output.ttf>");
+    let input = args
+        .next()
+        .expect("usage: strip_apple_emoji <input.ttc> <output.ttf>");
+    let output = args
+        .next()
+        .expect("usage: strip_apple_emoji <input.ttc> <output.ttf>");
     let data = std::fs::read(&input).expect("read input");
 
     // face 0 表目录；表数据偏移相对整个 ttc 文件（TTC 规范）。
@@ -152,17 +156,17 @@ fn verify(font: &[u8], glyph_count: u32, path: &str) {
     let version = sbix::name_version(font).unwrap_or_default();
     println!("output version: {version}");
     let strike = sbix::find_strike(font, glyph_count).expect("160 strike");
-    println!(
-        "output strike: ppem={} ppi={}",
-        strike.ppem, strike.ppi
-    );
+    println!("output strike: ppem={} ppi={}", strike.ppem, strike.ppi);
     let pngs = sbix::count_pngs(font, glyph_count);
     println!("output pngs: {pngs}");
     if !version.contains("21.4d3e1") {
         eprintln!("warning: version 串不含 21.4d3e1（{version}）");
     }
     if strike.ppem != 160 || pngs != 3761 {
-        eprintln!("unexpected strike/png count (ppem={} pngs={})", strike.ppem, pngs);
+        eprintln!(
+            "unexpected strike/png count (ppem={} pngs={})",
+            strike.ppem, pngs
+        );
         std::process::exit(1);
     }
     let _ = Path::new(path);

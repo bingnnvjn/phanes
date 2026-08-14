@@ -13,8 +13,8 @@
 //! 验收命令：cargo run --release --example diag_zwj_typing
 
 use fable_render::ffi::*;
-use std::ffi::{c_char, c_int, c_void};
 use std::ffi::CString;
+use std::ffi::{c_char, c_int, c_void};
 use std::ptr;
 use std::thread;
 use std::time::Duration;
@@ -72,7 +72,11 @@ unsafe fn cell_raw_wide(cells: GhosttyRenderStateRowCells) -> i32 {
         return -1;
     }
     let mut wide: i32 = -1;
-    ghostty_cell_get(raw, GHOSTTY_CELL_DATA_WIDE, &mut wide as *mut i32 as *mut c_void);
+    ghostty_cell_get(
+        raw,
+        GHOSTTY_CELL_DATA_WIDE,
+        &mut wide as *mut i32 as *mut c_void,
+    );
     wide
 }
 
@@ -167,7 +171,10 @@ unsafe fn dump_core(state: GhosttyRenderState, label: &str) {
                 _ => ".",
             };
             if !text.is_empty() || wide == CELL_WIDE_WIDE || wide == CELL_WIDE_SPACER_TAIL {
-                parts.push(format!("c{col}:{wname}{}", if text.is_empty() { "" } else { &text }));
+                parts.push(format!(
+                    "c{col}:{wname}{}",
+                    if text.is_empty() { "" } else { &text }
+                ));
             }
             col += 1;
         }

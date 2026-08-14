@@ -203,28 +203,27 @@ fn main() {
             label: Some("render-check-shader"),
             source: wgpu::ShaderSource::Wgsl(SURFACE_SHADER.into()),
         });
-        let bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("render-check-bgl"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            view_dimension: wgpu::TextureViewDimension::D2Array,
-                            multisampled: false,
-                        },
-                        count: None,
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("render-check-bgl"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
                     },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
-                    },
-                ],
-            });
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("render-check-pl"),
             bind_group_layouts: &[Some(&bind_group_layout)],
@@ -322,7 +321,11 @@ fn main() {
         });
         for (offset, len) in &ranges {
             let start = *offset as usize;
-            queue.write_buffer(&vertex_buffer, *offset, &store.payload()[start..start + *len]);
+            queue.write_buffer(
+                &vertex_buffer,
+                *offset,
+                &store.payload()[start..start + *len],
+            );
         }
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -399,23 +402,35 @@ fn main() {
         let mut cursor_region_non_gray = 0u32;
         for row in 0..H {
             for col in 0..W {
-                let i = (row as usize * row_pitch as usize + col as usize * 4) as usize;
+                let i = row as usize * row_pitch as usize + col as usize * 4;
                 let px = &data[i..i + 4];
-            if px[0] > 200 && px[1] > 200 && px[2] > 200 {
-                white += 1;
-            }
-            if px[0] < 120 && px[1] > 120 && px[2] > 200 {
-                cursor_blue += 1;
-            }
-            if px[0] >= 25 && px[0] <= 40 && px[1] >= 25 && px[1] <= 40 && px[2] >= 25 && px[2] <= 40 {
-                gray += 1;
-            }
-            let in_cursor_cell = row >= H / ROWS as u32 && row < 2 * H / ROWS as u32 && col < 10;
-            if in_cursor_cell
-                && !(px[0] >= 25 && px[0] <= 40 && px[1] >= 25 && px[1] <= 40 && px[2] >= 25 && px[2] <= 40)
-            {
-                cursor_region_non_gray += 1;
-            }
+                if px[0] > 200 && px[1] > 200 && px[2] > 200 {
+                    white += 1;
+                }
+                if px[0] < 120 && px[1] > 120 && px[2] > 200 {
+                    cursor_blue += 1;
+                }
+                if px[0] >= 25
+                    && px[0] <= 40
+                    && px[1] >= 25
+                    && px[1] <= 40
+                    && px[2] >= 25
+                    && px[2] <= 40
+                {
+                    gray += 1;
+                }
+                let in_cursor_cell =
+                    row >= H / ROWS as u32 && row < 2 * H / ROWS as u32 && col < 10;
+                if in_cursor_cell
+                    && !(px[0] >= 25
+                        && px[0] <= 40
+                        && px[1] >= 25
+                        && px[1] <= 40
+                        && px[2] >= 25
+                        && px[2] <= 40)
+                {
+                    cursor_region_non_gray += 1;
+                }
             }
         }
         println!(

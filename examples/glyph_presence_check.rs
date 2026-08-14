@@ -8,7 +8,9 @@
 use fable_render::render_android::{build_row_vertices, Cell, GlyphAtlas, Rgb, Snapshot, Vertex};
 
 const FONT_SIZES: [f32; 7] = [32.0, 34.0, 36.0, 48.0, 60.0, 90.0, 128.0];
-const WATCH: &[char] = &['j', '/', '\\', '|', '中', '线', '不', '日', '水', '，', '。'];
+const WATCH: &[char] = &[
+    'j', '/', '\\', '|', '中', '线', '不', '日', '水', '，', '。',
+];
 const MODE_GLYPH: f32 = 1.0;
 const VERTS_PER_RECT: usize = 6;
 
@@ -32,7 +34,10 @@ fn empty_cell() -> Cell {
 fn glyph_rect_px(verts: &[Vertex], nth: usize, surface_w: f32) -> Option<(f32, f32, f32)> {
     let mut seen = 0usize;
     for group in verts.chunks_exact(VERTS_PER_RECT) {
-        if group.iter().any(|v| (v.mode - MODE_GLYPH).abs() > f32::EPSILON) {
+        if group
+            .iter()
+            .any(|v| (v.mode - MODE_GLYPH).abs() > f32::EPSILON)
+        {
             continue;
         }
         if seen != nth {
@@ -76,8 +81,16 @@ fn check_wide_char_scale(atlas: &mut GlyphAtlas) -> bool {
         ]],
         cursor: None,
         cursor_style: 0,
-        default_fg: Rgb { r: 229, g: 229, b: 229 },
-        default_bg: Rgb { r: 31, g: 31, b: 31 },
+        default_fg: Rgb {
+            r: 229,
+            g: 229,
+            b: 229,
+        },
+        default_bg: Rgb {
+            r: 31,
+            g: 31,
+            b: 31,
+        },
         cursor_color: Rgb { r: 0, g: 0, b: 255 },
         dirty: 0,
         dirty_rows: Vec::new(),
@@ -134,7 +147,14 @@ fn main() {
     }
     atlas.set_pixels_per_em(36.0);
     all_ok &= check_wide_char_scale(&mut atlas);
-    println!("结果: {}", if all_ok { "ALL PASS" } else { "FAIL（存在缺字）" });
+    println!(
+        "结果: {}",
+        if all_ok {
+            "ALL PASS"
+        } else {
+            "FAIL（存在缺字）"
+        }
+    );
     if !all_ok {
         std::process::exit(1);
     }

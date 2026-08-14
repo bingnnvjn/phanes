@@ -7,6 +7,11 @@
 //! 灰度正文仍 fontdue 不动；字体改为 APK assets 运行时 mmap 加载
 //! （不再 include_bytes 内嵌，决策 4）。
 
+#![expect(
+    clippy::too_many_arguments,
+    reason = "工单 50：字形合成参数直接对应位图和目标矩形"
+)]
+
 use crate::colr;
 use crate::freetype_ffi::*;
 use crate::sbix;
@@ -82,10 +87,10 @@ pub const NOTO_EXPECTED_SHA256: &str =
 
 /// 启动预热前 50 个热门 emoji（启动后 2s 内后台解码，指标见 ADR-0007）。
 pub const POPULAR_EMOJI_50: &[&str] = &[
-    "😀", "😂", "😍", "😢", "😡", "🥺", "😱", "😭", "😅", "😉", "😊", "😎", "🤔",
-    "🤣", "😇", "🙃", "😴", "🤯", "😬", "😐", "🤗", "🤭", "🫡", "🥰", "😘", "🤩",
-    "🥳", "😜", "🤪", "😝", "🧐", "🤓", "😏", "😒", "😞", "😔", "😟", "😕", "🙁",
-    "😣", "😖", "😫", "😩", "🥱", "😤", "😠", "😈", "👿", "💀", "❤️",
+    "😀", "😂", "😍", "😢", "😡", "🥺", "😱", "😭", "😅", "😉", "😊", "😎", "🤔", "🤣", "😇", "🙃",
+    "😴", "🤯", "😬", "😐", "🤗", "🤭", "🫡", "🥰", "😘", "🤩", "🥳", "😜", "🤪", "😝", "🧐", "🤓",
+    "😏", "😒", "😞", "😔", "😟", "😕", "🙁", "😣", "😖", "😫", "😩", "🥱", "😤", "😠", "😈", "👿",
+    "💀", "❤️",
 ];
 
 /// 宿主/自检默认字体路径：优先环境变量，否则 spike-render 相对 fable-app
@@ -127,13 +132,8 @@ impl EmojiFont {
                 return None;
             }
             let mut face: FT_Face = std::ptr::null_mut();
-            let err = FT_New_Memory_Face(
-                library,
-                data.as_ptr(),
-                data.len() as FT_Long,
-                0,
-                &mut face,
-            );
+            let err =
+                FT_New_Memory_Face(library, data.as_ptr(), data.len() as FT_Long, 0, &mut face);
             if err != 0 || face.is_null() {
                 FT_Done_FreeType(library);
                 return None;
@@ -239,11 +239,7 @@ impl EmojiFont {
                     let y = baseline_y + pos.y_offset as f32 * scale
                         - img.offset_y as f32
                         - img.height as f32;
-                    placed.push((
-                        x.round() as i32,
-                        y.round() as i32,
-                        img.to_bitmap(),
-                    ));
+                    placed.push((x.round() as i32, y.round() as i32, img.to_bitmap()));
                     pen_x += pos.x_advance as f32 * scale;
                     continue;
                 }
@@ -338,8 +334,7 @@ fn blit_src_over(
             for k in 0..3 {
                 canvas[di + k] = ((src[si + k] as f32 * sa
                     + canvas[di + k] as f32 * da * (1.0 - sa))
-                    / oa)
-                    as u8;
+                    / oa) as u8;
             }
             canvas[di + 3] = (oa * 255.0) as u8;
         }
@@ -494,7 +489,7 @@ impl EmojiFonts {
                 buffer.push_str(s);
                 let glyphs = rustybuzz::shape(&face, &[], buffer);
                 for info in glyphs.glyph_infos() {
-                    let gid = info.glyph_id as u32;
+                    let gid = info.glyph_id;
                     if apple.has_glyph(gid) {
                         total += 1;
                         if apple.decode(gid).is_some() {
@@ -510,8 +505,14 @@ impl EmojiFonts {
     pub fn diagnostics(&self) -> String {
         let mut parts = Vec::new();
         parts.push(format!("emoji_status={}", self.status.label()));
-        parts.push(format!("apple={}", self.apple_path.as_deref().unwrap_or("none")));
-        parts.push(format!("noto={}", self.noto_path.as_deref().unwrap_or("none")));
+        parts.push(format!(
+            "apple={}",
+            self.apple_path.as_deref().unwrap_or("none")
+        ));
+        parts.push(format!(
+            "noto={}",
+            self.noto_path.as_deref().unwrap_or("none")
+        ));
         if let Some(apple) = &self.apple {
             parts.push(format!(
                 "apple_version={} sha256={:.12} strike={} pngs={} cache={} upem={}",
@@ -605,10 +606,7 @@ impl EmojiFonts {
             noto_cmap.iter().map(|(cp, _)| *cp).collect();
         let mut only = Vec::new();
         for (cp, gid) in apple_cmap {
-            if sbix::is_emoji_codepoint(cp)
-                && apple.has_glyph(gid)
-                && !noto_set.contains(&cp)
-            {
+            if sbix::is_emoji_codepoint(cp) && apple.has_glyph(gid) && !noto_set.contains(&cp) {
                 only.push(cp);
             }
         }
@@ -637,7 +635,7 @@ fn apple_rasterize_cluster(
     }
     // 决策 5：整段任一 glyph 无图 -> 整段走 Noto。
     for info in infos.iter() {
-        if !apple.has_glyph(info.glyph_id as u32) {
+        if !apple.has_glyph(info.glyph_id) {
             return None;
         }
     }
@@ -655,7 +653,7 @@ fn apple_rasterize_cluster(
     let mut places = Vec::with_capacity(infos.len());
     let mut pen_x = 0.0f32;
     for (info, pos) in infos.iter().zip(positions.iter()) {
-        let gid = info.glyph_id as u32;
+        let gid = info.glyph_id;
         let d = apple.decode(gid)?;
         let x = pen_x + pos.x_offset as f32 * scale + d.origin_x as f32;
         let y = baseline_y + pos.y_offset as f32 * scale - d.origin_y as f32 - d.height as f32;

@@ -7,10 +7,11 @@
 //! 2. 彩色 glyph mode（mode>=1.5）：shader 从独立 4096 彩色纹理采样 ——
 //!    验证 D2 视图与 texture_2d 声明匹配（曾误用 texture_2d_array 声明 +
 //!    D2 视图导致 create_render_pipeline 失败、真机黑屏）且设备支持 4096。
-//! PASS = 管线/bind group/双纹理采样本身能用；问题在 Android Surface 呈现层；
-//! FAIL = 管线/shader/顶点数据/纹理尺寸本身有问题。
+//!
+//! PASS：管线/bind group/双纹理采样本身能用；问题在 Android Surface 呈现层。
+//! FAIL：管线/shader/顶点数据/纹理尺寸本身有问题。
 
-use fable_render::render_android::{SURFACE_SHADER, Vertex};
+use fable_render::render_android::{Vertex, SURFACE_SHADER};
 
 const VERTEX_STRIDE: u64 = 36;
 
@@ -148,38 +149,37 @@ fn main() {
     });
     // 与 render_android::Renderer::ensure_pipeline 同款 3-binding 布局
     // （0=灰度 D2、1=sampler、2=彩色 D2）。
-    let bind_group_layout =
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("offscreen-check-bgl"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
+    let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("offscreen-check-bgl"),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
                 },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
                 },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-            ],
-        });
+                count: None,
+            },
+        ],
+    });
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("offscreen-check-pl"),
         bind_group_layouts: &[Some(&bind_group_layout)],
@@ -270,22 +270,82 @@ fn main() {
     let red = [1.0f32, 0.0, 0.0, 1.0];
     let white = [1.0f32, 1.0, 1.0, 1.0];
     let solid = [
-        Vertex { position: [-1.0, -1.0], tex_coord: [0.0, 1.0], color: red, mode: 0.0 },
-        Vertex { position: [1.0, -1.0], tex_coord: [1.0, 1.0], color: red, mode: 0.0 },
-        Vertex { position: [-1.0, 1.0], tex_coord: [0.0, 0.0], color: red, mode: 0.0 },
-        Vertex { position: [1.0, -1.0], tex_coord: [1.0, 1.0], color: red, mode: 0.0 },
-        Vertex { position: [1.0, 1.0], tex_coord: [1.0, 0.0], color: red, mode: 0.0 },
-        Vertex { position: [-1.0, 1.0], tex_coord: [0.0, 0.0], color: red, mode: 0.0 },
+        Vertex {
+            position: [-1.0, -1.0],
+            tex_coord: [0.0, 1.0],
+            color: red,
+            mode: 0.0,
+        },
+        Vertex {
+            position: [1.0, -1.0],
+            tex_coord: [1.0, 1.0],
+            color: red,
+            mode: 0.0,
+        },
+        Vertex {
+            position: [-1.0, 1.0],
+            tex_coord: [0.0, 0.0],
+            color: red,
+            mode: 0.0,
+        },
+        Vertex {
+            position: [1.0, -1.0],
+            tex_coord: [1.0, 1.0],
+            color: red,
+            mode: 0.0,
+        },
+        Vertex {
+            position: [1.0, 1.0],
+            tex_coord: [1.0, 0.0],
+            color: red,
+            mode: 0.0,
+        },
+        Vertex {
+            position: [-1.0, 1.0],
+            tex_coord: [0.0, 0.0],
+            color: red,
+            mode: 0.0,
+        },
     ];
     let u = 1.0f32 / color_w as f32;
     let v = 1.0f32 / color_w as f32;
     let color_glyph = [
-        Vertex { position: [-1.0, -1.0], tex_coord: [0.0, v], color: white, mode: 2.0 },
-        Vertex { position: [1.0, -1.0], tex_coord: [u, v], color: white, mode: 2.0 },
-        Vertex { position: [-1.0, 1.0], tex_coord: [0.0, 0.0], color: white, mode: 2.0 },
-        Vertex { position: [1.0, -1.0], tex_coord: [u, v], color: white, mode: 2.0 },
-        Vertex { position: [1.0, 1.0], tex_coord: [u, 0.0], color: white, mode: 2.0 },
-        Vertex { position: [-1.0, 1.0], tex_coord: [0.0, 0.0], color: white, mode: 2.0 },
+        Vertex {
+            position: [-1.0, -1.0],
+            tex_coord: [0.0, v],
+            color: white,
+            mode: 2.0,
+        },
+        Vertex {
+            position: [1.0, -1.0],
+            tex_coord: [u, v],
+            color: white,
+            mode: 2.0,
+        },
+        Vertex {
+            position: [-1.0, 1.0],
+            tex_coord: [0.0, 0.0],
+            color: white,
+            mode: 2.0,
+        },
+        Vertex {
+            position: [1.0, -1.0],
+            tex_coord: [u, v],
+            color: white,
+            mode: 2.0,
+        },
+        Vertex {
+            position: [1.0, 1.0],
+            tex_coord: [u, 0.0],
+            color: white,
+            mode: 2.0,
+        },
+        Vertex {
+            position: [-1.0, 1.0],
+            tex_coord: [0.0, 0.0],
+            color: white,
+            mode: 2.0,
+        },
     ];
     let mut payload = Vec::new();
     for vertex in &solid {

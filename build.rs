@@ -1,5 +1,5 @@
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// 编译 vendored FreeType（工单 13：彩色字形通路 = FreeType 光栅 COLRv1）。
 ///
@@ -8,7 +8,7 @@ use std::path::PathBuf;
 /// （base/sfnt/truetype/cff/psaux/pshinter/psnames/smooth/autofit），
 /// 并已裁剪 ftmodule.h（去掉 svg/sdf/raster1/bdf/pcf/pfr/type1 等）与
 /// ftoption.h（关掉 USE_ZLIB/USE_PNG/USE_BZIP2），静态链进 libfable-render.so。
-fn build_freetype(root: &PathBuf) {
+fn build_freetype(root: &Path) {
     let ft = root.join("third_party/freetype");
     println!("cargo:rerun-if-changed={}", ft.join("include").display());
     println!("cargo:rerun-if-changed={}", ft.join("src").display());
@@ -45,7 +45,10 @@ fn main() {
     println!("cargo:rerun-if-changed=src/pty_shim.c");
     println!("cargo:rerun-if-changed=src/mmap_shim.c");
     println!("cargo:rerun-if-changed=src/sha256_shim.c");
-    let manifest = env::var("CARGO_MANIFEST_DIR").unwrap();
+    let Ok(manifest) = env::var("CARGO_MANIFEST_DIR") else {
+        eprintln!("CARGO_MANIFEST_DIR is required by spike-render build script");
+        std::process::exit(1);
+    };
     let root = PathBuf::from(&manifest);
 
     // 工单 13：FreeType 静态接入（必须先于 tls_shim，保证 -fPIC 一致）。

@@ -4,10 +4,19 @@
 //! 单 shader（solid/glyph 双 mode）、字形图集、内容签名触发渲染。
 //! 本切片不实现脏行增量顶点 / 彩色 emoji 图集 / sprite face（ADR-0004 缺口后置）。
 
+#![expect(
+    clippy::too_many_arguments,
+    reason = "工单 50：GPU/字形顶点函数参数对应固定绘制 ABI"
+)]
+#![expect(
+    clippy::type_complexity,
+    reason = "工单 50：last_meta 是单一内部快照签名，不对外暴露"
+)]
+
 use crate::ffi::*;
-use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
-use std::ffi::{CString, c_char, c_void};
+use std::collections::HashMap;
+use std::ffi::{c_char, c_void, CString};
 use std::hash::{Hash, Hasher};
 use std::ptr::NonNull;
 use std::sync::Mutex;
@@ -118,21 +127,81 @@ const DEFAULT_SELECTION_COLOR: Rgb = Rgb {
 /// 内置 ANSI 16 色（与 TerminalColorScheme 默认一致；未 push 时用核心配色）。
 pub const DEFAULT_ANSI_16: [Rgb; 16] = [
     Rgb { r: 0, g: 0, b: 0 },
-    Rgb { r: 0xcd, g: 0, b: 0 },
-    Rgb { r: 0, g: 0xcd, b: 0 },
-    Rgb { r: 0xcd, g: 0xcd, b: 0 },
-    Rgb { r: 0x64, g: 0x95, b: 0xed },
-    Rgb { r: 0xcd, g: 0, b: 0xcd },
-    Rgb { r: 0, g: 0xcd, b: 0xcd },
-    Rgb { r: 0xe5, g: 0xe5, b: 0xe5 },
-    Rgb { r: 0x7f, g: 0x7f, b: 0x7f },
-    Rgb { r: 0xff, g: 0, b: 0 },
-    Rgb { r: 0, g: 0xff, b: 0 },
-    Rgb { r: 0xff, g: 0xff, b: 0 },
-    Rgb { r: 0x5c, g: 0x5c, b: 0xff },
-    Rgb { r: 0xff, g: 0, b: 0xff },
-    Rgb { r: 0, g: 0xff, b: 0xff },
-    Rgb { r: 0xff, g: 0xff, b: 0xff },
+    Rgb {
+        r: 0xcd,
+        g: 0,
+        b: 0,
+    },
+    Rgb {
+        r: 0,
+        g: 0xcd,
+        b: 0,
+    },
+    Rgb {
+        r: 0xcd,
+        g: 0xcd,
+        b: 0,
+    },
+    Rgb {
+        r: 0x64,
+        g: 0x95,
+        b: 0xed,
+    },
+    Rgb {
+        r: 0xcd,
+        g: 0,
+        b: 0xcd,
+    },
+    Rgb {
+        r: 0,
+        g: 0xcd,
+        b: 0xcd,
+    },
+    Rgb {
+        r: 0xe5,
+        g: 0xe5,
+        b: 0xe5,
+    },
+    Rgb {
+        r: 0x7f,
+        g: 0x7f,
+        b: 0x7f,
+    },
+    Rgb {
+        r: 0xff,
+        g: 0,
+        b: 0,
+    },
+    Rgb {
+        r: 0,
+        g: 0xff,
+        b: 0,
+    },
+    Rgb {
+        r: 0xff,
+        g: 0xff,
+        b: 0,
+    },
+    Rgb {
+        r: 0x5c,
+        g: 0x5c,
+        b: 0xff,
+    },
+    Rgb {
+        r: 0xff,
+        g: 0,
+        b: 0xff,
+    },
+    Rgb {
+        r: 0,
+        g: 0xff,
+        b: 0xff,
+    },
+    Rgb {
+        r: 0xff,
+        g: 0xff,
+        b: 0xff,
+    },
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -199,24 +268,40 @@ fn check(result: GhosttyResult, what: &str) -> bool {
     }
 }
 
+#[expect(
+    unsafe_op_in_unsafe_fn,
+    reason = "工单 50：Ghostty C ABI 标量读取适配；前提见 docs/ffi-contracts.md"
+)]
 unsafe fn get_u16(state: GhosttyRenderState, data: i32) -> u16 {
     let mut v: u16 = 0;
     let _ = ghostty_render_state_get(state, data, &mut v as *mut u16 as *mut c_void);
     v
 }
 
+#[expect(
+    unsafe_op_in_unsafe_fn,
+    reason = "工单 50：Ghostty C ABI 标量读取适配；前提见 docs/ffi-contracts.md"
+)]
 unsafe fn get_bool(state: GhosttyRenderState, data: i32) -> bool {
     let mut v: bool = false;
     let _ = ghostty_render_state_get(state, data, &mut v as *mut bool as *mut c_void);
     v
 }
 
+#[expect(
+    unsafe_op_in_unsafe_fn,
+    reason = "工单 50：Ghostty C ABI 标量读取适配；前提见 docs/ffi-contracts.md"
+)]
 unsafe fn get_i32(state: GhosttyRenderState, data: i32) -> i32 {
     let mut v: i32 = 0;
     let _ = ghostty_render_state_get(state, data, &mut v as *mut i32 as *mut c_void);
     v
 }
 
+#[expect(
+    unsafe_op_in_unsafe_fn,
+    reason = "工单 50：Ghostty C ABI 行文本读取适配；前提见 docs/ffi-contracts.md"
+)]
 unsafe fn cell_text(cells: GhosttyRenderStateRowCells) -> String {
     let mut buf = GhosttyBuffer {
         ptr: std::ptr::null_mut(),
@@ -247,6 +332,10 @@ unsafe fn cell_text(cells: GhosttyRenderStateRowCells) -> String {
     }
 }
 
+#[expect(
+    unsafe_op_in_unsafe_fn,
+    reason = "工单 50：Ghostty C ABI 颜色读取适配；前提见 docs/ffi-contracts.md"
+)]
 unsafe fn cell_color(cells: GhosttyRenderStateRowCells, data: i32) -> Option<Rgb> {
     let mut c = GhosttyColorRgb { r: 0, g: 0, b: 0 };
     let r = ghostty_render_state_row_cells_get(
@@ -265,6 +354,17 @@ unsafe fn cell_color(cells: GhosttyRenderStateRowCells, data: i32) -> Option<Rgb
     }
 }
 
+/// 从 libghostty-vt 渲染状态读取结构化快照。
+///
+/// # Safety
+///
+/// `state` 必须是仍由调用方持有、已初始化且未并发销毁的
+/// `GhosttyRenderState`；其内部指针和行/列范围必须满足 libghostty-vt
+/// C API 合约。`colors` 必须指向与该状态同一生命周期内的有效颜色表。
+#[expect(
+    unsafe_op_in_unsafe_fn,
+    reason = "工单 50：Ghostty C ABI 快照读取适配；前提见 docs/ffi-contracts.md"
+)]
 pub unsafe fn collect_snapshot(
     state: GhosttyRenderState,
     colors: &GhosttyRenderStateColors,
@@ -318,7 +418,11 @@ pub unsafe fn collect_snapshot(
         };
     }
     check(
-        ghostty_render_state_get(state, DATA_ROW_ITERATOR, &mut row_it as *mut _ as *mut c_void),
+        ghostty_render_state_get(
+            state,
+            DATA_ROW_ITERATOR,
+            &mut row_it as *mut _ as *mut c_void,
+        ),
         "get row_iterator",
     );
 
@@ -369,7 +473,11 @@ pub unsafe fn collect_snapshot(
         if row_dirty {
             dirty_rows.push(lines.len());
         }
-        let _ = ghostty_render_state_row_get(row_it, ROW_DATA_CELLS, &mut cells as *mut _ as *mut c_void);
+        let _ = ghostty_render_state_row_get(
+            row_it,
+            ROW_DATA_CELLS,
+            &mut cells as *mut _ as *mut c_void,
+        );
         let mut row_cells = Vec::new();
         while ghostty_render_state_row_cells_next(cells) {
             let text = cell_text(cells);
@@ -381,11 +489,14 @@ pub unsafe fn collect_snapshot(
                 &mut raw as *mut GhosttyCell as *mut c_void,
             );
             if r_raw == GHOSTTY_SUCCESS
-                && ghostty_cell_get(raw, GHOSTTY_CELL_DATA_WIDE, &mut wide as *mut i32 as *mut c_void)
-                    == GHOSTTY_SUCCESS
+                && ghostty_cell_get(
+                    raw,
+                    GHOSTTY_CELL_DATA_WIDE,
+                    &mut wide as *mut i32 as *mut c_void,
+                ) == GHOSTTY_SUCCESS
             {
                 // wide 取值 0..=3；异常值按 NARROW 处理。
-                if wide < CELL_WIDE_NARROW || wide > CELL_WIDE_SPACER_HEAD {
+                if !(CELL_WIDE_NARROW..=CELL_WIDE_SPACER_HEAD).contains(&wide) {
                     wide = CELL_WIDE_NARROW;
                 }
             }
@@ -563,7 +674,18 @@ mod tests {
         // 工单 22 全局重构回归：列定位 = cell 下标（核心占位格模型），
         // 相邻 emoji 不得重叠、顺序保持。
         let mut atlas = GlyphAtlas::new().expect("atlas");
-        let texts = ["🚀", "✅", "👨\u{200d}👩\u{200d}👧\u{200d}👦", "👍🏻", "🇨🇳", "⌨\u{fe0f}", "🔋", "🧑\u{200d}🚀", "🫖", "🫶"];
+        let texts = [
+            "🚀",
+            "✅",
+            "👨\u{200d}👩\u{200d}👧\u{200d}👦",
+            "👍🏻",
+            "🇨🇳",
+            "⌨\u{fe0f}",
+            "🔋",
+            "🧑\u{200d}🚀",
+            "🫖",
+            "🫶",
+        ];
         let row = core_row(&texts);
         let snapshot = Snapshot {
             cols: 40,
@@ -571,9 +693,17 @@ mod tests {
             lines: vec![row.clone()],
             cursor: None,
             cursor_style: 0,
-            default_fg: Rgb { r: 255, g: 255, b: 255 },
+            default_fg: Rgb {
+                r: 255,
+                g: 255,
+                b: 255,
+            },
             default_bg: Rgb { r: 0, g: 0, b: 0 },
-            cursor_color: Rgb { r: 255, g: 255, b: 255 },
+            cursor_color: Rgb {
+                r: 255,
+                g: 255,
+                b: 255,
+            },
             dirty: 1,
             dirty_rows: vec![0],
             selection_color: Rgb { r: 0, g: 0, b: 255 },
@@ -589,12 +719,7 @@ mod tests {
         }
         assert_eq!(xs.len(), texts.len(), "每个 emoji 一个彩色字形");
         for w in xs.windows(2) {
-            assert!(
-                w[1] > w[0],
-                "emoji 重叠：x={} 与 x={}",
-                w[0],
-                w[1]
-            );
+            assert!(w[1] > w[0], "emoji 重叠：x={} 与 x={}", w[0], w[1]);
         }
         // 首个 emoji 应在第 1 格（x=0..40 内），末个在第 19 格附近（col 18=180px）。
         assert!(xs[0] >= 0.0 && xs[0] < 40.0);
@@ -615,9 +740,17 @@ mod tests {
             lines: vec![row.clone()],
             cursor: None,
             cursor_style: 0,
-            default_fg: Rgb { r: 255, g: 255, b: 255 },
+            default_fg: Rgb {
+                r: 255,
+                g: 255,
+                b: 255,
+            },
             default_bg: Rgb { r: 0, g: 0, b: 0 },
-            cursor_color: Rgb { r: 255, g: 255, b: 255 },
+            cursor_color: Rgb {
+                r: 255,
+                g: 255,
+                b: 255,
+            },
             dirty: 1,
             dirty_rows: vec![0],
             selection_color: Rgb { r: 0, g: 0, b: 255 },
@@ -658,7 +791,10 @@ mod tests {
         // Apple 字体 shaping 后情侣总 advance = 1em（两个 glyph 位图按
         // x_offset 回退拼合），画布同为 1em 方块。
         assert!(couple_w <= 54.0 + 0.01 && couple_h <= 54.0 + 0.01);
-        assert!((couple_w - flag_w).abs() < 0.01, "ZWJ 画布同 em 盒: {couple_w}");
+        assert!(
+            (couple_w - flag_w).abs() < 0.01,
+            "ZWJ 画布同 em 盒: {couple_w}"
+        );
         // 内容 bbox：国旗（字体原生 0.64em）内容高度明显小于电池（全满），
         // 但这是字体设计，画布尺寸已统一 —— 不再 bbox fit。
         let flag_entry = atlas
@@ -694,16 +830,31 @@ mod tests {
             lines: vec![row],
             cursor: None,
             cursor_style: 1,
-            default_fg: Rgb { r: 255, g: 255, b: 255 },
+            default_fg: Rgb {
+                r: 255,
+                g: 255,
+                b: 255,
+            },
             default_bg: Rgb { r: 0, g: 0, b: 0 },
-            cursor_color: Rgb { r: 255, g: 255, b: 255 },
+            cursor_color: Rgb {
+                r: 255,
+                g: 255,
+                b: 255,
+            },
             dirty: 1,
             dirty_rows: vec![0],
             selection_color: Rgb { r: 0, g: 0, b: 255 },
             palette: None,
             ansi_override: None,
         };
-        let verts = build_row_vertices(0, &snapshot.lines[0], &snapshot, &mut GlyphAtlas::new().expect("atlas"), 60, 10);
+        let verts = build_row_vertices(
+            0,
+            &snapshot.lines[0],
+            &snapshot,
+            &mut GlyphAtlas::new().expect("atlas"),
+            60,
+            10,
+        );
         // 收集每个非空 cell 的字形矩形左右 x（NDC -> px，cell_w=10）。
         let mut xs: Vec<f32> = Vec::new();
         let mut x1s: Vec<f32> = Vec::new();
@@ -745,13 +896,17 @@ mod tests {
         assert_eq!(e1.cell_px, 64);
         assert_eq!(atlas.color_entries.len(), 1);
         // 大画布（96 -> 格子 128）：升级并清空旧条目，新条目 cell 重新从 1。
-        let e2 = atlas.ensure_color_glyph("🧑\u{200d}🎓", 96).expect("large cluster");
+        let e2 = atlas
+            .ensure_color_glyph("🧑\u{200d}🎓", 96)
+            .expect("large cluster");
         assert_eq!(atlas.color_cell, 128);
         assert_eq!(e2.cell_px, 128);
         assert_eq!(atlas.color_entries.len(), 1, "升级后旧条目清空");
         assert_eq!(e2.cell, 1, "升级后编号从 1 重新开始");
         // 再插入小 emoji：统一用 128 格，不再回到 64（避免网格混排）。
-        let e3 = atlas.ensure_color_glyph("🔋", 51).expect("small after upgrade");
+        let e3 = atlas
+            .ensure_color_glyph("🔋", 51)
+            .expect("small after upgrade");
         assert_eq!(e3.cell_px, 128);
         assert!(e3.cell > e2.cell);
         // 128px 格坐标区（columns=32）：cell=1 -> 像素偏移 128px，cell=2 -> 256px，
@@ -794,9 +949,17 @@ mod tests {
             lines: vec![row],
             cursor: None,
             cursor_style: 1,
-            default_fg: Rgb { r: 255, g: 255, b: 255 },
+            default_fg: Rgb {
+                r: 255,
+                g: 255,
+                b: 255,
+            },
             default_bg: Rgb { r: 0, g: 0, b: 0 },
-            cursor_color: Rgb { r: 255, g: 255, b: 255 },
+            cursor_color: Rgb {
+                r: 255,
+                g: 255,
+                b: 255,
+            },
             dirty: 1,
             dirty_rows: vec![0],
             selection_color: Rgb { r: 0, g: 0, b: 255 },
@@ -816,20 +979,50 @@ mod tests {
             (0.0, 0.0)
         };
         // 光标在中第一列（列 0）：覆盖 2 格（0..20）。
-        let (x0, x1) = block_rect(&Snapshot { cursor: Some((0, 0)), ..base.clone() });
-        assert!((x0 - 0.0).abs() < 0.01 && (x1 - 20.0).abs() < 0.01, "中第一列: {x0}..{x1}");
+        let (x0, x1) = block_rect(&Snapshot {
+            cursor: Some((0, 0)),
+            ..base.clone()
+        });
+        assert!(
+            (x0 - 0.0).abs() < 0.01 && (x1 - 20.0).abs() < 0.01,
+            "中第一列: {x0}..{x1}"
+        );
         // 光标在中第二列（列 1）：归到起始列，仍 2 格。
-        let (x0, x1) = block_rect(&Snapshot { cursor: Some((1, 0)), ..base.clone() });
-        assert!((x0 - 0.0).abs() < 0.01 && (x1 - 20.0).abs() < 0.01, "中第二列: {x0}..{x1}");
+        let (x0, x1) = block_rect(&Snapshot {
+            cursor: Some((1, 0)),
+            ..base.clone()
+        });
+        assert!(
+            (x0 - 0.0).abs() < 0.01 && (x1 - 20.0).abs() < 0.01,
+            "中第二列: {x0}..{x1}"
+        );
         // 光标在 🚀 起始列（列 2）：2 格（20..40）。
-        let (x0, x1) = block_rect(&Snapshot { cursor: Some((2, 0)), ..base.clone() });
-        assert!((x0 - 20.0).abs() < 0.01 && (x1 - 40.0).abs() < 0.01, "🚀: {x0}..{x1}");
+        let (x0, x1) = block_rect(&Snapshot {
+            cursor: Some((2, 0)),
+            ..base.clone()
+        });
+        assert!(
+            (x0 - 20.0).abs() < 0.01 && (x1 - 40.0).abs() < 0.01,
+            "🚀: {x0}..{x1}"
+        );
         // 光标在 ZWJ cluster 起始列（列 4）：2 格（40..60）。
-        let (x0, x1) = block_rect(&Snapshot { cursor: Some((4, 0)), ..base.clone() });
-        assert!((x0 - 40.0).abs() < 0.01 && (x1 - 60.0).abs() < 0.01, "学生: {x0}..{x1}");
+        let (x0, x1) = block_rect(&Snapshot {
+            cursor: Some((4, 0)),
+            ..base.clone()
+        });
+        assert!(
+            (x0 - 40.0).abs() < 0.01 && (x1 - 60.0).abs() < 0.01,
+            "学生: {x0}..{x1}"
+        );
         // 光标在普通字符 A（列 6）：1 格（60..70）。
-        let (x0, x1) = block_rect(&Snapshot { cursor: Some((6, 0)), ..base.clone() });
-        assert!((x0 - 60.0).abs() < 0.01 && (x1 - 70.0).abs() < 0.01, "A: {x0}..{x1}");
+        let (x0, x1) = block_rect(&Snapshot {
+            cursor: Some((6, 0)),
+            ..base.clone()
+        });
+        assert!(
+            (x0 - 60.0).abs() < 0.01 && (x1 - 70.0).abs() < 0.01,
+            "A: {x0}..{x1}"
+        );
     }
 
     #[test]
@@ -863,9 +1056,17 @@ mod tests {
             lines: vec![row],
             cursor: Some((3, 0)),
             cursor_style: 1,
-            default_fg: Rgb { r: 255, g: 255, b: 255 },
+            default_fg: Rgb {
+                r: 255,
+                g: 255,
+                b: 255,
+            },
             default_bg: Rgb { r: 0, g: 0, b: 0 },
-            cursor_color: Rgb { r: 255, g: 255, b: 255 },
+            cursor_color: Rgb {
+                r: 255,
+                g: 255,
+                b: 255,
+            },
             dirty: 1,
             dirty_rows: vec![0],
             selection_color: Rgb { r: 0, g: 0, b: 255 },
@@ -919,21 +1120,50 @@ mod tests {
             lines: vec![row],
             cursor: None,
             cursor_style: 0,
-            default_fg: Rgb { r: 255, g: 255, b: 255 },
+            default_fg: Rgb {
+                r: 255,
+                g: 255,
+                b: 255,
+            },
             default_bg: Rgb { r: 0, g: 0, b: 0 },
-            cursor_color: Rgb { r: 255, g: 255, b: 255 },
+            cursor_color: Rgb {
+                r: 255,
+                g: 255,
+                b: 255,
+            },
             dirty: 1,
             dirty_rows: vec![0],
             selection_color: Rgb { r: 0, g: 0, b: 255 },
             palette: None,
             ansi_override: None,
         };
-        let verts = build_row_vertices(0, &snapshot.lines[0], &snapshot, &mut GlyphAtlas::new().expect("atlas"), 60, 20);
+        let verts = build_row_vertices(
+            0,
+            &snapshot.lines[0],
+            &snapshot,
+            &mut GlyphAtlas::new().expect("atlas"),
+            60,
+            20,
+        );
         let mut glyphs: Vec<(f32, f32, f32)> = Vec::new(); // (x0, x1, area)
         for g in verts.chunks_exact(6) {
             if g[0].mode >= 0.5 {
-                let xs = [g[0].position[0], g[1].position[0], g[2].position[0], g[3].position[0], g[4].position[0], g[5].position[0]];
-                let ys = [g[0].position[1], g[1].position[1], g[2].position[1], g[3].position[1], g[4].position[1], g[5].position[1]];
+                let xs = [
+                    g[0].position[0],
+                    g[1].position[0],
+                    g[2].position[0],
+                    g[3].position[0],
+                    g[4].position[0],
+                    g[5].position[0],
+                ];
+                let ys = [
+                    g[0].position[1],
+                    g[1].position[1],
+                    g[2].position[1],
+                    g[3].position[1],
+                    g[4].position[1],
+                    g[5].position[1],
+                ];
                 let x0 = xs.iter().cloned().fold(f32::INFINITY, f32::min);
                 let x1 = xs.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
                 let y0 = ys.iter().cloned().fold(f32::INFINITY, f32::min);
@@ -945,7 +1175,7 @@ mod tests {
         }
         glyphs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
         assert_eq!(glyphs.len(), 4, "A B C D 四个字形");
-        let (c0, c1, c_area) = glyphs[2];
+        let (_c0, _c1, c_area) = glyphs[2];
         let (d0, d1, d_area) = glyphs[3];
         assert!(
             d_area <= c_area * 1.25,
@@ -964,7 +1194,10 @@ mod tests {
         let fallback = Some(Rgb { r: 9, g: 9, b: 9 });
 
         // palette index 1 → push 的 ANSI[1]。
-        assert_eq!(apply_ansi_override(1, 1, fallback, Some(ansi)), Some(Rgb { r: 1, g: 2, b: 3 }));
+        assert_eq!(
+            apply_ansi_override(1, 1, fallback, Some(ansi)),
+            Some(Rgb { r: 1, g: 2, b: 3 })
+        );
         // 直接 RGB（tag=2）不动。
         assert_eq!(apply_ansi_override(2, 1, fallback, Some(ansi)), fallback);
         // 默认色（tag=0）不动。
@@ -984,14 +1217,22 @@ mod tests {
             cursor: None,
             cursor_style: 0,
             default_fg: Rgb { r: 0, g: 0, b: 0 },
-            default_bg: Rgb { r: 255, g: 255, b: 255 },
+            default_bg: Rgb {
+                r: 255,
+                g: 255,
+                b: 255,
+            },
             cursor_color: Rgb { r: 0, g: 0, b: 0 },
             dirty: 0,
             dirty_rows: Vec::new(),
             selection_color: DEFAULT_SELECTION_COLOR,
             palette: Some(Palette {
                 fg: Rgb { r: 0, g: 0, b: 0 },
-                bg: Rgb { r: 255, g: 255, b: 255 },
+                bg: Rgb {
+                    r: 255,
+                    g: 255,
+                    b: 255,
+                },
                 selection: DEFAULT_SELECTION_COLOR,
                 cursor: Rgb { r: 0, g: 0, b: 0 },
                 ansi: DEFAULT_ANSI_16,
@@ -999,21 +1240,37 @@ mod tests {
             ansi_override: None,
         };
         // 亮黄（256 色 PS1 常见）压暗后可读。
-        let yellow = Rgb { r: 0xff, g: 0xd7, b: 0x5f };
+        let yellow = Rgb {
+            r: 0xff,
+            g: 0xd7,
+            b: 0x5f,
+        };
         let adapted = adapt_light_fg(yellow, &light);
         assert!(color_luminance(adapted) < 140.0);
         assert!(adapted.r > adapted.b, "色相保留（黄）");
         // 深色不变。
-        let dark_red = Rgb { r: 0xcd, g: 0, b: 0 };
+        let dark_red = Rgb {
+            r: 0xcd,
+            g: 0,
+            b: 0,
+        };
         assert_eq!(adapt_light_fg(dark_red, &light), dark_red);
 
         // 深色主题（黑底）任何色原样。
         let dark = Snapshot {
             palette: Some(Palette {
-                fg: Rgb { r: 255, g: 255, b: 255 },
+                fg: Rgb {
+                    r: 255,
+                    g: 255,
+                    b: 255,
+                },
                 bg: Rgb { r: 0, g: 0, b: 0 },
                 selection: DEFAULT_SELECTION_COLOR,
-                cursor: Rgb { r: 255, g: 255, b: 255 },
+                cursor: Rgb {
+                    r: 255,
+                    g: 255,
+                    b: 255,
+                },
                 ansi: DEFAULT_ANSI_16,
             }),
             ..light
@@ -1083,7 +1340,10 @@ mod tests {
         assert!(!core.mode_cursor_blink());
         assert!(!core.mode_cursor_keys_application(), "?1l 应关闭 DECCKM");
         assert!(!core.mode_keypad_application(), "?66l 应关闭 DECKPAM");
-        assert!(!core.mode_bracketed_paste(), "?2004l 应关闭 bracketed paste");
+        assert!(
+            !core.mode_bracketed_paste(),
+            "?2004l 应关闭 bracketed paste"
+        );
     }
 }
 
@@ -1130,7 +1390,6 @@ const EMBEDDED_MONO_FONT: &[u8] = include_bytes!("../assets/JetBrainsMono-Regula
 
 struct FontFace {
     font: fontdue::Font,
-    collection_index: u32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1192,11 +1451,11 @@ fn load_font_face(bytes: &[u8], collection_index: u32) -> Option<fontdue::Font> 
     fontdue::Font::from_bytes(bytes, settings).ok()
 }
 
-fn first_cjk_face(bytes: &[u8]) -> Option<(u32, fontdue::Font)> {
+fn first_cjk_face(bytes: &[u8]) -> Option<fontdue::Font> {
     for index in 0..16u32 {
         if let Some(font) = load_font_face(bytes, index) {
             if font.lookup_glyph_index('中') != 0 || font.lookup_glyph_index('漢') != 0 {
-                return Some((index, font));
+                return Some(font);
             }
         }
     }
@@ -1218,20 +1477,14 @@ impl GlyphAtlas {
     pub fn new() -> Option<Self> {
         let mut faces = Vec::new();
         if let Some(font) = load_font_face(EMBEDDED_MONO_FONT, 0) {
-            faces.push(FontFace {
-                font,
-                collection_index: 0,
-            });
+            faces.push(FontFace { font });
         }
         for path in system_font_candidates() {
             let Ok(bytes) = std::fs::read(path) else {
                 continue;
             };
-            if let Some((collection_index, font)) = first_cjk_face(&bytes) {
-                faces.push(FontFace {
-                    font,
-                    collection_index,
-                });
+            if let Some(font) = first_cjk_face(&bytes) {
+                faces.push(FontFace { font });
                 break;
             }
         }
@@ -1321,12 +1574,7 @@ impl GlyphAtlas {
     /// 灰度字形 UV 矩形 (left, right, top, bottom)：集中"entry.cell + 当前格子
     /// 尺寸 → UV"的换算，避免调用方三处重复。entry 与图集字号不一致时断言
     /// （正常流程 set_pixels_per_em 会清空图集，不可能不一致）。
-    pub fn uv_for(
-        &self,
-        entry: &GlyphEntry,
-        atlas_w: f32,
-        atlas_h: f32,
-    ) -> (f32, f32, f32, f32) {
+    pub fn uv_for(&self, entry: &GlyphEntry, atlas_w: f32, atlas_h: f32) -> (f32, f32, f32, f32) {
         debug_assert!(
             (entry.pixels_per_em - self.pixels_per_em).abs() < f32::EPSILON,
             "glyph entry font size mismatch: entry={} atlas={}",
@@ -1349,12 +1597,14 @@ impl GlyphAtlas {
     pub fn cell_size(&self) -> (u32, u32) {
         let px = self.pixels_per_em;
         let font = &self.faces[0].font;
-        let line = font.horizontal_line_metrics(px).unwrap_or(fontdue::LineMetrics {
-            ascent: px * 0.8,
-            descent: -px * 0.2,
-            line_gap: 0.0,
-            new_line_size: px,
-        });
+        let line = font
+            .horizontal_line_metrics(px)
+            .unwrap_or(fontdue::LineMetrics {
+                ascent: px * 0.8,
+                descent: -px * 0.2,
+                line_gap: 0.0,
+                new_line_size: px,
+            });
         let line_height = (line.ascent - line.descent + line.line_gap).max(px);
         let advance = font
             .rasterize_indexed(font.lookup_glyph_index('M'), px)
@@ -1439,7 +1689,7 @@ impl GlyphAtlas {
         let Some(fonts) = self.emoji_fonts.as_mut() else {
             return (0, 0, 0.0);
         };
-        let (decoded, total, elapsed) = fonts.prewarm(&crate::emoji::POPULAR_EMOJI_50);
+        let (decoded, total, elapsed) = fonts.prewarm(crate::emoji::POPULAR_EMOJI_50);
         (decoded, total, elapsed.as_secs_f32() * 1000.0)
     }
 
@@ -1482,7 +1732,7 @@ impl GlyphAtlas {
         let mut bitmap_h = metrics.height as u32;
         let mut bitmap_ref = bitmap.as_slice();
         let mut entry_metrics = metrics;
-        let mut scaled: Vec<u8> = Vec::new();
+        let mut scaled: Vec<u8>;
         if bitmap_w > cell_px || bitmap_h > cell_px {
             // 罕见超高字形（个别 CJK/装饰符号位图超过 1.05 倍字号）：最近邻
             // 缩放到格内并等比修正度量，避免整格丢弃导致空白。
@@ -1494,8 +1744,7 @@ impl GlyphAtlas {
                 let sy = (((y as f32 + 0.5) / scale) as usize).min(bitmap_h as usize - 1);
                 for x in 0..new_w {
                     let sx = (((x as f32 + 0.5) / scale) as usize).min(bitmap_w as usize - 1);
-                    scaled[(y * new_w + x) as usize] =
-                        bitmap[(sy * bitmap_w as usize + sx) as usize];
+                    scaled[(y * new_w + x) as usize] = bitmap[sy * bitmap_w as usize + sx];
                 }
             }
             bitmap_w = new_w;
@@ -1559,7 +1808,11 @@ impl GlyphAtlas {
 
     /// 取彩色 emoji 字形（cluster+目标 em 键：ZWJ 序列整段进图集）；
     /// 非 emoji run / 无彩色字体 / 光栅失败返回 None。
-    pub fn ensure_color_glyph(&mut self, cluster: &str, target_em_px: u16) -> Option<ColorGlyphEntry> {
+    pub fn ensure_color_glyph(
+        &mut self,
+        cluster: &str,
+        target_em_px: u16,
+    ) -> Option<ColorGlyphEntry> {
         let key = format!("{}@{}", cluster, target_em_px);
         if let Some(entry) = self.color_entries.get(&key) {
             return Some(*entry);
@@ -1593,8 +1846,7 @@ impl GlyphAtlas {
         let bitmap_w = bitmap.width;
         let bitmap_h = bitmap.height;
         let scaled = bitmap.pixels;
-        let (bbox_x, bbox_y, bbox_w, bbox_h) =
-            bitmap.bbox.unwrap_or((0, 0, bitmap_w, bitmap_h));
+        let (bbox_x, bbox_y, bbox_w, bbox_h) = bitmap.bbox.unwrap_or((0, 0, bitmap_w, bitmap_h));
         let cell = self.color_next_cell;
         self.color_next_cell += 1;
         let pad_x = (cell_px - bitmap_w) / 2;
@@ -1921,9 +2173,27 @@ fn push_box_outline(
     let mut c = color;
     c[3] = 1.0;
     push_solid_rect(vertices, x, y, width, t, c, surface_w, surface_h);
-    push_solid_rect(vertices, x, y + height - t, width, t, c, surface_w, surface_h);
+    push_solid_rect(
+        vertices,
+        x,
+        y + height - t,
+        width,
+        t,
+        c,
+        surface_w,
+        surface_h,
+    );
     push_solid_rect(vertices, x, y, t, height, c, surface_w, surface_h);
-    push_solid_rect(vertices, x + width - t, y, t, height, c, surface_w, surface_h);
+    push_solid_rect(
+        vertices,
+        x + width - t,
+        y,
+        t,
+        height,
+        c,
+        surface_w,
+        surface_h,
+    );
 }
 
 fn selection_components(color: Rgb) -> [f32; 4] {
@@ -1954,11 +2224,7 @@ fn fg_for_cell(cell: &Cell, snapshot: &Snapshot) -> Rgb {
             }
         }
     };
-    if core_heuristic
-        && fg_color.r < 40
-        && fg_color.g < 40
-        && fg_color.b < 40
-        && cell.bg.is_none()
+    if core_heuristic && fg_color.r < 40 && fg_color.g < 40 && fg_color.b < 40 && cell.bg.is_none()
     {
         fg_color = Rgb {
             r: 229,
@@ -2080,13 +2346,13 @@ pub fn build_row_vertices(
             let col = color_entry.cell % columns;
             let row = color_entry.cell / columns;
             let uv_left = (col * color_entry.cell_px + color_entry.pad_x) as f32 / color_w as f32;
-            let uv_right =
-                (col * color_entry.cell_px + color_entry.pad_x + color_entry.bitmap_w) as f32
-                    / color_w as f32;
+            let uv_right = (col * color_entry.cell_px + color_entry.pad_x + color_entry.bitmap_w)
+                as f32
+                / color_w as f32;
             let uv_top = (row * color_entry.cell_px + color_entry.pad_y) as f32 / color_h as f32;
-            let uv_bottom =
-                (row * color_entry.cell_px + color_entry.pad_y + color_entry.bitmap_h) as f32
-                    / color_h as f32;
+            let uv_bottom = (row * color_entry.cell_px + color_entry.pad_y + color_entry.bitmap_h)
+                as f32
+                / color_h as f32;
             push_color_glyph_rect(
                 &mut vertices,
                 draw_x,
@@ -2165,9 +2431,8 @@ pub fn build_row_vertices(
             let advance_width = metrics.advance_width * scale;
             let x_padding = ((target_cell_w - advance_width) / 2.0).max(0.0);
             let draw_x = glyph_x + x_padding + metrics.xmin as f32 * scale;
-            let baseline = y
-                + ((row_h - line_height_px * scale) / 2.0).max(0.0)
-                + entry.ascent * scale;
+            let baseline =
+                y + ((row_h - line_height_px * scale) / 2.0).max(0.0) + entry.ascent * scale;
             let draw_y = baseline - (metrics.ymin + metrics.height as i32) as f32 * scale;
             let draw_width = entry.bitmap_w as f32 * scale;
             let draw_height = entry.bitmap_h as f32 * scale;
@@ -2395,16 +2660,7 @@ pub fn build_overlay_vertices(
                         surface_w,
                         surface_h,
                     );
-                    push_solid_rect(
-                        &mut vertices,
-                        x,
-                        y,
-                        t,
-                        row_h,
-                        color,
-                        surface_w,
-                        surface_h,
-                    );
+                    push_solid_rect(&mut vertices, x, y, t, row_h, color, surface_w, surface_h);
                     push_solid_rect(
                         &mut vertices,
                         x + cursor_w - t,
@@ -2474,7 +2730,8 @@ impl RowVertexStore {
         self.slot_verts = self.cols as usize * MAX_VERTS_PER_CELL;
         self.slot_bytes = align_slot(self.slot_verts as u64 * VERTEX_STRIDE);
         self.overlay_byte_offset = align_slot(self.rows as u64 * self.slot_bytes);
-        self.capacity_bytes = self.overlay_byte_offset + OVERLAY_VERT_CAPACITY as u64 * VERTEX_STRIDE;
+        self.capacity_bytes =
+            self.overlay_byte_offset + OVERLAY_VERT_CAPACITY as u64 * VERTEX_STRIDE;
         self.payload = vec![0u8; self.capacity_bytes as usize];
         self.row_counts = vec![0usize; self.rows as usize];
         self.overlay_count = 0;
@@ -2491,7 +2748,10 @@ impl RowVertexStore {
     }
 
     pub fn overlay_byte_range(&self) -> (u64, usize) {
-        (self.overlay_byte_offset, self.overlay_count * VERTEX_STRIDE as usize)
+        (
+            self.overlay_byte_offset,
+            self.overlay_count * VERTEX_STRIDE as usize,
+        )
     }
 
     pub fn rebuild_row(
@@ -2508,7 +2768,14 @@ impl RowVertexStore {
             let (offset, _) = self.row_byte_range(row);
             return (offset, 0);
         }
-        let vertices = build_row_vertices(row, &snapshot.lines[row], snapshot, atlas, width_px, height_px);
+        let vertices = build_row_vertices(
+            row,
+            &snapshot.lines[row],
+            snapshot,
+            atlas,
+            width_px,
+            height_px,
+        );
         self.row_counts[row] = vertices.len();
         let (offset, len) = self.row_byte_range(row);
         for (i, vertex) in vertices.iter().enumerate() {
@@ -2669,7 +2936,12 @@ impl GpuRuntime {
         })
     }
 
-    fn attach_surface(&mut self, window: *mut c_void, width: u32, height: u32) -> Result<(), String> {
+    fn attach_surface(
+        &mut self,
+        window: *mut c_void,
+        width: u32,
+        height: u32,
+    ) -> Result<(), String> {
         if let Some(surface) = &self.surface {
             if surface.window == window && surface.width == width && surface.height == height {
                 // RenderCommand 接管了 ANativeWindow_fromSurface 的引用；同 Surface
@@ -2685,8 +2957,11 @@ impl GpuRuntime {
             return Err("null ANativeWindow".to_string());
         }
 
-        let raw_window_handle =
-            wgpu::rwh::AndroidNdkWindowHandle::new(NonNull::new(window).unwrap()).into();
+        let Some(window) = NonNull::new(window) else {
+            return Err("null ANativeWindow".to_string());
+        };
+        let window_ptr = window.as_ptr();
+        let raw_window_handle = wgpu::rwh::AndroidNdkWindowHandle::new(window).into();
         let raw_display_handle = wgpu::rwh::AndroidDisplayHandle::new().into();
         let surface = unsafe {
             self.instance
@@ -2705,7 +2980,7 @@ impl GpuRuntime {
         self.surface = Some(GpuSurface {
             surface,
             config,
-            window,
+            window: window_ptr,
             width: width.max(1),
             height: height.max(1),
         });
@@ -2897,11 +3172,11 @@ impl GpuRuntime {
     }
 
     fn ensure_pipeline(&mut self, format: wgpu::TextureFormat) -> Result<(), String> {
-        if self
-            .pipeline
-            .as_ref()
-            .is_some_and(|_| self.surface.as_ref().is_some_and(|s| s.config.format == format))
-        {
+        if self.pipeline.as_ref().is_some_and(|_| {
+            self.surface
+                .as_ref()
+                .is_some_and(|s| s.config.format == format)
+        }) {
             return Ok(());
         }
 
@@ -3045,8 +3320,7 @@ impl GpuRuntime {
             .as_ref()
             .ok_or_else(|| "color atlas texture missing".to_string())?;
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let color_texture_view =
-            color_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let color_texture_view = color_texture.create_view(&wgpu::TextureViewDescriptor::default());
         self.atlas_bind_group = Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("fable-atlas-bind-group"),
             layout,
@@ -3080,13 +3354,12 @@ impl GpuRuntime {
             .max()
             .unwrap_or(0);
         if self.vertex_capacity < required {
-            self.vertex_buffer =
-                Some(self.device.create_buffer(&wgpu::BufferDescriptor {
-                    label: Some("fable-vertex-buffer"),
-                    size: required.max(1),
-                    usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::VERTEX,
-                    mapped_at_creation: false,
-                }));
+            self.vertex_buffer = Some(self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("fable-vertex-buffer"),
+                size: required.max(1),
+                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::VERTEX,
+                mapped_at_creation: false,
+            }));
             self.vertex_capacity = required;
         }
         let buffer = self
@@ -3098,7 +3371,8 @@ impl GpuRuntime {
                 continue;
             }
             let start = *offset as usize;
-            self.queue.write_buffer(buffer, *offset, &payload[start..start + *len]);
+            self.queue
+                .write_buffer(buffer, *offset, &payload[start..start + *len]);
         }
         Ok(())
     }
@@ -3114,7 +3388,8 @@ impl GpuRuntime {
         };
         let surface_format = surface_runtime.config.format;
         let combined_revision = atlas.revision().wrapping_add(atlas.color_revision());
-        let draw_terminal = !draw_ranges.is_empty() && self.atlas_uploaded_revision == combined_revision;
+        let draw_terminal =
+            !draw_ranges.is_empty() && self.atlas_uploaded_revision == combined_revision;
         if draw_terminal {
             self.ensure_pipeline(surface_format)?;
             self.ensure_atlas_bind_group()?;
@@ -3228,7 +3503,6 @@ impl GpuRuntime {
         }
         Ok(true)
     }
-
 }
 
 impl Drop for GpuRuntime {
@@ -3334,7 +3608,8 @@ enum RenderCommand {
     Quit,
 }
 
-// 窗口指针只在渲染线程使用（attach 后 acquire、detach 时 release），跨线程仅传递。
+// SAFETY: Attach/Detach/RenderCommand 只在 renderer 线程解引用并释放 window；
+// mailbox 仅跨线程传递不透明指针，RendererCore 不跨线程访问 JNI。
 unsafe impl Send for RenderCommand {}
 
 #[derive(Default)]
@@ -3420,6 +3695,8 @@ struct RendererCore {
     cursor_blink_phase: bool,
 }
 
+// SAFETY: RendererCore 仅由 renderer 线程拥有；其裸指针字段在该线程创建、使用和释放，
+// 发送方不会并发解引用。
 unsafe impl Send for RendererCore {}
 
 /// libghostty-vt effect 回调写入的 UI 状态（渲染线程独占，无需锁）。
@@ -3468,21 +3745,15 @@ impl RendererCore {
         let mut events = Box::<TerminalEvents>::default();
         let events_ptr = &mut *events as *mut TerminalEvents;
         unsafe {
-            let _ = ghostty_terminal_set(
-                terminal,
-                TERMINAL_OPT_USERDATA,
-                events_ptr as *const c_void,
-            );
+            let _ =
+                ghostty_terminal_set(terminal, TERMINAL_OPT_USERDATA, events_ptr as *const c_void);
             let _ = ghostty_terminal_set(
                 terminal,
                 TERMINAL_OPT_TITLE_CHANGED,
                 terminal_title_changed as *const c_void,
             );
-            let _ = ghostty_terminal_set(
-                terminal,
-                TERMINAL_OPT_BELL,
-                terminal_bell as *const c_void,
-            );
+            let _ =
+                ghostty_terminal_set(terminal, TERMINAL_OPT_BELL, terminal_bell as *const c_void);
         }
         let mut state: GhosttyRenderState = std::ptr::null_mut();
         if !check(
@@ -3639,22 +3910,26 @@ impl RendererCore {
     /// 终端数据查询（size_t 输出）。
     fn terminal_size_t(&self, data: i32) -> usize {
         let mut v: usize = 0;
-        let r = unsafe { ghostty_terminal_get(self.terminal, data, &mut v as *mut usize as *mut c_void) };
+        let r = unsafe {
+            ghostty_terminal_get(self.terminal, data, &mut v as *mut usize as *mut c_void)
+        };
         if r == GHOSTTY_SUCCESS {
             v
         } else {
-        	0
+            0
         }
     }
 
     /// 工单 31：当前可向上回看的历史行数（视口之外）。
     fn scrollback_rows(&self) -> u32 {
-        self.terminal_size_t(TERMINAL_DATA_SCROLLBACK_ROWS).min(u32::MAX as usize) as u32
+        self.terminal_size_t(TERMINAL_DATA_SCROLLBACK_ROWS)
+            .min(u32::MAX as usize) as u32
     }
 
     /// 活动屏 + 历史总行数（SCREEN 坐标范围）。
     fn total_rows(&self) -> u32 {
-        self.terminal_size_t(TERMINAL_DATA_TOTAL_ROWS).min(u32::MAX as usize) as u32
+        self.terminal_size_t(TERMINAL_DATA_TOTAL_ROWS)
+            .min(u32::MAX as usize) as u32
     }
 
     /// 外部行（0 = 活动屏顶，负 = 历史）→ SCREEN 坐标 y。
@@ -3674,7 +3949,10 @@ impl RendererCore {
             let point = GhosttyPoint {
                 tag: POINT_TAG_SCREEN,
                 value: GhosttyPointValue {
-                    coordinate: GhosttyPointCoordinate { x: col, y: screen_y },
+                    coordinate: GhosttyPointCoordinate {
+                        x: col,
+                        y: screen_y,
+                    },
                 },
             };
             let mut grid_ref = GhosttyGridRef {
@@ -3738,7 +4016,11 @@ impl RendererCore {
                 return false;
             }
             let mut wrap = false;
-            let r = ghostty_row_get(row, ROW_DATA_WRAP_CONTINUATION, &mut wrap as *mut bool as *mut c_void);
+            let r = ghostty_row_get(
+                row,
+                ROW_DATA_WRAP_CONTINUATION,
+                &mut wrap as *mut bool as *mut c_void,
+            );
             r == GHOSTTY_SUCCESS && wrap
         }
     }
@@ -3774,7 +4056,9 @@ impl RendererCore {
     fn trim_row_trailing(text: &str) -> &str {
         let mut end = text.len();
         while end > 0 {
-            let ch = text[..end].chars().next_back().unwrap();
+            let Some(ch) = text[..end].chars().next_back() else {
+                break;
+            };
             if ch == ' ' {
                 end -= ch.len_utf8();
             } else {
@@ -3795,11 +4079,10 @@ impl RendererCore {
             if c >= cols as u32 {
                 return true;
             }
-            let boundary = match self.cell_graphemes(c as u16, screen_y) {
+            match self.cell_graphemes(c as u16, screen_y) {
                 None => true,
                 Some(ref t) => t.is_empty() || t == " ",
-            };
-            boundary
+            }
         };
         if is_boundary(column) {
             return None;
@@ -3902,11 +4185,7 @@ impl RendererCore {
             let last = y + 1 >= rows_total;
             if !last {
                 let no_newline = wraps[(y + 1) as usize] || fills[y as usize];
-                let append_newline = if lines_joined {
-                    !no_newline
-                } else {
-                    true
-                };
+                let append_newline = if lines_joined { !no_newline } else { true };
                 if append_newline {
                     out.push('\n');
                 }
@@ -3981,7 +4260,9 @@ impl RendererCore {
         self.last_meta = None;
         let (decoded, total, ms) = self.atlas.prewarm_emoji();
         log_error(&format!("emoji fonts: {}", self.atlas.emoji_diagnostics()));
-        log_error(&format!("emoji prewarm: decoded={decoded}/total={total} ms={ms:.1}"));
+        log_error(&format!(
+            "emoji prewarm: decoded={decoded}/total={total} ms={ms:.1}"
+        ));
     }
 
     fn prewarm_emoji(&mut self) -> (usize, usize, f32) {
@@ -4065,7 +4346,10 @@ impl RendererCore {
         if self.gpu.is_none() {
             self.gpu = Some(GpuRuntime::create()?);
         }
-        let gpu = self.gpu.as_mut().unwrap();
+        let Some(gpu) = self.gpu.as_mut() else {
+            self.last_error = "gpu unavailable after initialization".to_string();
+            return Err(self.last_error.clone());
+        };
         gpu.attach_surface(window, width_px, height_px)?;
         let _ = gpu.present_clear(background);
         self.surface_window = window;
@@ -4094,7 +4378,10 @@ impl RendererCore {
                 }
             }
         }
-        let gpu = self.gpu.as_mut().unwrap();
+        let Some(gpu) = self.gpu.as_mut() else {
+            self.last_error = "gpu unavailable after initialization".to_string();
+            return false;
+        };
         if gpu.surface.is_none() {
             self.last_error = "no native surface attached".to_string();
             return false;
@@ -4142,11 +4429,7 @@ impl RendererCore {
             self.last_error = format!("test pattern upload failed: {error}");
             return false;
         }
-        match gpu.render_terminal(
-            &[(0, vertex_count as u32)],
-            background,
-            &self.atlas,
-        ) {
+        match gpu.render_terminal(&[(0, vertex_count as u32)], background, &self.atlas) {
             Ok(true) => true,
             Ok(false) => {
                 self.last_error = "test pattern acquire failed".to_string();
@@ -4194,9 +4477,7 @@ impl RendererCore {
                 RenderCommand::Write(data) => self.write(&data),
                 RenderCommand::Resize(cols, rows) => self.resize(cols, rows),
                 RenderCommand::Scroll(delta) => self.scroll(delta),
-                RenderCommand::Selection(row, start, end) => {
-                    self.set_selection(row, start, end)
-                }
+                RenderCommand::Selection(row, start, end) => self.set_selection(row, start, end),
                 RenderCommand::SetFontSize(size_px) => self.set_font_size(size_px),
                 RenderCommand::SetPalette(palette) => self.set_palette(Some(palette)),
                 RenderCommand::ResetPalette => self.set_palette(None),
@@ -4311,21 +4592,18 @@ impl RendererCore {
             Ok(stats) => stats,
             Err(_) => return,
         };
-        match &self.gpu {
-            Some(gpu) => {
-                stats.backend = gpu.backend.clone();
-                stats.adapter = gpu.adapter_name.clone();
-                stats.attaches = gpu.attach_count;
-                stats.presents = gpu.present_count;
-                stats.terminal_frames = gpu.terminal_present_count;
-                stats.acquire_success = gpu.acquire_success;
-                stats.acquire_occluded = gpu.acquire_occluded;
-                stats.acquire_timeout = gpu.acquire_timeout;
-                stats.acquire_outdated = gpu.acquire_outdated;
-                stats.acquire_validation = gpu.acquire_validation;
-                stats.draw_attempts = gpu.draw_attempts;
-            }
-            None => {}
+        if let Some(gpu) = &self.gpu {
+            stats.backend = gpu.backend.clone();
+            stats.adapter = gpu.adapter_name.clone();
+            stats.attaches = gpu.attach_count;
+            stats.presents = gpu.present_count;
+            stats.terminal_frames = gpu.terminal_present_count;
+            stats.acquire_success = gpu.acquire_success;
+            stats.acquire_occluded = gpu.acquire_occluded;
+            stats.acquire_timeout = gpu.acquire_timeout;
+            stats.acquire_outdated = gpu.acquire_outdated;
+            stats.acquire_validation = gpu.acquire_validation;
+            stats.draw_attempts = gpu.draw_attempts;
         }
         stats.cols = self.cols;
         stats.rows = self.rows;
@@ -4417,10 +4695,7 @@ impl RendererCore {
         if dirty == DIRTY_FALSE
             && self.last_meta == Some(meta)
             && self.last_signature.is_some()
-            && self
-                .gpu
-                .as_ref()
-                .is_some_and(|gpu| gpu.present_count > 0)
+            && self.gpu.as_ref().is_some_and(|gpu| gpu.present_count > 0)
         {
             return false;
         }
@@ -4479,10 +4754,7 @@ impl RendererCore {
             hasher.finish()
         };
         if self.last_signature == Some(signature)
-            && self
-                .gpu
-                .as_ref()
-                .is_some_and(|gpu| gpu.present_count > 0)
+            && self.gpu.as_ref().is_some_and(|gpu| gpu.present_count > 0)
         {
             return false;
         }
@@ -4499,23 +4771,38 @@ impl RendererCore {
         }
         // 清屏：push 配色板用其背景；未 push 维持现状深灰（调试兜底）。
         let background = self.clear_color();
-        let gpu = self.gpu.as_mut().unwrap();
+        let Some(gpu) = self.gpu.as_mut() else {
+            self.last_error = "gpu unavailable after initialization".to_string();
+            return false;
+        };
         if gpu.surface.is_none() {
             log_error("no native surface attached");
             self.last_error = "no native surface attached".to_string();
             return false;
         }
 
-        if self.row_store.is_none() || self.row_store.as_ref().unwrap().dims() != (snapshot.cols, snapshot.rows)
+        if self
+            .row_store
+            .as_ref()
+            .is_none_or(|store| store.dims() != (snapshot.cols, snapshot.rows))
         {
             self.row_store = Some(RowVertexStore::new(snapshot.cols, snapshot.rows));
             rebuild_rows = (0..snapshot.rows as usize).collect();
         }
-        let store = self.row_store.as_mut().unwrap();
+        let Some(store) = self.row_store.as_mut() else {
+            self.last_error = "row store unavailable after initialization".to_string();
+            return false;
+        };
         let build_start = std::time::Instant::now();
         let mut upload_ranges = Vec::with_capacity(rebuild_rows.len() + 1);
         for row in &rebuild_rows {
-            upload_ranges.push(store.rebuild_row(*row, &snapshot, &mut self.atlas, width_px, height_px));
+            upload_ranges.push(store.rebuild_row(
+                *row,
+                &snapshot,
+                &mut self.atlas,
+                width_px,
+                height_px,
+            ));
         }
         let overlay_range = store.rebuild_overlays(&snapshot, &self.overlays, width_px, height_px);
         upload_ranges.push(overlay_range);
@@ -4563,11 +4850,7 @@ impl RendererCore {
             return false;
         }
         self.last_vertex_count = draw_ranges.iter().map(|(_, count)| *count as usize).sum();
-        match gpu.render_terminal(
-            &draw_ranges,
-            background,
-            &self.atlas,
-        ) {
+        match gpu.render_terminal(&draw_ranges, background, &self.atlas) {
             Ok(true) => {
                 self.last_signature = Some(signature);
                 self.last_meta = Some(meta);
@@ -4701,7 +4984,10 @@ impl Renderer {
     /// 工单 22：运行时设置 Apple/Noto 字体路径（APK assets 拷贝后的文件路径；
     /// 宿主自检也可用）。失败自动降级 Noto。
     pub fn set_font_paths(&self, apple: &str, noto: &str) {
-        self.send(RenderCommand::SetFontPaths(apple.to_string(), noto.to_string()));
+        self.send(RenderCommand::SetFontPaths(
+            apple.to_string(),
+            noto.to_string(),
+        ));
     }
 
     pub fn set_palette(&self, palette: Palette) {

@@ -4,22 +4,40 @@ use std::path::PathBuf;
 
 fn main() {
     let (apple, noto) = emoji::default_font_paths();
-    let mut fonts = EmojiFonts::load(
-        Some(&PathBuf::from(&apple)),
-        Some(&PathBuf::from(&noto)),
-    );
+    let mut fonts = EmojiFonts::load(Some(&PathBuf::from(&apple)), Some(&PathBuf::from(&noto)));
     let samples = [
-        "🇨🇳", "🇺🇸", "🇯🇵", "🇬🇧", "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
-        "👨‍👩‍👧‍👦", "👩‍👩‍👧‍👦", "👨‍👨‍👦", "👨‍👩‍👦",
-        "👍🏻", "👍🏽", "👋🏾", "🧑🏿",
-        "🧑‍🚀", "🧑‍💻", "👩‍🎓", "👨‍🍳",
-        "1️⃣", "9️⃣", "#️⃣", "*️⃣",
-        "🫖", "🫶", "⌨️",
+        "🇨🇳",
+        "🇺🇸",
+        "🇯🇵",
+        "🇬🇧",
+        "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
+        "👨‍👩‍👧‍👦",
+        "👩‍👩‍👧‍👦",
+        "👨‍👨‍👦",
+        "👨‍👩‍👦",
+        "👍🏻",
+        "👍🏽",
+        "👋🏾",
+        "🧑🏿",
+        "🧑‍🚀",
+        "🧑‍💻",
+        "👩‍🎓",
+        "👨‍🍳",
+        "1️⃣",
+        "9️⃣",
+        "#️⃣",
+        "*️⃣",
+        "🫖",
+        "🫶",
+        "⌨️",
     ];
     for s in samples {
         let face = match rustybuzz::Face::from_slice(fonts.apple.as_ref().unwrap().data(), 0) {
             Some(f) => f,
-            None => { println!("{s}: no face"); continue; }
+            None => {
+                println!("{s}: no face");
+                continue;
+            }
         };
         let mut buffer = rustybuzz::UnicodeBuffer::new();
         buffer.push_str(s);
@@ -28,7 +46,7 @@ fn main() {
         let positions = glyphs.glyph_positions();
         let mut has_all = true;
         for info in infos.iter() {
-            if !fonts.apple.as_ref().unwrap().has_glyph(info.glyph_id as u32) {
+            if !fonts.apple.as_ref().unwrap().has_glyph(info.glyph_id) {
                 has_all = false;
             }
         }

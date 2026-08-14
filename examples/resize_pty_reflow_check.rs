@@ -185,13 +185,16 @@ fn main() {
             "render_state_update",
         );
         let before = collect_rows_text(state);
-        println!("输入后核心行（前 6 行）: {:?}", &before[..before.len().min(6)]);
+        println!(
+            "输入后核心行（前 6 行）: {:?}",
+            &before[..before.len().min(6)]
+        );
 
         // 逐档放大（行列同缩）再缩小：模拟双指缩放的真实几何变化。
         // 先 PTY resize，再核心 resize（与应用 mailbox FIFO 顺序一致）。
         let cols_seq: [u16; 26] = [
-            55, 50, 45, 40, 35, 30, 26, 22, 18, 14, 10, 14, 18, 22, 26, 30, 35, 40, 45, 50,
-            55, 60, 60, 60, 60, 60,
+            55, 50, 45, 40, 35, 30, 26, 22, 18, 14, 10, 14, 18, 22, 26, 30, 35, 40, 45, 50, 55, 60,
+            60, 60, 60, 60,
         ];
         for (i, &cols) in cols_seq.iter().enumerate() {
             let rows = (24u16 * cols / 60).max(8);
@@ -236,13 +239,14 @@ fn main() {
         let full: Vec<&String> = rows.iter().filter(|r| r.contains(LINE)).collect();
         let fragments: Vec<&String> = rows
             .iter()
-            .filter(|r| {
-                !r.is_empty()
-                    && (r.contains("白日依山尽") || r.contains("黄河入海流"))
-            })
+            .filter(|r| !r.is_empty() && (r.contains("白日依山尽") || r.contains("黄河入海流")))
             .collect();
         println!("最终核心行（前 8 行）: {:?}", &rows[..rows.len().min(8)]);
-        println!("最终 full_line_count={} fragment_rows={}", full.len(), fragments.len());
+        println!(
+            "最终 full_line_count={} fragment_rows={}",
+            full.len(),
+            fragments.len()
+        );
 
         let ok = full.len() == 1 && fragments.len() == 1;
         println!(

@@ -8,7 +8,7 @@
 
 use fable_render::ffi::*;
 use fable_render::render_android::{
-    GlyphAtlas, OverlayRange, Palette, RowVertexStore, Rgb, Snapshot, apply_palette,
+    apply_palette, GlyphAtlas, OverlayRange, Palette, Rgb, RowVertexStore, Snapshot,
 };
 use fable_render::Renderer;
 
@@ -100,24 +100,40 @@ fn mailbox_checks() -> bool {
     renderer.set_selection(2, 0, 11);
     let text = renderer.selection_text();
     println!("selection_text={text:?}");
-    print_case(text == "第一\nline-two\n🚀 emoji 中", "selection: 跨行文本正确", &mut all_ok);
+    print_case(
+        text == "第一\nline-two\n🚀 emoji 中",
+        "selection: 跨行文本正确",
+        &mut all_ok,
+    );
 
     renderer.set_selection(1, 0, 0);
     renderer.set_selection(2, 0, 0);
     renderer.set_selection(0, 2, 3);
     let wide_tail = renderer.selection_text();
     println!("wide_tail={wide_tail:?}");
-    print_case(wide_tail == "一", "selection: CJK 右半边选中仍取整字", &mut all_ok);
+    print_case(
+        wide_tail == "一",
+        "selection: CJK 右半边选中仍取整字",
+        &mut all_ok,
+    );
 
     renderer.set_selection(0, 0, 0);
     renderer.set_selection(2, 1, 2);
     let emoji_tail = renderer.selection_text();
     println!("emoji_tail={emoji_tail:?}");
-    print_case(emoji_tail == "🚀", "selection: emoji 右半边选中仍取整字", &mut all_ok);
+    print_case(
+        emoji_tail == "🚀",
+        "selection: emoji 右半边选中仍取整字",
+        &mut all_ok,
+    );
 
     renderer.set_selection(2, 0, 0);
     renderer.set_selection(10, 0, 5);
-    print_case(renderer.selection_text().is_empty(), "selection: 越界行返回空", &mut all_ok);
+    print_case(
+        renderer.selection_text().is_empty(),
+        "selection: 越界行返回空",
+        &mut all_ok,
+    );
 
     // 字号：cell size 随字号变化；默认值 = 24 行为不变。
     let default_cell = renderer.cell_size();
@@ -131,14 +147,34 @@ fn mailbox_checks() -> bool {
         "font: 字号 24 的 cell 尺寸大于 16",
         &mut all_ok,
     );
-    print_case(default_cell == cell_24, "font: 默认字号行为保持（=24）", &mut all_ok);
+    print_case(
+        default_cell == cell_24,
+        "font: 默认字号行为保持（=24）",
+        &mut all_ok,
+    );
 
     // 配色板 push/reset 不破坏 mailbox。
     renderer.set_palette(Palette {
-        fg: Rgb { r: 255, g: 255, b: 255 },
-        bg: Rgb { r: 20, g: 80, b: 20 },
-        selection: Rgb { r: 220, g: 40, b: 220 },
-        cursor: Rgb { r: 0, g: 255, b: 255 },
+        fg: Rgb {
+            r: 255,
+            g: 255,
+            b: 255,
+        },
+        bg: Rgb {
+            r: 20,
+            g: 80,
+            b: 20,
+        },
+        selection: Rgb {
+            r: 220,
+            g: 40,
+            b: 220,
+        },
+        cursor: Rgb {
+            r: 0,
+            g: 255,
+            b: 255,
+        },
         ansi: fable_render::render_android::DEFAULT_ANSI_16,
     });
     renderer.set_selection(9, 0, 0);
@@ -195,7 +231,11 @@ fn mailbox_checks() -> bool {
         "ui: 25l 隐藏光标",
         &mut all_ok,
     );
-    print_case(renderer.mode_cursor_blink(), "ui: 12h 开启闪烁", &mut all_ok);
+    print_case(
+        renderer.mode_cursor_blink(),
+        "ui: 12h 开启闪烁",
+        &mut all_ok,
+    );
 
     renderer.write("\u{1b}[?1049l\u{1b}[?1000l\u{1b}[?25h\u{1b}[?12l".as_bytes());
     print_case(
@@ -325,7 +365,8 @@ fn mailbox_checks() -> bool {
     let transcript = renderer.transcript_text(false, false);
     println!("transcript={transcript:?}");
     print_case(
-        transcript.starts_with("第一行\nline-two\n🚀 emoji 中文\nl0\nl1\nl2\nl3\nl4\nl5 hello world\nl6")
+        transcript
+            .starts_with("第一行\nline-two\n🚀 emoji 中文\nl0\nl1\nl2\nl3\nl4\nl5 hello world\nl6")
             && transcript.ends_with("l14\n"),
         "transcript: 全量转录按行连接",
         &mut all_ok,
@@ -572,7 +613,11 @@ fn render_offscreen(
     });
     for (offset, len) in &ranges {
         let start = *offset as usize;
-        queue.write_buffer(&vertex_buffer, *offset, &store.payload()[start..start + *len]);
+        queue.write_buffer(
+            &vertex_buffer,
+            *offset,
+            &store.payload()[start..start + *len],
+        );
     }
 
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -664,7 +709,9 @@ fn text_bbox_height(pixels: &[u8], width: u32, cell_h: u32) -> u32 {
         for x in 0..width {
             let i = ((y as usize) * width as usize + x as usize) * 4;
             let diff = (pixels[i] as i32 - 31).abs().max(
-                (pixels[i + 1] as i32 - 31).abs().max((pixels[i + 2] as i32 - 31).abs()),
+                (pixels[i + 1] as i32 - 31)
+                    .abs()
+                    .max((pixels[i + 2] as i32 - 31).abs()),
             );
             if diff > 20 {
                 min_y = min_y.min(y);
@@ -735,12 +782,21 @@ unsafe fn gpu_checks() -> bool {
         max_scrollback: 10000,
     };
     let mut terminal: GhosttyTerminal = std::ptr::null_mut();
-    check(ghostty_terminal_new(std::ptr::null(), &mut terminal, opts), "terminal_new");
+    check(
+        ghostty_terminal_new(std::ptr::null(), &mut terminal, opts),
+        "terminal_new",
+    );
     let mut state: GhosttyRenderState = std::ptr::null_mut();
-    check(ghostty_render_state_new(std::ptr::null(), &mut state), "render_state_new");
+    check(
+        ghostty_render_state_new(std::ptr::null(), &mut state),
+        "render_state_new",
+    );
     let data = b"Hello World\r\n\x1b[31mRED\x1b[0m\r\n";
     ghostty_terminal_vt_write(terminal, data.as_ptr(), data.len());
-    check(ghostty_render_state_update(state, terminal), "render_state_update");
+    check(
+        ghostty_render_state_update(state, terminal),
+        "render_state_update",
+    );
     let snapshot = collect(state);
 
     let mut atlas = GlyphAtlas::new().expect("atlas");
@@ -775,11 +831,7 @@ unsafe fn gpu_checks() -> bool {
         "font: 行高/格宽像素随字号变大",
         &mut all_ok,
     );
-    print_case(
-        bbox24 > bbox16,
-        "font: 字形像素尺寸随字号变大",
-        &mut all_ok,
-    );
+    print_case(bbox24 > bbox16, "font: 字形像素尺寸随字号变大", &mut all_ok);
 
     // 未 push：维持现状（灰底 + 核心解析 + SGR 红色保留）。
     let frame_default = render_offscreen(
@@ -793,21 +845,37 @@ unsafe fn gpu_checks() -> bool {
     let (dr, dg, db) = pixel_at(&frame_default, cw24 * COLS as u32, cw24 * 30, ch24 * 5);
     println!("default bg px=({dr},{dg},{db})");
     print_case(
-        dr >= 25 && dr <= 40 && dg >= 25 && dg <= 40 && db >= 25 && db <= 40,
+        (25..=40).contains(&dr) && (25..=40).contains(&dg) && (25..=40).contains(&db),
         "palette: 未 push 维持现状灰底",
         &mut all_ok,
     );
     // SGR 红：第一行是 "Hello World"，第二行 "RED"。
     let sgr_red = red_pixel_count(&frame_default, cw24 * COLS as u32, ch24, ch24 * 2);
     println!("SGR red pixels={sgr_red}");
-    print_case(sgr_red > 20, "palette: 未 push 时 SGR 16 色语义保留", &mut all_ok);
+    print_case(
+        sgr_red > 20,
+        "palette: 未 push 时 SGR 16 色语义保留",
+        &mut all_ok,
+    );
 
     // push 配色板：背景 / 前景 / 选择色像素变化。
     let mut snap_pal = snapshot.clone();
     let palette = Palette {
-        fg: Rgb { r: 255, g: 240, b: 0 },
-        bg: Rgb { r: 20, g: 80, b: 20 },
-        selection: Rgb { r: 220, g: 40, b: 220 },
+        fg: Rgb {
+            r: 255,
+            g: 240,
+            b: 0,
+        },
+        bg: Rgb {
+            r: 20,
+            g: 80,
+            b: 20,
+        },
+        selection: Rgb {
+            r: 220,
+            g: 40,
+            b: 220,
+        },
         cursor: Rgb { r: 0, g: 0, b: 0 },
         ansi: fable_render::render_android::DEFAULT_ANSI_16,
     };
@@ -823,17 +891,12 @@ unsafe fn gpu_checks() -> bool {
         &overlays,
         cw24 * COLS as u32,
         ch24 * ROWS as u32,
-        [
-            20.0 / 255.0,
-            80.0 / 255.0,
-            20.0 / 255.0,
-            1.0,
-        ],
+        [20.0 / 255.0, 80.0 / 255.0, 20.0 / 255.0, 1.0],
     );
     let (br, bg, bb) = pixel_at(&frame_pal, cw24 * COLS as u32, cw24 * 30, ch24 * 5);
     println!("palette bg px=({br},{bg},{bb})");
     print_case(
-        br >= 10 && br <= 30 && bg >= 70 && bg <= 95 && bb >= 10 && bb <= 30,
+        (10..=30).contains(&br) && (70..=95).contains(&bg) && (10..=30).contains(&bb),
         "palette: push 后背景像素 = push bg",
         &mut all_ok,
     );
@@ -862,14 +925,18 @@ unsafe fn gpu_checks() -> bool {
     );
     println!("palette selection px=({cr},{cg},{cb})");
     print_case(
-        cr >= 85 && cr <= 135 && cg >= 40 && cg <= 85 && cb >= 85 && cb <= 135,
+        (85..=135).contains(&cr) && (40..=85).contains(&cg) && (85..=135).contains(&cb),
         "palette: push 后选择色像素 = push selection 混合",
         &mut all_ok,
     );
     // SGR 红在 push 配色板下仍保留（16 色语义不变）。
     let pal_sgr_red = red_pixel_count(&frame_pal, cw24 * COLS as u32, ch24, ch24 * 2);
     println!("palette SGR red pixels={pal_sgr_red}");
-    print_case(pal_sgr_red > 20, "palette: push 后 SGR 16 色仍保留", &mut all_ok);
+    print_case(
+        pal_sgr_red > 20,
+        "palette: push 后 SGR 16 色仍保留",
+        &mut all_ok,
+    );
 
     ghostty_render_state_free(state);
     ghostty_terminal_free(terminal);
