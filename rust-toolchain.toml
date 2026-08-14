@@ -1,0 +1,7 @@
+[toolchain]
+# Pin the stable compiler used by all three independent crates.
+# Upgrade this value in a dedicated baseline change and rerun
+# `scripts/rust-quality-gate.sh` before merging the upgrade.
+channel = "1.97.1"
+profile = "minimal"
+components = ["rustfmt", "clippy"]
