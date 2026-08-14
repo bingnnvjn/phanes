@@ -32,7 +32,7 @@ Status: 待验收
    - 生产库启用 `unsafe_op_in_unsafe_fn`、FFI、rustdoc、todo/unimplemented/dbg 与
      `unwrap/expect/panic`（非测试）门禁；新增 `spike-render/docs/ffi-contracts.md`，
      收束 JNI token、Ghostty、FreeType/mmap、wgpu/native window、线程和 panic/unwind 合约。
-   - `spike-render` 提交：`b19288b`（`chore(renderer): enforce Rust FFI quality baseline`）。
+   - `spike-render` 提交：`b19288b`（质量基线）+ `6cc990e`（JNI unwind/FFI 安全边界）。
    - 尚未运行 Android instrumentation/真机 Surface attach-detach-reset 压力；当前环境
      `adb devices` 无设备，因此状态保留为“待验收”。
 2. 踩过的坑与解法：
@@ -43,6 +43,8 @@ Status: 待验收
      不属于 Rust crate lint，未改第三方源码。
    - `unsafe_op_in_unsafe_fn` 历史 Ghostty 读取集中在具体适配函数的有理由 `expect`；
      GPU/window/thread 边界未继承模块级例外，并补齐 `Send/Sync` 安全说明。
+   - JNI 环境入口、renderer attach 和 PTY spawn/read/write/resize/close 统一经过
+     `catch_unwind`；native window 与 PTY shim unsafe 调用补充邻接 `SAFETY:` 前提。
 3. 结论写回：
    - 渲染器本地自动门禁已从工单 48 的历史基线清零为全绿；字形、emoji、选择、滚动、
      GPU 离屏和 renderer token 既有测试保持通过。
