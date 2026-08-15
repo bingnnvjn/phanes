@@ -14,7 +14,11 @@ pub fn bench_frame(width: usize, height: usize, sequence: u64) -> Vec<u8> {
         out.extend_from_slice(format!("\x1b[{row};1H").as_bytes());
         let row_u64 = row as u64;
         for col in 0..width {
-            let value = (sequence.wrapping_mul(31).wrapping_add(row_u64.wrapping_mul(17)).wrapping_add(col as u64)) & 0x7f;
+            let value = (sequence
+                .wrapping_mul(31)
+                .wrapping_add(row_u64.wrapping_mul(17))
+                .wrapping_add(col as u64))
+                & 0x7f;
             let ch = match value {
                 0x20..=0x7e => value as u8,
                 _ => b' ',
@@ -29,8 +33,16 @@ pub fn bench_frame(width: usize, height: usize, sequence: u64) -> Vec<u8> {
 /// One-line summary for the stats block.
 pub fn format_stats(frames: u64, bytes: u64, elapsed: Duration) -> String {
     let seconds = elapsed.as_secs_f64();
-    let fps = if seconds > 0.0 { frames as f64 / seconds } else { 0.0 };
-    let bytes_per_sec = if seconds > 0.0 { bytes as f64 / seconds } else { 0.0 };
+    let fps = if seconds > 0.0 {
+        frames as f64 / seconds
+    } else {
+        0.0
+    };
+    let bytes_per_sec = if seconds > 0.0 {
+        bytes as f64 / seconds
+    } else {
+        0.0
+    };
     format!(
         "frames: {frames}\nbytes: {bytes}\nelapsed: {seconds:.3}s\nemit rate: {fps:.1} fps / {:.2} MiB/s",
         bytes_per_sec / (1024.0 * 1024.0)
@@ -41,7 +53,10 @@ pub fn format_stats(frames: u64, bytes: u64, elapsed: Duration) -> String {
 pub fn run() -> i32 {
     signals::install_signal_handlers();
 
-    let size = term::terminal_size().unwrap_or(term::Size { width: 80, height: 24 });
+    let size = term::terminal_size().unwrap_or(term::Size {
+        width: 80,
+        height: 24,
+    });
     let stdout = io::stdout();
     let mut out = stdout.lock();
 
@@ -74,7 +89,10 @@ mod tests {
     #[test]
     fn bench_frames_change_every_sequence() {
         for sequence in 0..8 {
-            assert_ne!(bench_frame(20, 5, sequence), bench_frame(20, 5, sequence + 1));
+            assert_ne!(
+                bench_frame(20, 5, sequence),
+                bench_frame(20, 5, sequence + 1)
+            );
         }
     }
 

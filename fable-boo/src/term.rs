@@ -51,7 +51,13 @@ mod tests {
 
     #[test]
     fn parse_size_accepts_valid() {
-        assert_eq!(parse_size("100", "41"), Some(Size { width: 100, height: 41 }));
+        assert_eq!(
+            parse_size("100", "41"),
+            Some(Size {
+                width: 100,
+                height: 41
+            })
+        );
     }
 
     #[test]
@@ -64,11 +70,25 @@ mod tests {
     #[test]
     fn centering_is_symmetric() {
         assert_eq!(
-            centered_offset(Size { width: 120, height: 41 }, 100, 41),
+            centered_offset(
+                Size {
+                    width: 120,
+                    height: 41
+                },
+                100,
+                41
+            ),
             Offset { x: 10, y: 0 }
         );
         assert_eq!(
-            centered_offset(Size { width: 100, height: 80 }, 100, 41),
+            centered_offset(
+                Size {
+                    width: 100,
+                    height: 80
+                },
+                100,
+                41
+            ),
             Offset { x: 0, y: 19 }
         );
     }
