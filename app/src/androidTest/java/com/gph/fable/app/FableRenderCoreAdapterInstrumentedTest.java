@@ -102,6 +102,8 @@ public class FableRenderCoreAdapterInstrumentedTest {
             adapter.setSelection(2, 0, 4);
             assertEquals("row1\nrow2", adapter.getSelectionText());
 
+            // overlay 按行独立存续；清除上一段的 row2，避免残留选择参与本次断言。
+            adapter.setSelection(2, 0, 0);
             adapter.setSelection(1, 0, 0);
             adapter.setSelection(0, 0, 4);
             assertEquals("row0", adapter.getSelectionText());
