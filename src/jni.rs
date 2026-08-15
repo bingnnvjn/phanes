@@ -22,13 +22,6 @@ extern "C" {
 }
 
 struct HandleRegistry<T> {
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "工单 50：JNI 创建路径由 Java 导出符号调用，Rust 静态分析看不到"
-        )
-    )]
     next_handle: AtomicI64,
     entries: Mutex<std::collections::HashMap<jlong, Arc<T>>>,
 }
@@ -41,13 +34,6 @@ impl<T> HandleRegistry<T> {
         }
     }
 
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "工单 50：JNI 创建路径由 Java 导出符号调用，Rust 静态分析看不到"
-        )
-    )]
     fn insert(&self, value: T) -> jlong {
         loop {
             let handle = self.next_handle.fetch_add(1, Ordering::Relaxed);
@@ -149,7 +135,6 @@ fn argb_to_rgb(argb: jint) -> Rgb {
     }
 }
 
-#[cfg(test)]
 #[no_mangle]
 pub extern "system" fn Java_com_gph_fable_app_RenderCore_rendererCreate(
     _env: EnvUnowned,
