@@ -109,27 +109,36 @@ allowed_public_path() {
 check_public_tree() {
     local crate="$1"
     local repo="$REPO_ROOT/$crate"
-    local absolute relative
+    local relative
     local tree_failed=0
 
-    while IFS= read -r -d '' absolute; do
-        relative="${absolute#"$repo"/}"
+    while IFS= read -r -d '' relative; do
         if ! allowed_public_path "$crate" "$relative"; then
             printf '  unexpected path: %s/%s\n' "$crate" "$relative" >&2
             tree_failed=1
         fi
-    done < <(
-        find "$repo" \
-            -type d \( -name .git -o -name target -o -name build -o \
-                -name .gradle -o -name .cxx -o -name .externalNativeBuild \) -prune -o \
-            -type f -print0
-    )
+    done < <(git -C "$repo" ls-files -z)
 
     if [[ "$tree_failed" -eq 0 ]]; then
         pass "$crate working tree matches the reviewed public path allow-list"
     else
         fail "$crate has files outside the reviewed public path allow-list"
     fi
+}
+
+has_forbidden_tracked_path() {
+    local repo="$1"
+    local relative
+
+    while IFS= read -r -d '' relative; do
+        case "$relative" in
+            *.jks|*.keystore|*.p12|*.pfx|*.pem|*.key|*.apk|*.aab|*.log|\
+            out.png|coverage_report.txt|.env|.env.*|local.properties|signing.properties)
+                return 0
+                ;;
+        esac
+    done < <(git -C "$repo" ls-files -z)
+    return 1
 }
 
 for crate in "${CRATES[@]}"; do
@@ -174,13 +183,7 @@ for crate in "${CRATES[@]}"; do
     fi
     check_public_tree "$crate"
 
-    if find "$repo" -path "$repo/.git" -prune -o -path "$repo/target" -prune -o \
-        -type f \( -iname '*.jks' -o -iname '*.keystore' -o -iname '*.p12' \
-        -o -iname '*.pfx' -o -iname '*.pem' -o -iname '*.key' -o -iname '*.apk' \
-        -o -iname '*.aab' -o -iname '*.log' -o -name 'out.png' -o -name 'coverage_report.txt' \
-        -o -name '.env' -o -name '.env.*' \
-        -o -name 'local.properties' -o -name 'signing.properties' \) -print -quit |
-        grep -q .; then
+    if has_forbidden_tracked_path "$repo"; then
         fail "$crate contains a signing, credential, build, or environment artifact"
     else
         pass "$crate has no known signing or environment artifact in its publish tree"

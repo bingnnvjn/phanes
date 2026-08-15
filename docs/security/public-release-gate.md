@@ -17,6 +17,9 @@
 
 ## 允许发布路径
 
+权威 allow-list 已落盘在
+`docs/security/rust-public-boundary.allowlist`，由
+`scripts/rust-public-boundary-gate.sh` 在工作树索引和 fresh clone 上执行。发布
 闸门只允许下列路径族进入三个 crate 的公开源码树：
 
 | 仓库 | 允许路径 |
