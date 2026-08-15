@@ -1,0 +1,159 @@
+# Human-review ledger consumed by scripts/rust-supply-chain-gate.sh.
+#
+# Any new path/git source requires a new record with all fields below. The
+# script compares direct Cargo manifest sources to this ledger, rejects stale
+# review dates, and hashes path source trees. Cargo-deny separately rejects
+# unapproved registry and git transitive sources.
+
+version = 1
+
+[[source-exceptions]]
+type = "path"
+manifest = "spike-session/Cargo.toml"
+crate = "portable-pty"
+version = "0.9.0"
+source = "vendor/portable-pty"
+resolved-path = "spike-session/vendor/portable-pty"
+upstream = "https://github.com/wezterm/wezterm"
+upstream-revision = "f8921727a11b9f8b073e8c24821d72fd41283500"
+license = "MIT"
+owner = "Fable Rust maintainers"
+reviewed-on = "2026-08-15"
+review-by = "2026-11-15"
+reason = "Preserve the Java session layer's login-shell argv[0] semantics (-bash); portable-pty 0.9.0 has no upstream argv0 API."
+content-sha256 = "8a041cad33dcaf557b65f4d77af1f6d2f92487f506fe5aff03220682d1c36c1e"
+
+[[advisory-exceptions]]
+id = "RUSTSEC-2026-0192"
+crate = "ttf-parser"
+version = "0.25.1"
+kind = "unmaintained"
+manifest = "spike-render/Cargo.toml"
+owner = "Fable Rust maintainers"
+reviewed-on = "2026-08-15"
+review-by = "2026-09-15"
+reason = "Reached through fontdue 0.9.4 and rustybuzz 0.20.1; the RustSec advisory reports no safe upgrade. Retain only until the renderer can migrate its font parsing/shaping stack."
+
+[[advisory-exceptions]]
+id = "RUSTSEC-2026-0206"
+crate = "rustybuzz"
+version = "0.20.1"
+kind = "unmaintained"
+manifest = "spike-render/Cargo.toml"
+owner = "Fable Rust maintainers"
+reviewed-on = "2026-08-15"
+review-by = "2026-09-15"
+reason = "Fable's selected shaping implementation; the RustSec advisory reports no safe upgrade. Re-evaluate a migration to harfrust or another maintained shaping path before expiry."
+
+[[duplicate-version-exceptions]]
+crate = "bitflags"
+version = "1.3.2"
+owner = "Fable Rust maintainers"
+reviewed-on = "2026-08-15"
+review-by = "2026-11-15"
+reason = "portable-pty 0.9.0 needs bitflags 1 for its Windows support path while nix 0.28 uses bitflags 2."
+
+[[duplicate-version-exceptions]]
+crate = "foldhash"
+version = "0.1.5"
+owner = "Fable Rust maintainers"
+reviewed-on = "2026-08-15"
+review-by = "2026-11-15"
+reason = "fontdue 0.9.4 pins hashbrown 0.15; wgpu 30 needs newer hashbrown/foldhash."
+
+[[duplicate-version-exceptions]]
+crate = "foldhash"
+version = "0.2.0"
+owner = "Fable Rust maintainers"
+reviewed-on = "2026-08-15"
+review-by = "2026-11-15"
+reason = "The wgpu 30 graph needs this intermediate foldhash generation alongside the newest one."
+
+[[duplicate-version-exceptions]]
+crate = "hashbrown"
+version = "0.15.5"
+owner = "Fable Rust maintainers"
+reviewed-on = "2026-08-15"
+review-by = "2026-11-15"
+reason = "fontdue 0.9.4 pins this generation, which cannot be unified with wgpu 30 without a dependency upgrade."
+
+[[duplicate-version-exceptions]]
+crate = "hashbrown"
+version = "0.16.1"
+owner = "Fable Rust maintainers"
+reviewed-on = "2026-08-15"
+review-by = "2026-11-15"
+reason = "wgpu 30's gpu-allocator path needs this intermediate generation alongside hashbrown 0.17."
+
+[[duplicate-version-exceptions]]
+crate = "syn"
+version = "2.0.119"
+owner = "Fable Rust maintainers"
+reviewed-on = "2026-08-15"
+review-by = "2026-11-15"
+reason = "jni-macros 0.22.4 and zerocopy-derive use syn 2 while jni-sys-macros uses syn 3."
+
+[[duplicate-version-exceptions]]
+crate = "thiserror"
+version = "1.0.69"
+owner = "Fable Rust maintainers"
+reviewed-on = "2026-08-15"
+review-by = "2026-11-15"
+reason = "portable-pty's filedescriptor dependency uses thiserror 1 while jni 0.22 uses thiserror 2."
+
+[[duplicate-version-exceptions]]
+crate = "thiserror-impl"
+version = "1.0.69"
+owner = "Fable Rust maintainers"
+reviewed-on = "2026-08-15"
+review-by = "2026-11-15"
+reason = "The thiserror 1 compatibility exception also needs its matching derive macro beside jni's thiserror-impl 2."
+
+[[license-allows]]
+spdx = "0BSD"
+owner = "Fable Rust maintainers"
+reviewed-on = "2026-08-15"
+review-by = "2026-11-15"
+reason = "Permissive SPDX alternative selected by the resolved adler2 dependency."
+
+[[license-allows]]
+spdx = "Apache-2.0"
+owner = "Fable Rust maintainers"
+reviewed-on = "2026-08-15"
+review-by = "2026-11-15"
+reason = "Permissive SPDX alternative used throughout the resolved Rust dependency graph."
+
+[[license-allows]]
+spdx = "BSD-2-Clause"
+owner = "Fable Rust maintainers"
+reviewed-on = "2026-08-15"
+review-by = "2026-11-15"
+reason = "Permissive SPDX alternative selected by resolved transitive dependencies."
+
+[[license-allows]]
+spdx = "ISC"
+owner = "Fable Rust maintainers"
+reviewed-on = "2026-08-15"
+review-by = "2026-11-15"
+reason = "Permissive SPDX license selected by resolved transitive dependencies."
+
+[[license-allows]]
+spdx = "MIT"
+owner = "Fable Rust maintainers"
+reviewed-on = "2026-08-15"
+review-by = "2026-11-15"
+reason = "Permissive SPDX alternative used throughout the resolved Rust dependency graph and the vendored portable-pty base."
+
+[[license-allows]]
+spdx = "Unicode-3.0"
+owner = "Fable Rust maintainers"
+reviewed-on = "2026-08-15"
+review-by = "2026-11-15"
+reason = "Required conjunctive license for resolved Unicode data dependencies."
+
+[[license-allows]]
+spdx = "Zlib"
+owner = "Fable Rust maintainers"
+reviewed-on = "2026-08-15"
+review-by = "2026-11-15"
+reason = "Permissive SPDX alternative selected by resolved compression and transitive dependencies."
