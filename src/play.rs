@@ -33,7 +33,10 @@ pub fn run() -> i32 {
             return 1;
         }
     };
-    let rendered: Vec<Vec<Vec<u8>>> = frames.iter().map(|frame| ansi::render_frame(frame)).collect();
+    let rendered: Vec<Vec<Vec<u8>>> = frames
+        .iter()
+        .map(|frame| ansi::render_frame(frame))
+        .collect();
 
     signals::install_signal_handlers();
 
@@ -84,9 +87,8 @@ pub fn build_frame_buffer(rendered: &[Vec<Vec<u8>>], offset: Offset, frame_index
     let frame = &rendered[frame_index as usize % rendered.len()];
     let mut buffer = Vec::with_capacity(frame.len() + 64);
     for (row, line) in frame.iter().enumerate() {
-        buffer.extend_from_slice(
-            format!("\x1b[{};{}H", offset.y + row + 1, offset.x + 1).as_bytes(),
-        );
+        buffer
+            .extend_from_slice(format!("\x1b[{};{}H", offset.y + row + 1, offset.x + 1).as_bytes());
         buffer.extend_from_slice(line);
         buffer.extend_from_slice(ansi::RESET_SGR);
     }
@@ -116,7 +118,10 @@ mod tests {
         let second = frame_deadline(start, 2);
         assert!(first > start);
         assert!(second > first);
-        assert_eq!(frame_deadline(start, 235) - start, frames::one_round_duration());
+        assert_eq!(
+            frame_deadline(start, 235) - start,
+            frames::one_round_duration()
+        );
     }
 
     #[test]
@@ -130,7 +135,10 @@ mod tests {
         let buffer = build_frame_buffer(&rendered, Offset { x: 0, y: 0 }, 0);
         let text = String::from_utf8_lossy(&buffer);
         for row in 1..=FRAME_HEIGHT {
-            assert!(text.contains(&format!("\x1b[{row};1H")), "missing row {row}");
+            assert!(
+                text.contains(&format!("\x1b[{row};1H")),
+                "missing row {row}"
+            );
         }
     }
 

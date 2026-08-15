@@ -77,14 +77,22 @@ mod tests {
         let frames = decompress_frames().unwrap();
         for index in 0..FRAME_COUNT {
             let next = (index + 1) % FRAME_COUNT;
-            assert_ne!(frames[index], frames[next], "frames {} and {} identical", index + 1, next + 1);
+            assert_ne!(
+                frames[index],
+                frames[next],
+                "frames {} and {} identical",
+                index + 1,
+                next + 1
+            );
         }
     }
 
     #[test]
     fn first_frame_contains_expected_art() {
         let frames = decompress_frames().unwrap();
-        assert!(frames[0].windows(b"+++==*%%%%%%%%%%%%*==+++".len()).any(|w| w == b"+++==*%%%%%%%%%%%%*==+++"));
+        assert!(frames[0]
+            .windows(b"+++==*%%%%%%%%%%%%*==+++".len())
+            .any(|w| w == b"+++==*%%%%%%%%%%%%*==+++"));
     }
 
     #[test]
