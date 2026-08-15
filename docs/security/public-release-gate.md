@@ -24,7 +24,7 @@
 
 | 仓库 | 允许路径 |
 | --- | --- |
-| `fable-boo` | `Cargo.toml`、`Cargo.lock`、`README.md`、`LICENSE`、`SECURITY.md`、`CONTRIBUTING.md`、`.github/CODEOWNERS`、`.github/dependabot.yml`、`build.rs`、`src/**`、`.gitignore` |
+| `fable-boo` | `Cargo.toml`、`Cargo.lock`、`README.md`、`LICENSE`、`SECURITY.md`、`CONTRIBUTING.md`、`.github/CODEOWNERS`、`.github/dependabot.yml`、`build.rs`、`src/**`、`data/frames/**`、`.gitignore` |
 | `spike-render` | 上述公共文件，加 `docs/**`、`examples/**`、`assets/JetBrainsMono-Regular.ttf`、`assets/NotoColorEmoji.ttf`、`assets/NOTO-EMOJI-LICENSE.txt`、`third_party/freetype/**` |
 | `spike-session` | 上述公共文件，加 `build.rs`、`src/**`、`tests/**`、`vendor/portable-pty/**` |
 

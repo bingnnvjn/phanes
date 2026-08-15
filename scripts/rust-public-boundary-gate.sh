@@ -13,6 +13,7 @@ set -u
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
 ALLOWLIST="$REPO_ROOT/docs/security/rust-public-boundary.allowlist"
+REFS="$REPO_ROOT/docs/security/rust-public-boundary.refs"
 CRATES=(fable-boo spike-render spike-session)
 
 failed=0
@@ -34,6 +35,27 @@ fail() {
 if [[ ! -f "$ALLOWLIST" ]]; then
     fail "missing canonical allow-list: $ALLOWLIST"
 fi
+if [[ ! -f "$REFS" ]]; then
+    fail "missing canonical ref ledger: $REFS"
+fi
+
+expected_ref() {
+    local crate="$1"
+    local wanted_field="$2"
+    local record_crate branch commit
+
+    while IFS=$'\t' read -r record_crate branch commit; do
+        [[ -z "$record_crate" || "${record_crate:0:1}" == "#" ]] && continue
+        [[ "$record_crate" == "$crate" ]] || continue
+        case "$wanted_field" in
+            branch) printf '%s\n' "$branch" ;;
+            commit) printf '%s\n' "$commit" ;;
+            *) return 2 ;;
+        esac
+        return 0
+    done < "$REFS"
+    return 1
+}
 
 allowed_path() {
     local crate="$1"
@@ -94,7 +116,12 @@ check_forbidden_artifacts() {
 check_repo() {
     local crate="$1"
     local repo="$2"
-    local top expected_top
+    local top expected_top expected_branch expected_commit actual_branch actual_commit
+
+    if [[ ! -d "$repo" ]]; then
+        fail "$crate directory is missing; clone the independent crate before running this gate"
+        return
+    fi
 
     expected_top="$(CDPATH= cd -- "$repo" && pwd)"
     top="$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null || true)"
@@ -103,6 +130,26 @@ check_repo() {
     else
         fail "$crate Git top-level is not its crate directory"
         return
+    fi
+
+    expected_branch="$(expected_ref "$crate" branch || true)"
+    expected_commit="$(expected_ref "$crate" commit || true)"
+    if [[ -z "$expected_branch" || -z "$expected_commit" ]]; then
+        fail "$crate is missing a branch or commit in $REFS"
+        return
+    fi
+    actual_branch="$(git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+    actual_commit="$(git -C "$repo" rev-parse HEAD 2>/dev/null || true)"
+    if [[ "$actual_branch" == "$expected_branch" && "$actual_commit" == "$expected_commit" ]]; then
+        pass "$crate ref matches $expected_branch@$expected_commit"
+    else
+        fail "$crate ref differs from $expected_branch@$expected_commit"
+    fi
+
+    if [[ -z "$(git -C "$repo" status --porcelain)" ]]; then
+        pass "$crate worktree is clean"
+    else
+        fail "$crate worktree has tracked changes"
     fi
 
     if [[ -z "$(git -C "$repo" remote)" ]]; then
@@ -126,6 +173,13 @@ check_repo() {
     if git clone --no-local --quiet "$repo" "$clone" &&
         [[ "$(git -C "$clone" rev-parse --show-toplevel)" == "$clone" ]]; then
         pass "$crate fresh clone has an independent Git top-level"
+        actual_branch="$(git -C "$clone" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+        actual_commit="$(git -C "$clone" rev-parse HEAD 2>/dev/null || true)"
+        if [[ "$actual_branch" == "$expected_branch" && "$actual_commit" == "$expected_commit" ]]; then
+            pass "$crate fresh clone ref matches $expected_branch@$expected_commit"
+        else
+            fail "$crate fresh clone ref differs from $expected_branch@$expected_commit"
+        fi
         check_tree "$crate" "$clone"
         check_forbidden_artifacts "$crate" "$clone"
         if git -C "$clone" diff --check; then

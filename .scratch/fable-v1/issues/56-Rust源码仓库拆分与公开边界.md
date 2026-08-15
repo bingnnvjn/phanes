@@ -2,17 +2,17 @@
 
 **What to build:** 将三个 Rust crate 的本地发布边界变成可独立验收的 Git 仓库输入；拆出仍位于 Fable 根仓库的 `fable-boo`，并为三个 crate 固定公开路径 allow-list、禁止路径和历史保留策略。
 **Blocked by:** None
-Status: 进行中
+Status: 已完成
 
 ## 验收清单
 
-- [ ] `fable-boo` 具有独立 Git 顶层；其历史或干净导出策略已记录
-- [ ] `spike-render`、`spike-session` 的独立 Git 顶层和当前 refs 已记录
-- [ ] 三个 crate 的公开路径 allow-list 已落盘并通过脚本检查
-- [ ] 根仓库 `.scratch/`、`.crew/`、诊断、设备记录和内部实施资料不在 crate 发布输入中
-- [ ] `target/`、构建缓存、日志、APK/AAB、环境文件和签名材料不在发布输入中
-- [ ] 每个 crate 的发布输入可从干净 checkout 重建
-- [ ] 本单不创建 GitHub remote、不推送、不新增 workflow
+- [x] `fable-boo` 具有独立 Git 顶层；其历史或干净导出策略已记录
+- [x] `spike-render`、`spike-session` 的独立 Git 顶层和当前 refs 已记录
+- [x] 三个 crate 的公开路径 allow-list 已落盘并通过脚本检查
+- [x] 根仓库 `.scratch/`、`.crew/`、诊断、设备记录和内部实施资料不在 crate 发布输入中
+- [x] `target/`、构建缓存、日志、APK/AAB、环境文件和签名材料不在发布输入中
+- [x] 每个 crate 的发布输入可从干净 checkout 重建
+- [x] 本单不创建 GitHub remote、不推送、不新增 workflow
 
 ## Comments
 
@@ -24,7 +24,7 @@ Status: 进行中
    - 先保存可恢复副本：`.scratch/fable-v1/backups/工单56-2026-08-15/fable-root-history.bundle`（SHA-256 `51c9bdac80ee6e6207bbd2aad92bd8aee66a087d76cafffb1a03eb10808ced8d`）和 `fable-boo-source-HEAD.tar`（SHA-256 `cc2caa1ce266024c5becca996923f51f3a4d8011e589fa6fdc04448a2c79a88a`）。
    - `fable-boo` 从根仓库 `b00fbde4ed8e3f05ac0b0bbb4c3a091c6c065b1c` 以 `git subtree split --prefix=fable-boo --annotate='fable-boo: '` 生成独立历史，当前 `master` 为 `fae5df476879f5b9a478f859087235ed5916f477`；`git -C fable-boo rev-parse --show-toplevel` 已返回 `Fable/fable-boo`。
    - `spike-render` 当前 `master` 为 `3859f86afd895d56ab93e5831b6aae73164d8f00`，`spike-session` 当前 `master` 为 `66b4c5d97ee7f894aa06c5c1a238c71a92bdf010`；三者均无 remote。
-   - 新增 `docs/security/rust-public-boundary.allowlist`、`docs/security/rust-public-boundary.md` 和 `scripts/rust-public-boundary-gate.sh`。边界门禁结果：`Rust public-boundary gate: 27 checks, 0 failures`；工作树索引与 fresh clone 均通过 allow-list、禁止产物和 `git diff --check`。
+   - 新增 `docs/security/rust-public-boundary.allowlist`、`docs/security/rust-public-boundary.refs`、`docs/security/rust-public-boundary.md` 和 `scripts/rust-public-boundary-gate.sh`。边界门禁结果：`Rust public-boundary gate: 36 checks, 0 failures`；工作树索引与 fresh clone 均通过固定 `master` ref、allow-list、禁止产物和 `git diff --check`。
    - 根仓库增加 `/fable-boo/` 忽略规则并显式停止跟踪 `fable-boo` 源码；未使用 `git add .`，未修改 `fable-app` upstream，未创建 remote、推送或启用 workflow。
 
 2. 踩过的坑与解法：

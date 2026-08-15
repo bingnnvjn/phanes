@@ -70,62 +70,6 @@ required_file() {
     fi
 }
 
-allowed_public_path() {
-    local crate="$1"
-    local path="$2"
-    case "$path" in
-        Cargo.toml|Cargo.lock|README.md|LICENSE|SECURITY.md|CONTRIBUTING.md|.gitignore|.github/CODEOWNERS|.github/dependabot.yml)
-            return 0
-            ;;
-    esac
-    case "$crate" in
-        fable-boo)
-            [[ "$path" == src/* || "$path" == data/frames/* || "$path" == build.rs ]]
-            ;;
-        spike-render)
-            [[ "$path" == src/* ||
-                "$path" == examples/* ||
-                "$path" == docs/* ||
-                "$path" == build.rs ||
-                "$path" == THIRD_PARTY.md ||
-                "$path" == assets/JetBrainsMono-Regular.ttf ||
-                "$path" == assets/NotoColorEmoji.ttf ||
-                "$path" == assets/NOTO-EMOJI-LICENSE.txt ||
-                "$path" == third_party/freetype/* ]]
-            ;;
-        spike-session)
-            [[ "$path" == src/* ||
-                "$path" == tests/* ||
-                "$path" == build.rs ||
-                "$path" == THIRD_PARTY.md ||
-                "$path" == vendor/portable-pty/* ]]
-            ;;
-        *)
-            return 1
-            ;;
-    esac
-}
-
-check_public_tree() {
-    local crate="$1"
-    local repo="$REPO_ROOT/$crate"
-    local relative
-    local tree_failed=0
-
-    while IFS= read -r -d '' relative; do
-        if ! allowed_public_path "$crate" "$relative"; then
-            printf '  unexpected path: %s/%s\n' "$crate" "$relative" >&2
-            tree_failed=1
-        fi
-    done < <(git -C "$repo" ls-files -z)
-
-    if [[ "$tree_failed" -eq 0 ]]; then
-        pass "$crate working tree matches the reviewed public path allow-list"
-    else
-        fail "$crate has files outside the reviewed public path allow-list"
-    fi
-}
-
 has_forbidden_tracked_path() {
     local repo="$1"
     local relative
@@ -140,6 +84,12 @@ has_forbidden_tracked_path() {
     done < <(git -C "$repo" ls-files -z)
     return 1
 }
+
+if "$REPO_ROOT/scripts/rust-public-boundary-gate.sh" >/dev/null 2>&1; then
+    pass "canonical Rust public-boundary gate passed (allow-list and fresh clones)"
+else
+    fail "canonical Rust public-boundary gate failed"
+fi
 
 for crate in "${CRATES[@]}"; do
     repo="$REPO_ROOT/$crate"
@@ -181,8 +131,6 @@ for crate in "${CRATES[@]}"; do
     elif [[ "$crate" == "spike-render" ]]; then
         pass "spike-render font provenance has no unresolved blocker marker"
     fi
-    check_public_tree "$crate"
-
     if has_forbidden_tracked_path "$repo"; then
         fail "$crate contains a signing, credential, build, or environment artifact"
     else
