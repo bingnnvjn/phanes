@@ -36,3 +36,5 @@ cargo build --target aarch64-linux-android --release
   raw DEFLATE（无 zlib 头）；`build.rs` 在构建期生成，运行时解压
 
 本 crate 代码亦按 MIT 许可发布。详见 `LICENSE`。
+
+第三方来源和许可证证据见 [`THIRD_PARTY.md`](THIRD_PARTY.md)。
