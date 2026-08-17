@@ -2,6 +2,8 @@ plugins {
     id "com.android.application"
 }
 
+import org.gradle.api.tasks.compile.JavaCompile
+
 def localSigningProperties = new Properties()
 def localSigningPropertiesFile = rootProject.file("signing.properties")
 if (localSigningPropertiesFile.isFile()) {
@@ -196,6 +198,36 @@ android {
         }
     }
 
+}
+
+// 工单 37 迁移过渡：主壳的 Java 实现先移出常规 source tree，避免与
+// Kotlin facade 重名；AGP 仍从生成目录编译它们，保证 JNI/生命周期行为
+// 在每一步迁移中保持可回归。每个 *.java.src 文件会在构建前恢复为同名
+// Java 源文件，迁移完成后逐个删除。
+def stagedLegacyJavaDir = layout.buildDirectory.dir("generated/legacy-java")
+tasks.register("stageLegacyJavaSources") {
+    inputs.dir("src/main/java")
+    outputs.dir(stagedLegacyJavaDir)
+    doLast {
+        delete(stagedLegacyJavaDir)
+        copy {
+            from("src/main/java")
+            include("**/*.java.src")
+            eachFile { details ->
+                details.path = details.path.replaceFirst(/\.java\.src$/, ".java")
+            }
+            into(stagedLegacyJavaDir.get().asFile)
+        }
+    }
+}
+android.sourceSets.main.java.srcDir(stagedLegacyJavaDir.get().asFile)
+tasks.withType(JavaCompile).configureEach {
+    dependsOn("stageLegacyJavaSources")
+}
+tasks.configureEach {
+    if (name.startsWith("compile") && name.endsWith("Kotlin")) {
+        dependsOn("stageLegacyJavaSources")
+    }
 }
 
 tasks.register("verifyReleaseSigning") {

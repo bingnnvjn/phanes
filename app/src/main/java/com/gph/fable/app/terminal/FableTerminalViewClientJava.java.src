@@ -53,7 +53,7 @@ import java.util.Map;
 
 import androidx.drawerlayout.widget.DrawerLayout;
 
-public class FableTerminalViewClient extends FableTerminalViewClientBase {
+public class FableTerminalViewClientJava extends FableTerminalViewClientBase {
 
     final FableActivity mActivity;
 
@@ -73,7 +73,7 @@ public class FableTerminalViewClient extends FableTerminalViewClientBase {
 
     private static final String LOG_TAG = "FableTerminalViewClient";
 
-    public FableTerminalViewClient(FableActivity activity, FableTerminalSessionActivityClient fableTerminalSessionActivityClient) {
+    public FableTerminalViewClientJava(FableActivity activity, FableTerminalSessionActivityClient fableTerminalSessionActivityClient) {
         this.mActivity = activity;
         this.mFableTerminalSessionActivityClient = fableTerminalSessionActivityClient;
     }

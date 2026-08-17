@@ -88,7 +88,7 @@ import java.util.Arrays;
  * </ul>
  * about memory leaks.
  */
-public final class FableActivity extends AppCompatActivity implements ServiceConnection {
+public class FableActivityJava extends AppCompatActivity implements ServiceConnection {
 
     /**
      * The connection to the {@link FableService}. Requested in {@link #onCreate(Bundle)} with a call to
@@ -252,7 +252,7 @@ public final class FableActivity extends AppCompatActivity implements ServiceCon
         setMargins();
 
         mFableActivityRootView = findViewById(R.id.activity_fable_root_view);
-        mFableActivityRootView.setActivity(this);
+        mFableActivityRootView.setActivity((FableActivity) this);
         mFableActivityBottomSpaceView = findViewById(R.id.activity_fable_bottom_space_view);
         mFableActivityRootView.setOnApplyWindowInsetsListener(new FableActivityRootView.WindowInsetsListener());
 
@@ -438,7 +438,7 @@ public final class FableActivity extends AppCompatActivity implements ServiceCon
 
         if (mFableService.isFableShellSessionsEmpty()) {
             if (mIsVisible) {
-                FableInstaller.setupBootstrapIfNeeded(FableActivity.this, () -> {
+                FableInstaller.setupBootstrapIfNeeded(((FableActivity) FableActivityJava.this), () -> {
                     if (mFableService == null) return; // Activity might have been destroyed.
                     try {
                         boolean launchFailsafe = false;
@@ -551,8 +551,8 @@ public final class FableActivity extends AppCompatActivity implements ServiceCon
 
     private void setFableTerminalViewAndClients() {
         // Set termux terminal view and session clients
-        mFableTerminalSessionActivityClient = new FableTerminalSessionActivityClient(this);
-        mFableTerminalViewClient = new FableTerminalViewClient(this, mFableTerminalSessionActivityClient);
+        mFableTerminalSessionActivityClient = new FableTerminalSessionActivityClient((FableActivity) this);
+        mFableTerminalViewClient = new FableTerminalViewClient((FableActivity) this, mFableTerminalSessionActivityClient);
 
         // Set fable render container and inner input terminal view
         mFableTerminalView = findViewById(R.id.fable_terminal_view);
@@ -569,13 +569,13 @@ public final class FableActivity extends AppCompatActivity implements ServiceCon
 
     private void setFableShellSessionsListView() {
         ListView fableShellSessionsListView = findViewById(R.id.terminal_sessions_list);
-        mFableShellSessionListViewController = new FableShellSessionsListViewController(this, mFableService.getFableShellSessions());
+        mFableShellSessionListViewController = new FableShellSessionsListViewController((FableActivity) this, mFableService.getFableShellSessions());
         fableShellSessionsListView.setAdapter(mFableShellSessionListViewController);
         fableShellSessionsListView.setOnItemClickListener(mFableShellSessionListViewController);
         fableShellSessionsListView.setOnItemLongClickListener(mFableShellSessionListViewController);
 
         ListView recentSessionsListView = findViewById(R.id.recent_sessions_list);
-        mRecentSessionsListViewController = new RecentSessionsListViewController(this, recentSessionsListView,
+        mRecentSessionsListViewController = new RecentSessionsListViewController((FableActivity) this, recentSessionsListView,
             findViewById(R.id.recent_sessions_header));
         recentSessionsListView.setAdapter(mRecentSessionsListViewController);
         recentSessionsListView.setOnItemClickListener(mRecentSessionsListViewController);
@@ -585,7 +585,7 @@ public final class FableActivity extends AppCompatActivity implements ServiceCon
 
 
     private void setTerminalToolbarView(Bundle savedInstanceState) {
-        mFableTerminalExtraKeys = new FableTerminalExtraKeys(this, mTerminalView,
+        mFableTerminalExtraKeys = new FableTerminalExtraKeys((FableActivity) this, mTerminalView,
             mFableTerminalViewClient, mFableTerminalSessionActivityClient);
 
         final ViewPager terminalToolbarViewPager = getTerminalToolbarViewPager();
@@ -600,8 +600,8 @@ public final class FableActivity extends AppCompatActivity implements ServiceCon
         if (savedInstanceState != null)
             savedTextInput = savedInstanceState.getString(ARG_TERMINAL_TOOLBAR_TEXT_INPUT);
 
-        terminalToolbarViewPager.setAdapter(new TerminalToolbarViewPager.PageAdapter(this, savedTextInput));
-        terminalToolbarViewPager.addOnPageChangeListener(new TerminalToolbarViewPager.OnPageChangeListener(this, terminalToolbarViewPager));
+        terminalToolbarViewPager.setAdapter(new TerminalToolbarViewPager.PageAdapter((FableActivity) this, savedTextInput));
+        terminalToolbarViewPager.addOnPageChangeListener(new TerminalToolbarViewPager.OnPageChangeListener((FableActivity) this, terminalToolbarViewPager));
     }
 
     private void setTerminalToolbarHeight() {
@@ -651,7 +651,7 @@ public final class FableActivity extends AppCompatActivity implements ServiceCon
         View newSessionButton = findViewById(R.id.new_session_button);
         newSessionButton.setOnClickListener(v -> mFableTerminalSessionActivityClient.addNewSession(false, null));
         newSessionButton.setOnLongClickListener(v -> {
-            TextInputDialogUtils.textInput(FableActivity.this, R.string.title_create_named_session, null,
+            TextInputDialogUtils.textInput(((FableActivity) FableActivityJava.this), R.string.title_create_named_session, null,
                 R.string.action_create_named_session_confirm, text -> mFableTerminalSessionActivityClient.addNewSession(false, text),
                 R.string.action_new_session_failsafe, text -> mFableTerminalSessionActivityClient.addNewSession(true, text),
                 -1, null, null);
@@ -687,7 +687,7 @@ public final class FableActivity extends AppCompatActivity implements ServiceCon
 
     public void finishActivityIfNotFinishing() {
         // prevent duplicate calls to finish() if called from multiple places
-        if (!FableActivity.this.isFinishing()) {
+        if (!((FableActivity) FableActivityJava.this).isFinishing()) {
             finish();
         }
     }
@@ -696,7 +696,7 @@ public final class FableActivity extends AppCompatActivity implements ServiceCon
     public void showToast(String text, boolean longDuration) {
         if (text == null || text.isEmpty()) return;
         if (mLastToast != null) mLastToast.cancel();
-        mLastToast = Toast.makeText(FableActivity.this, text, longDuration ? Toast.LENGTH_LONG : Toast.LENGTH_SHORT);
+        mLastToast = Toast.makeText(((FableActivity) FableActivityJava.this), text, longDuration ? Toast.LENGTH_LONG : Toast.LENGTH_SHORT);
         mLastToast.setGravity(Gravity.TOP, 0, 0);
         mLastToast.show();
     }
@@ -851,15 +851,15 @@ public final class FableActivity extends AppCompatActivity implements ServiceCon
 
                 // If permission is granted, then also setup storage symlinks.
                 if(PermissionUtils.checkAndRequestLegacyOrManageExternalStoragePermission(
-                    FableActivity.this, requestCode, true, !isPermissionCallback)) {
+                    ((FableActivity) FableActivityJava.this), requestCode, true, !isPermissionCallback)) {
                     if (isPermissionCallback)
-                        Logger.logInfoAndShowToast(FableActivity.this, LOG_TAG,
+                        Logger.logInfoAndShowToast(((FableActivity) FableActivityJava.this), LOG_TAG,
                             getString(com.gph.fable.shared.R.string.msg_storage_permission_granted_on_request));
 
-                    FableInstaller.setupStorageSymlinks(FableActivity.this);
+                    FableInstaller.setupStorageSymlinks(((FableActivity) FableActivityJava.this));
                 } else {
                     if (isPermissionCallback)
-                        Logger.logInfoAndShowToast(FableActivity.this, LOG_TAG,
+                        Logger.logInfoAndShowToast(((FableActivity) FableActivityJava.this), LOG_TAG,
                             getString(com.gph.fable.shared.R.string.msg_storage_permission_not_granted_on_request));
                 }
             }
@@ -1110,7 +1110,7 @@ public final class FableActivity extends AppCompatActivity implements ServiceCon
         // will be called again. Extra keys input text, terminal sessions and transcripts will be preserved.
         if (recreateActivity) {
             Logger.logDebug(LOG_TAG, "Recreating activity");
-            FableActivity.this.recreate();
+            ((FableActivity) FableActivityJava.this).recreate();
         }
     }
 

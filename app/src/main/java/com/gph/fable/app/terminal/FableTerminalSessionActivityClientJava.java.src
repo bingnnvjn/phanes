@@ -36,7 +36,7 @@ import com.gph.fable.core.adapter.CoreAdapter;
 import java.io.File;
 
 /** The {@link TerminalSessionClient} implementation that may require an {@link Activity} for its interface methods. */
-public class FableTerminalSessionActivityClient extends FableTerminalSessionClientBase {
+public class FableTerminalSessionActivityClientJava extends FableTerminalSessionClientBase {
 
     private final FableActivity mActivity;
 
@@ -70,7 +70,7 @@ public class FableTerminalSessionActivityClient extends FableTerminalSessionClie
 
     private static final String LOG_TAG = "FableTerminalSessionActivityClient";
 
-    public FableTerminalSessionActivityClient(FableActivity activity) {
+    public FableTerminalSessionActivityClientJava(FableActivity activity) {
         this.mActivity = activity;
     }
 

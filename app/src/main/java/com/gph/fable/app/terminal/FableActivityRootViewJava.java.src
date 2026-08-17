@@ -61,7 +61,7 @@ import com.gph.fable.shared.view.ViewUtils;
  * hidden part equals the `header_height`. The updates to margins may cause a jitter in some cases
  * when the view is redrawn if the margin is incorrect, but logic has been implemented to avoid that.
  */
-public class FableActivityRootView extends LinearLayout implements ViewTreeObserver.OnGlobalLayoutListener {
+public class FableActivityRootViewJava extends LinearLayout implements ViewTreeObserver.OnGlobalLayoutListener {
 
     public FableActivity mActivity;
     public Integer marginBottom;
@@ -76,15 +76,15 @@ public class FableActivityRootView extends LinearLayout implements ViewTreeObser
 
     private static int mStatusBarHeight;
 
-    public FableActivityRootView(Context context) {
+    public FableActivityRootViewJava(Context context) {
         super(context);
     }
 
-    public FableActivityRootView(Context context, @Nullable AttributeSet attrs) {
+    public FableActivityRootViewJava(Context context, @Nullable AttributeSet attrs) {
         super(context, attrs);
     }
 
-    public FableActivityRootView(Context context, @Nullable AttributeSet attrs, int defStyleAttr) {
+    public FableActivityRootViewJava(Context context, @Nullable AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
     }
 

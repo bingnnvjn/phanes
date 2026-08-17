@@ -27,7 +27,7 @@ import java.util.Map;
  * - 会话关闭：onSessionRemoved 解除缝引用并销毁适配器；
  * - 会话进程退出：TerminalSession 退出回调销毁适配器并解除缝引用（工单 15/26）。
  */
-public final class FableTerminalView extends FrameLayout {
+public class FableTerminalViewJava extends FrameLayout {
 
     private static final Handler MAIN_HANDLER = new Handler(Looper.getMainLooper());
 
@@ -59,7 +59,7 @@ public final class FableTerminalView extends FrameLayout {
     private SessionRender mCurrentRender;
     private boolean mDetached;
 
-    public FableTerminalView(Context context, AttributeSet attrs) {
+    public FableTerminalViewJava(Context context, AttributeSet attrs) {
         super(context, attrs);
     }
 
@@ -99,7 +99,7 @@ public final class FableTerminalView extends FrameLayout {
                     adapter = fresh;
                 }
             }
-            render = new SessionRender(this, session, adapter);
+            render = new SessionRender((FableTerminalViewJava) this, session, adapter);
             mSessionRenders.put(session, render);
         }
 
@@ -169,7 +169,7 @@ public final class FableTerminalView extends FrameLayout {
 
     private static final class SessionRender {
 
-        final FableTerminalView host;
+        final FableTerminalViewJava host;
         final TerminalSession session;
         final CoreAdapter adapter;
         final SurfaceView surfaceView;
@@ -185,7 +185,7 @@ public final class FableTerminalView extends FrameLayout {
         int cols = 80;
         int rows = 24;
 
-        SessionRender(FableTerminalView host, TerminalSession session, CoreAdapter adapter) {
+        SessionRender(FableTerminalViewJava host, TerminalSession session, CoreAdapter adapter) {
             this.host = host;
             this.session = session;
             this.adapter = adapter;

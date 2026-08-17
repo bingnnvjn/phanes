@@ -11,13 +11,13 @@ import com.gph.fable.core.TerminalSession;
 import com.gph.fable.core.TerminalSessionClient;
 
 /** The {@link TerminalSessionClient} implementation that may require a {@link Service} for its interface methods. */
-public class FableTerminalSessionServiceClient extends FableTerminalSessionClientBase {
+public class FableTerminalSessionServiceClientJava extends FableTerminalSessionClientBase {
 
     private static final String LOG_TAG = "FableTerminalSessionServiceClient";
 
     private final FableService mService;
 
-    public FableTerminalSessionServiceClient(FableService service) {
+    public FableTerminalSessionServiceClientJava(FableService service) {
         this.mService = service;
     }
 

@@ -65,11 +65,11 @@ import java.util.List;
  * Optionally may hold a wake and a wifi lock, in which case that is shown in the notification - see
  * {@link #buildNotification()}.
  */
-public final class FableService extends Service implements AppShell.AppShellClient, FableShellSession.FableShellSessionClient {
+public class FableServiceJava extends Service implements AppShell.AppShellClient, FableShellSession.FableShellSessionClient {
 
     /** This service is only bound from inside the same process and never uses IPC. */
     class LocalBinder extends Binder {
-        public final FableService service = FableService.this;
+        public final FableService service = (FableService) FableServiceJava.this;
     }
 
     private final IBinder mBinder = new LocalBinder();
@@ -86,7 +86,7 @@ public final class FableService extends Service implements AppShell.AppShellClie
     /** The basic implementation of the {@link TerminalSessionClient} interface to be used by {@link TerminalSession}
      * that does not hold activity references and only a service reference.
      */
-    private final FableTerminalSessionServiceClient mFableTerminalSessionServiceClient = new FableTerminalSessionServiceClient(this);
+    private final FableTerminalSessionServiceClient mFableTerminalSessionServiceClient = new FableTerminalSessionServiceClient((FableService) this);
 
     /**
      * Termux app shared properties manager, loaded from termux.properties

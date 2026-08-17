@@ -1,4 +1,4 @@
-package com.gph.fable.app;
+package com.gph.fable.app
 
 /**
  * 工单 25 JNI 边界（Rust libfable-session.so，生产级会话层）：
@@ -9,12 +9,9 @@ package com.gph.fable.app;
  * 同一输出流的两种消费方式（回调收 output_chunk 事件；read 收只读侧缓冲副本），
  * 第一版 Kotlin 只接诊断/日志订阅。
  */
-public final class SessionHandle {
-    static {
-        System.loadLibrary("fable-session");
-    }
-
-    private SessionHandle() {
+object SessionHandle {
+    init {
+        System.loadLibrary("fable-session")
     }
 
     /**
@@ -22,25 +19,25 @@ public final class SessionHandle {
      * args[0] 是 argv0 名（登录 shell 为 "-bash"，与 Java createSubprocess / execvp 同语义；
      * 程序路径由 shell 参数决定，argv0 与真实参数分离，Rust 侧经 portable-pty argv0 补丁实现）。
      */
-    public static native long sessionCreate(String shell, String[] args, String[] env,
-                                            String cwd, int cols, int rows,
-                                            SessionEventCallback callback);
+    @JvmStatic external fun sessionCreate(shell: String, args: Array<String>, env: Array<String>,
+                                            cwd: String, cols: Int, rows: Int,
+                                            callback: SessionEventCallback?): Long
 
     /** 写入；返回写入字节数，-1=错误。 */
-    public static native int sessionWrite(long handle, byte[] data, int len);
+    @JvmStatic external fun sessionWrite(handle: Long, data: ByteArray, len: Int): Int
 
     /** 非阻塞读只读侧输出缓冲；返回字节数，0=暂无输出，-1=错误（会话已关返回 0）。 */
-    public static native int sessionRead(long handle, byte[] buf);
+    @JvmStatic external fun sessionRead(handle: Long, buf: ByteArray): Int
 
-    public static native void sessionResize(long handle, int cols, int rows);
+    @JvmStatic external fun sessionResize(handle: Long, cols: Int, rows: Int)
 
-    public static native void sessionClose(long handle);
+    @JvmStatic external fun sessionClose(handle: Long)
 
     /** 事后注册/替换事件回调；null 取消（分发线程退出）。 */
-    public static native void sessionSetEventCallback(long handle, SessionEventCallback callback);
+    @JvmStatic external fun sessionSetEventCallback(handle: Long, callback: SessionEventCallback?)
 
     /** 诊断日志订阅；null 取消。 */
-    public static native void sessionSetLogCallback(SessionLogCallback callback);
+    @JvmStatic external fun sessionSetLogCallback(callback: SessionLogCallback?)
 
-    public static native String sessionLastError();
+    @JvmStatic external fun sessionLastError(): String
 }
