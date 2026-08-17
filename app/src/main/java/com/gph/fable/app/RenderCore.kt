@@ -99,7 +99,7 @@ object RenderCore {
     @JvmStatic external fun rendererSetPalette(handle: Long, fgArgb: Int, bgArgb: Int, selectionArgb: Int, cursorArgb: Int)
 
     /** 工单 04：push 配色板含 ANSI 16 色（ansiArgb 长度 <16 时按内置默认补全）。 */
-    @JvmStatic external fun rendererSetPalette16(handle: Long, fgArgb: Int, bgArgb: Int, selectionArgb: Int, cursorArgb: Int, ansiArgb: IntArray)
+    @JvmStatic external fun rendererSetPalette16(handle: Long, fgArgb: Int, bgArgb: Int, selectionArgb: Int, cursorArgb: Int, ansiArgb: IntArray?)
 
     /** 工单 14：恢复核心解析配色。 */
     @JvmStatic external fun rendererResetPalette(handle: Long)
