@@ -18,6 +18,7 @@ internal class GestureAndScaleRecognizer(context: Context, val listener: Listene
     }
 
     private var afterLongPress = false
+    private var scaleInProgress = false
     private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onDown(e: MotionEvent) = listener.onDown(e.x, e.y)
         override fun onScroll(e1: MotionEvent?, e2: MotionEvent, dx: Float, dy: Float) =
@@ -25,10 +26,16 @@ internal class GestureAndScaleRecognizer(context: Context, val listener: Listene
         override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float) =
             listener.onFling(e2, vx, vy)
         override fun onLongPress(e: MotionEvent) {
+            // GestureDetector dispatches before ScaleGestureDetector in
+            // onTouchEvent().  The first long-press callback after a second
+            // pointer arrives can therefore observe isInProgress == false;
+            // pointerCount closes that race and prevents pinch from opening
+            // text selection.
+            if (!TerminalViewInteractionLogic.shouldStartLongPress(scaleInProgress, e.pointerCount)) return
             listener.onLongPress(e)
             afterLongPress = true
         }
-    }).also {
+    }, null, true).also {
         it.setOnDoubleTapListener(object : GestureDetector.OnDoubleTapListener {
             override fun onSingleTapConfirmed(e: MotionEvent) = listener.onSingleTapUp(e)
             override fun onDoubleTap(e: MotionEvent) = listener.onDoubleTap(e)
@@ -43,11 +50,12 @@ internal class GestureAndScaleRecognizer(context: Context, val listener: Listene
     fun onTouchEvent(event: MotionEvent) {
         gestureDetector.onTouchEvent(event)
         scaleDetector.onTouchEvent(event)
+        scaleInProgress = scaleDetector.isInProgress
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> afterLongPress = false
             MotionEvent.ACTION_UP -> if (!afterLongPress) listener.onUp(event)
         }
     }
 
-    fun isInProgress() = scaleDetector.isInProgress
+    fun isInProgress() = scaleInProgress
 }

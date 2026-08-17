@@ -3,7 +3,6 @@ package com.gph.fable.view
 import android.content.Context
 import android.graphics.Canvas
 import android.util.AttributeSet
-import android.util.Log
 import android.view.MotionEvent
 import com.gph.fable.core.TerminalSession
 import com.gph.fable.core.adapter.CoreAdapter
@@ -15,17 +14,34 @@ class FableInputTerminalView @JvmOverloads constructor(
 ) : TerminalView(context, attrs) {
     private var lastSyncedTopRow = 0
     private var selectionSignature = Long.MIN_VALUE
+    private var suppressSizeUpdateDuringAttach = false
 
     fun setCoreAdapter(adapter: CoreAdapter?) {
+        val previousAdapter = mCoreAdapter
+        if (previousAdapter != null) {
+            // Clear ranges on the adapter that actually owned them before
+            // replacing the view reference or resetting the cached row count.
+            for (row in 0 until mRows) previousAdapter.setSelection(row, 0, 0)
+        }
         mCoreAdapter = adapter
         lastSyncedTopRow = mTopRow
         selectionSignature = Long.MIN_VALUE
         if (adapter != null) {
+            // CoreAdapter ownership lives on TerminalSession.  The view may be
+            // detached while the session survives, so null only clears the
+            // view reference and must not detach the session adapter.
+            mTermSession?.setCoreAdapter(adapter)
             if (adapter.supportsFontSize()) adapter.setFontSize(mTextSize.toFloat())
-            clearSelectionOverlays()
+            mColumns = 0
+            mRows = 0
             updateSize()
+        } else {
+            mColumns = 0
+            mRows = 0
+            mTopRow = 0
+            lastSyncedTopRow = 0
+            scrollTo(0, 0)
         }
-        mTermSession?.setCoreAdapter(adapter)
         invalidate()
     }
     fun getCoreAdapter() = mCoreAdapter
@@ -33,15 +49,27 @@ class FableInputTerminalView @JvmOverloads constructor(
     override fun attachSession(session: TerminalSession?): Boolean {
         lastSyncedTopRow = 0
         selectionSignature = Long.MIN_VALUE
-        return super.attachSession(session)
+        suppressSizeUpdateDuringAttach = true
+        return try {
+            super.attachSession(session)
+        } finally {
+            suppressSizeUpdateDuringAttach = false
+        }
     }
 
     override fun setTextSize(textSize: Int) {
-        super.setTextSize(textSize)
-        mCoreAdapter?.takeIf { it.supportsFontSize() }?.let { it.setFontSize(mTextSize.toFloat()); updateSize() }
+        mTextSize = textSize
+        val adapter = mCoreAdapter
+        if (adapter?.supportsFontSize() == true) {
+            adapter.setFontSize(mTextSize.toFloat())
+            mColumns = 0
+            mRows = 0
+        }
+        updateSize()
     }
 
     override fun updateSize() {
+        if (suppressSizeUpdateDuringAttach) return
         val adapter = mCoreAdapter
         if (adapter == null || !adapter.supportsFontSize()) { super.updateSize(); return }
         if (width == 0 || height == 0 || mTermSession == null) return
@@ -55,6 +83,27 @@ class FableInputTerminalView @JvmOverloads constructor(
             mColumns = cols; mRows = rows; mTopRow = 0; scrollTo(0, 0)
             mClient?.onEmulatorSet(); invalidate()
         }
+    }
+
+    override fun getCoreSelectionText() =
+        mCoreAdapter?.takeIf { it.supportsSelectionText() }?.selectionText
+
+    override fun stopTextSelectionMode() {
+        val wasSelecting = isSelectingText()
+        super.stopTextSelectionMode()
+        // TerminalView deliberately debounces hide() for 300 ms after a long
+        // press.  Keep the core range alive while handles/ActionMode remain
+        // active; clear it only after selection actually ended.
+        if (wasSelecting && !isSelectingText()) {
+            selectionSignature = Long.MIN_VALUE
+            clearSelectionOverlays()
+            invalidate()
+        }
+    }
+
+    override fun syncSelectionToCore() {
+        syncAdapterScroll()
+        super.syncSelectionToCore()
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -84,30 +133,30 @@ class FableInputTerminalView @JvmOverloads constructor(
 
     private fun syncAdapterState() {
         val adapter = mCoreAdapter ?: return
+        syncAdapterScroll()
+        val selectors = IntArray(4)
+        getSelectionSelectors(selectors)
+        val active = isSelectingText()
+        // Selection rows are viewport-relative in CoreAdapter.  A scroll while
+        // selection is active changes that coordinate frame even when the
+        // handles themselves did not move, so include the viewport in the
+        // deduplication key and re-push the overlay ranges after scrolling.
+        var signature = if (active) 1L else 0L
+        signature = signature * 31 + mTopRow
+        selectors.forEach { signature = signature * 31 + it }
+        if (signature != selectionSignature) {
+            selectionSignature = signature
+            syncSelectionToCore()
+        }
+        if (width > 0 && height > 0) adapter.render(width, height)
+    }
+
+    private fun syncAdapterScroll() {
+        val adapter = mCoreAdapter ?: return
         if (adapter.supportsScrollback() && mTopRow != lastSyncedTopRow) {
             adapter.scroll(mTopRow - lastSyncedTopRow)
             lastSyncedTopRow = mTopRow
         }
-        val selectors = IntArray(4)
-        getSelectionSelectors(selectors)
-        val active = isSelectingText()
-        var signature = if (active) 1L else 0L
-        selectors.forEach { signature = signature * 31 + it }
-        if (signature != selectionSignature) {
-            selectionSignature = signature
-            if (active) {
-                val y1 = selectors[0] - mTopRow
-                val y2 = selectors[1] - mTopRow
-                for (row in 0 until mRows) {
-                    if (row in y1..y2) {
-                        val start = if (row == y1) selectors[2] else 0
-                        val end = if (row == y2) selectors[3] + 1 else mColumns
-                        adapter.setSelection(row, start.coerceAtLeast(0), end.coerceIn(0, mColumns))
-                    } else adapter.setSelection(row, 0, 0)
-                }
-            } else clearSelectionOverlays()
-        }
-        if (width > 0 && height > 0) adapter.render(width, height)
     }
 
     override fun isOpaque() = false

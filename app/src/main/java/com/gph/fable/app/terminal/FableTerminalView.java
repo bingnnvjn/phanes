@@ -126,6 +126,14 @@ public final class FableTerminalView extends FrameLayout {
         if (render == mCurrentRender) {
             mCurrentRender = null;
             mCurrentSession = null;
+            // Stop input delivery before destroying the renderer. The session
+            // client may select a replacement immediately afterwards, but a
+            // short gap must not leave the input view pointing at a dead
+            // adapter.
+            if (mInputView != null) {
+                mInputView.attachSession(null);
+                mInputView.setCoreAdapter(null);
+            }
         }
         render.destroy();
     }
@@ -147,7 +155,16 @@ public final class FableTerminalView extends FrameLayout {
         mSessionRenders.clear();
         mCurrentRender = null;
         mCurrentSession = null;
-        if (mInputView != null) mInputView.setCoreAdapter(null);
+        // Clear only the transient view reference. FableInputTerminalView deliberately
+        // leaves the session-owned adapter attached so output/state survive Activity
+        // recreation and the same renderer can be reused on reattach.
+        if (mInputView != null) {
+            // Reset the transient view/session association as well. The session
+            // itself still owns its adapter, so a later attach resets geometry
+            // and reuses that adapter without losing terminal state.
+            mInputView.attachSession(null);
+            mInputView.setCoreAdapter(null);
+        }
     }
 
     private static final class SessionRender {
@@ -301,6 +318,9 @@ public final class FableTerminalView extends FrameLayout {
             if (surfaceView != null && callback != null) {
                 surfaceView.getHolder().removeCallback(callback);
                 adapter.detach();
+                if (surfaceView.getParent() == host) {
+                    host.removeView(surfaceView);
+                }
             }
         }
 

@@ -1,7 +1,6 @@
 package com.gph.fable.view
 
 import android.annotation.SuppressLint
-import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.Canvas
@@ -13,6 +12,7 @@ import android.os.SystemClock
 import android.text.InputType
 import android.util.AttributeSet
 import android.view.*
+import android.view.accessibility.AccessibilityManager
 import android.view.autofill.AutofillManager
 import android.view.autofill.AutofillValue
 import android.view.inputmethod.BaseInputConnection
@@ -24,9 +24,9 @@ import com.gph.fable.core.KeyHandler
 import com.gph.fable.core.TerminalSession
 import com.gph.fable.core.adapter.CoreAdapter
 import com.gph.fable.view.textselection.TextSelectionCursorController
-import java.nio.charset.StandardCharsets
 import java.util.function.Consumer
 import kotlin.math.max
+import kotlin.math.roundToInt
 
 @SuppressLint("ViewConstructor")
 open class TerminalView @JvmOverloads constructor(
@@ -34,8 +34,8 @@ open class TerminalView @JvmOverloads constructor(
     attrs: AttributeSet? = null
 ) : View(context, attrs) {
     companion object {
-        private var diagnosticListener: Consumer<String>? = null
-        private var keyLoggingEnabled = false
+        @Volatile private var diagnosticListener: Consumer<String>? = null
+        @Volatile private var keyLoggingEnabled = false
         const val TERMINAL_CURSOR_BLINK_RATE_MIN = 100
         const val TERMINAL_CURSOR_BLINK_RATE_MAX = 2000
         const val KEY_EVENT_SOURCE_VIRTUAL_KEYBOARD = KeyCharacterMap.VIRTUAL_KEYBOARD
@@ -73,19 +73,23 @@ open class TerminalView @JvmOverloads constructor(
     private val scroller = Scroller(context)
     private val handler = Handler(Looper.getMainLooper())
     private var scrollRemainder = 0f
-    private var lastScrollY = 0
+    private val accessibilityEnabled =
+        (context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager)?.isEnabled == true
     private val gestureRecognizer = GestureAndScaleRecognizer(context, object : GestureAndScaleRecognizer.Listener {
         private var scrolled = false
         override fun onDown(x: Float, y: Float) = false
         override fun onUp(e: MotionEvent): Boolean {
+            // A fractional scroll remainder belongs to the completed gesture,
+            // including a quick mouse-tracking click that returns early below.
+            scrollRemainder = 0f
             if (mTermSession != null && isMouseTrackingActive() &&
                 !e.isFromSource(InputDevice.SOURCE_MOUSE) && !isSelectingText() && !scrolled
             ) {
                 sendMouseEventCode(e, CoreAdapter.MOUSE_LEFT_BUTTON, true)
                 sendMouseEventCode(e, CoreAdapter.MOUSE_LEFT_BUTTON, false)
+                scrolled = false
                 return true
             }
-            scrollRemainder = 0f
             scrolled = false
             return false
         }
@@ -156,51 +160,109 @@ open class TerminalView @JvmOverloads constructor(
         mTextSize = 12
     }
 
-    fun setTerminalViewClient(client: TerminalViewClient?) { mClient = client }
-    fun setIsTerminalViewKeyLoggingEnabled(value: Boolean) { keyLoggingEnabled = value }
-    fun isCoreAdapterActive() = mCoreAdapter != null
-    fun isMouseTrackingActive() = mTermSession?.isMouseTrackingActive == true
-    fun isAlternateBufferActive() = mTermSession?.isAlternateBufferActive == true
-    fun isCursorEnabled() = mTermSession?.isCursorEnabled != false
-    fun isCursorKeysApplicationMode() = mTermSession?.isCursorKeysApplicationMode == true
-    fun isKeypadApplicationMode() = mTermSession?.isKeypadApplicationMode == true
-    fun isAutoScrollDisabled() = autoScrollDisabled
+    open fun setTerminalViewClient(client: TerminalViewClient?) { mClient = client }
+    open fun setIsTerminalViewKeyLoggingEnabled(value: Boolean) { keyLoggingEnabled = value }
+    open fun isCoreAdapterActive() = mCoreAdapter != null
+    open fun isMouseTrackingActive() = mTermSession?.isMouseTrackingActive == true
+    open fun isAlternateBufferActive() = mTermSession?.isAlternateBufferActive == true
+    open fun isCursorEnabled() = mTermSession?.isCursorEnabled != false
+    open fun isCursorKeysApplicationMode() = mTermSession?.isCursorKeysApplicationMode == true
+    open fun isKeypadApplicationMode() = mTermSession?.isKeypadApplicationMode == true
+    open fun isAutoScrollDisabled() = autoScrollDisabled
 
     open fun attachSession(session: TerminalSession?): Boolean {
         if (mTermSession === session) return false
-        mTermSession?.updateTerminalSessionClient(null)
+        if (isSelectingText()) {
+            selectionController?.forceHide()
+            mClient?.copyModeChanged(false)
+        }
         mTermSession = session
         mTopRow = 0
-        selectionController?.hide()
+        mColumns = 0
+        mRows = 0
+        combiningAccent = 0
+        scrollRemainder = 0f
         if (session != null) {
-            session.setCoreAdapter(mCoreAdapter)
             updateSize()
-            mClient?.onEmulatorSet()
         }
+        setVerticalScrollBarEnabled(session != null)
         invalidate()
         return true
     }
 
-    override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
-        outAttrs.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-        outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI
+    override open fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
+        val terminalSelected = mClient?.isTerminalViewSelected() ?: true
+        outAttrs.inputType = if (!terminalSelected) {
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_NORMAL
+        } else if (mClient?.shouldEnforceCharBasedInput() == true) {
+            InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        } else {
+            InputType.TYPE_NULL
+        }
+        outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN
         return object : BaseInputConnection(this, true) {
-            override fun commitText(text: CharSequence, newCursorPosition: Int): Boolean {
-                text.forEach { inputCodePoint(KEY_EVENT_SOURCE_SOFT_KEYBOARD, it.code, false, false) }
+            private fun sendTextToTerminal(text: CharSequence) {
+                stopTextSelectionMode()
+                val translated = TerminalViewInteractionLogic.translateImeText(
+                    text,
+                    mClient?.readShiftKey() == true
+                )
+                translated.forEach {
+                    inputCodePoint(
+                        KEY_EVENT_SOURCE_SOFT_KEYBOARD,
+                        it.codePoint,
+                        it.ctrlDown,
+                        false
+                    )
+                }
+            }
+
+            override fun finishComposingText(): Boolean {
+                if (keyLoggingEnabled) mClient?.logInfo("TerminalView", "IME: finishComposingText()")
+                super.finishComposingText()
+                val content = editable ?: return true
+                sendTextToTerminal(content)
+                content.clear()
                 return true
             }
+
+            override fun commitText(text: CharSequence, newCursorPosition: Int): Boolean {
+                if (keyLoggingEnabled) {
+                    mClient?.logInfo("TerminalView", "IME: commitText(\"$text\", $newCursorPosition)")
+                }
+                super.commitText(text, newCursorPosition)
+                val content = editable ?: return true
+                if (mTermSession == null) {
+                    // Do not carry an IME buffer across a session attach.
+                    content.clear()
+                    return true
+                }
+                sendTextToTerminal(content)
+                content.clear()
+                return true
+            }
+
             override fun sendKeyEvent(event: KeyEvent): Boolean {
                 return if (event.action == KeyEvent.ACTION_DOWN) onKeyDown(event.keyCode, event) else onKeyUp(event.keyCode, event)
             }
+
             override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
-                mTermSession?.write(byteArrayOf(0x7f), 0, 1); return true
+                if (keyLoggingEnabled) {
+                    mClient?.logInfo(
+                        "TerminalView",
+                        "IME: deleteSurroundingText($beforeLength, $afterLength)"
+                    )
+                }
+                val deleteKey = KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL)
+                repeat(beforeLength.coerceAtLeast(0)) { sendKeyEvent(deleteKey) }
+                return super.deleteSurroundingText(beforeLength, afterLength)
             }
         }
     }
 
-    override fun onCheckIsTextEditor() = true
+    override open fun onCheckIsTextEditor() = true
     @SuppressLint("ClickableViewAccessibility")
-    override fun onTouchEvent(event: MotionEvent): Boolean {
+    override open fun onTouchEvent(event: MotionEvent): Boolean {
         val session = mTermSession ?: return true
         if (isSelectingText()) {
             updateFloatingToolbarVisibility(event)
@@ -230,7 +292,7 @@ open class TerminalView @JvmOverloads constructor(
         gestureRecognizer.onTouchEvent(event)
         return true
     }
-    override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+    override open fun onGenericMotionEvent(event: MotionEvent): Boolean {
         if (mTermSession != null && event.isFromSource(InputDevice.SOURCE_MOUSE) &&
             event.action == MotionEvent.ACTION_SCROLL
         ) {
@@ -238,11 +300,12 @@ open class TerminalView @JvmOverloads constructor(
             doScroll(event, if (up) -3 else 3)
             return true
         }
-        return super.onGenericMotionEvent(event)
+        return false
     }
 
-    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+    override open fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         val session = mTermSession ?: return true
+        if (keyLoggingEnabled) mClient?.logInfo("TerminalView", "onKeyDown(keyCode=$keyCode, event=$event)")
         if (isSelectingText()) stopTextSelectionMode()
         if (mClient?.onKeyDown(keyCode, event, session) == true) {
             invalidate()
@@ -288,7 +351,8 @@ open class TerminalView @JvmOverloads constructor(
         return true
     }
 
-    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+    override open fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (keyLoggingEnabled) mClient?.logInfo("TerminalView", "onKeyUp(keyCode=$keyCode, event=$event)")
         if (mTermSession == null && keyCode != KeyEvent.KEYCODE_BACK) return true
         if (mClient?.onKeyUp(keyCode, event) == true) {
             invalidate()
@@ -298,9 +362,10 @@ open class TerminalView @JvmOverloads constructor(
         return true
     }
 
-    override fun onKeyPreIme(keyCode: Int, event: KeyEvent): Boolean {
+    override open fun onKeyPreIme(keyCode: Int, event: KeyEvent): Boolean {
+        if (keyLoggingEnabled) mClient?.logInfo("TerminalView", "onKeyPreIme(keyCode=$keyCode, event=$event)")
         if (keyCode == KeyEvent.KEYCODE_BACK) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) cancelRequestAutoFill()
+            cancelRequestAutoFill()
             if (isSelectingText()) {
                 stopTextSelectionMode()
                 return true
@@ -316,8 +381,15 @@ open class TerminalView @JvmOverloads constructor(
         return super.onKeyPreIme(keyCode, event)
     }
 
-    fun inputCodePoint(eventSource: Int, codePoint: Int, controlDownFromEvent: Boolean, leftAltDownFromEvent: Boolean) {
+    open fun inputCodePoint(eventSource: Int, codePoint: Int, controlDownFromEvent: Boolean, leftAltDownFromEvent: Boolean) {
         val session = mTermSession ?: return
+        if (keyLoggingEnabled) {
+            mClient?.logInfo(
+                "TerminalView",
+                "inputCodePoint(eventSource=$eventSource, codePoint=$codePoint, " +
+                    "controlDownFromEvent=$controlDownFromEvent, leftAltDownFromEvent=$leftAltDownFromEvent)"
+            )
+        }
         setCursorBlinkPhase(true)
         val controlDown = controlDownFromEvent || mClient?.readControlKey().orFalse()
         val altDown = leftAltDownFromEvent || mClient?.readAltKey().orFalse()
@@ -334,14 +406,14 @@ open class TerminalView @JvmOverloads constructor(
         if (value > -1) session.writeCodePoint(altDown, value)
     }
 
-    fun handleKeyCode(keyCode: Int, keyMod: Int): Boolean {
+    open fun handleKeyCode(keyCode: Int, keyMod: Int): Boolean {
         setCursorBlinkPhase(true)
         if (handleKeyCodeAction(keyCode, keyMod)) return true
         val code = KeyHandler.getCode(keyCode, keyMod, isCursorKeysApplicationMode(), isKeypadApplicationMode()) ?: return false
         mTermSession?.write(code)
         return true
     }
-    fun handleKeyCodeAction(keyCode: Int, keyMod: Int): Boolean {
+    open fun handleKeyCodeAction(keyCode: Int, keyMod: Int): Boolean {
         if (keyMod and KeyHandler.KEYMOD_SHIFT != 0 &&
             (keyCode == KeyEvent.KEYCODE_PAGE_UP || keyCode == KeyEvent.KEYCODE_PAGE_DOWN)
         ) {
@@ -353,7 +425,7 @@ open class TerminalView @JvmOverloads constructor(
         return false
     }
 
-    fun sendMouseEventCode(event: MotionEvent, button: Int, pressed: Boolean) {
+    open fun sendMouseEventCode(event: MotionEvent, button: Int, pressed: Boolean) {
         val session = mTermSession ?: return
         val point = getColumnAndRow(event, false)
         var x = point[0] + 1
@@ -371,7 +443,7 @@ open class TerminalView @JvmOverloads constructor(
         session.sendMouseEvent(button, x, y, pressed)
     }
 
-    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) { super.onSizeChanged(w, h, oldw, oldh); updateSize() }
+    override open fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) { super.onSizeChanged(w, h, oldw, oldh); updateSize() }
     open fun updateSize() {
         if (width <= 0 || height <= 0 || mTermSession == null) return
         val cw = max(1, mCellWidthPx.toInt())
@@ -384,12 +456,12 @@ open class TerminalView @JvmOverloads constructor(
             mClient?.onEmulatorSet()
         }
     }
-    override fun onDraw(canvas: Canvas) { super.onDraw(canvas); renderTextSelection() }
-    override fun computeVerticalScrollRange() = max(1, mRows + getScrollbackRows())
-    override fun computeVerticalScrollExtent() = max(1, mRows)
-    override fun computeVerticalScrollOffset() = if (mTermSession == null) 1 else getScrollbackRows() + mTopRow
-    fun onScreenUpdated() { onScreenUpdated(false) }
-    fun onScreenUpdated(skipScrolling: Boolean) {
+    override open fun onDraw(canvas: Canvas) { super.onDraw(canvas); renderTextSelection() }
+    override open fun computeVerticalScrollRange() = max(1, mRows + getScrollbackRows())
+    override open fun computeVerticalScrollExtent() = max(1, mRows)
+    override open fun computeVerticalScrollOffset() = if (mTermSession == null) 1 else getScrollbackRows() + mTopRow
+    open fun onScreenUpdated() { onScreenUpdated(false) }
+    open fun onScreenUpdated(skipScrolling: Boolean) {
         val session = mTermSession ?: return
         session.pollUiEvents()
         val history = getScrollbackRows()
@@ -410,31 +482,50 @@ open class TerminalView @JvmOverloads constructor(
             if (mTopRow < -3) awakenScrollBars()
             mTopRow = 0
         }
+        if (accessibilityEnabled) setContentDescription(getText())
         invalidate()
     }
-    fun getCurrentSession() = mTermSession
-    open fun getCursorX(x: Float) = if (mColumns == 0) 0 else (x / (width.toFloat() / mColumns)).toInt()
-    open fun getCursorY(y: Float) = if (mRows == 0) 0 else (y / (height.toFloat() / mRows)).toInt() + mTopRow
-    open fun getPointX(cx: Int) = ((cx.coerceIn(0, max(0, mColumns))) * width.toFloat() / max(1, mColumns)).toInt()
-    open fun getPointY(cy: Int) = ((cy - mTopRow) * height.toFloat() / max(1, mRows)).toInt()
+    private fun getText(): CharSequence {
+        val adapter = mCoreAdapter
+        if (adapter == null || mTermSession == null || mRows <= 0) return ""
+        return buildString {
+            for (row in 0 until mRows) {
+                if (row > 0) append('\n')
+                append(adapter.getText(mTopRow + row, 0, mColumns))
+            }
+        }
+    }
+    open fun getCurrentSession() = mTermSession
+    open fun getCursorX(x: Float) =
+        if (mColumns == 0) 0 else (x / (width.toFloat() / mColumns)).toInt()
+    open fun getCursorY(y: Float) =
+        if (mRows == 0) 0 else (y / (height.toFloat() / mRows)).toInt() + mTopRow
+    open fun getPointX(cx: Int) =
+        (cx.coerceIn(0, max(0, mColumns)) * width.toFloat() / max(1, mColumns)).roundToInt()
+    open fun getPointY(cy: Int) =
+        ((cy - mTopRow) * height.toFloat() / max(1, mRows)).roundToInt()
     open fun getColumnAndRow(event: MotionEvent, relativeToScroll: Boolean): IntArray =
         intArrayOf(getCursorX(event.x), getCursorY(event.y).let { if (relativeToScroll) it else it - mTopRow })
-    fun getTopRow() = mTopRow
-    fun setTopRow(value: Int) {
+    open fun getTopRow() = mTopRow
+    open fun setTopRow(value: Int) {
         mTopRow = TerminalViewInteractionLogic.clampTopRow(value, getScrollbackRows())
         invalidate()
     }
-    fun getRows() = mRows
-    fun getColumns() = mColumns
-    fun getCellWidthPx() = mCellWidthPx
-    fun getCellHeightPx() = mCellHeightPx
-    fun getScrollbackRows() = mCoreAdapter?.getScrollbackRows() ?: 0
-    fun getCoreText(row: Int, startCol: Int, endCol: Int) = mCoreAdapter?.getText(row, startCol, endCol) ?: ""
-    fun getWordBoundsAt(column: Int, row: Int) = mCoreAdapter?.getWordBoundsAt(column, row)
-    fun toggleAutoScrollDisabled() { autoScrollDisabled = !autoScrollDisabled }
-    fun setTypeface(newTypeface: Typeface?) { typeface = newTypeface ?: Typeface.MONOSPACE; invalidate() }
+    open fun getRows() = mRows
+    open fun getColumns() = mColumns
+    open fun getCellWidthPx() = mCellWidthPx
+    open fun getCellHeightPx() = mCellHeightPx
+    open fun getScrollbackRows() = mCoreAdapter?.getScrollbackRows() ?: 0
+    open fun getCoreText(row: Int, startCol: Int, endCol: Int) = mCoreAdapter?.getText(row, startCol, endCol) ?: ""
+    open fun getWordBoundsAt(column: Int, row: Int) = mCoreAdapter?.getWordBoundsAt(column, row)
+    open fun toggleAutoScrollDisabled() { autoScrollDisabled = !autoScrollDisabled }
+    open fun setTypeface(newTypeface: Typeface?) {
+        typeface = newTypeface ?: Typeface.MONOSPACE
+        updateSize()
+        invalidate()
+    }
     open fun setTextSize(textSize: Int) { mTextSize = textSize; updateSize() }
-    override fun isOpaque() = true
+    override open fun isOpaque() = true
 
     private fun doScroll(event: MotionEvent?, rowsDown: Int) {
         if (rowsDown == 0) return
@@ -463,29 +554,62 @@ open class TerminalView @JvmOverloads constructor(
         if (event == null) motion.recycle()
     }
 
-    fun getCoreSelectionText() = mCoreAdapter?.takeIf { it.supportsSelectionText() }?.selectionText
-    fun isSelectingText() = selectionController?.isActive() == true
-    fun getSelectedText() = getCoreSelectionText()?.takeIf { it.isNotEmpty() } ?: selectionController?.selectedText
-    fun getStoredSelectedText() = selectionController?.storedSelectedText
-    fun unsetStoredSelectedText() { selectionController?.unsetStoredSelectedText() }
-    fun startTextSelectionMode(event: MotionEvent) {
+    open fun getCoreSelectionText() = mCoreAdapter?.takeIf { it.supportsSelectionText() }?.selectionText
+    open fun isSelectingText() = selectionController?.isActive() == true
+    open fun getSelectedText() = getCoreSelectionText()?.takeIf { it.isNotEmpty() } ?: selectionController?.selectedText
+    open fun getStoredSelectedText() = selectionController?.storedSelectedText
+    open fun unsetStoredSelectedText() { selectionController?.unsetStoredSelectedText() }
+    open fun startTextSelectionMode(event: MotionEvent) {
         if (!requestFocus()) return
         getTextSelectionCursorController().show(event)
         mClient?.copyModeChanged(isSelectingText())
         invalidate()
     }
-    fun stopTextSelectionMode() {
+    open fun stopTextSelectionMode() {
         if (selectionController?.hide() == true) {
             mClient?.copyModeChanged(isSelectingText())
             invalidate()
         }
     }
-    fun renderTextSelection() { selectionController?.render() }
-    fun clearSelectionOverlays() { for (row in 0 until mRows) mCoreAdapter?.setSelection(row, 0, 0) }
-    fun getSelectionSelectors(out: IntArray) { selectionController?.getSelectors(out) ?: out.fill(-1) }
-    fun decrementYTextSelectionCursors(decrement: Int) { selectionController?.decrementY(decrement) }
+    open fun renderTextSelection() { selectionController?.render() }
+    open fun clearSelectionOverlays() { for (row in 0 until mRows) mCoreAdapter?.setSelection(row, 0, 0) }
+    open fun getSelectionSelectors(out: IntArray) { selectionController?.getSelectors(out) ?: out.fill(-1) }
+    open fun decrementYTextSelectionCursors(decrement: Int) { selectionController?.decrementY(decrement) }
 
-    fun getTextSelectionCursorController(): TextSelectionCursorController {
+    /**
+     * Push the complete selection range to the core adapter immediately.
+     * Rendering also calls this through FableInputTerminalView, but the
+     * controller needs the same per-row state before an ActionMode action can
+     * read the selected text.
+     */
+    open fun syncSelectionToCore() {
+        val adapter = mCoreAdapter ?: return
+        val selectors = IntArray(4)
+        getSelectionSelectors(selectors)
+        if (!isSelectingText()) {
+            clearSelectionOverlays()
+            return
+        }
+        val y1 = selectors[0] - mTopRow
+        val y2 = selectors[1] - mTopRow
+        val x1 = selectors[2]
+        val x2 = selectors[3]
+        for (row in 0 until mRows) {
+            if (row in y1..y2 && TerminalViewInteractionLogic.hasSelection(y1, x1, y2, x2)) {
+                val start = (if (row == y1) x1 else 0).coerceIn(0, mColumns)
+                val end = (if (row == y2) x2 + 1 else mColumns).coerceIn(0, mColumns)
+                adapter.setSelection(
+                    row,
+                    start,
+                    end
+                )
+            } else {
+                adapter.setSelection(row, 0, 0)
+            }
+        }
+    }
+
+    open fun getTextSelectionCursorController(): TextSelectionCursorController {
         val existing = selectionController
         if (existing != null) return existing
         val created = TextSelectionCursorController(this)
@@ -496,62 +620,87 @@ open class TerminalView @JvmOverloads constructor(
     private val showFloatingToolbar = Runnable {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) selectionController?.actionMode?.hide(0)
     }
-    fun updateFloatingToolbarVisibility(event: MotionEvent?) {
+    open fun updateFloatingToolbarVisibility(event: MotionEvent?) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || selectionController?.actionMode == null || event == null) return
         when (event.actionMasked) {
             MotionEvent.ACTION_MOVE -> hideFloatingToolbar()
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> postDelayed(showFloatingToolbar, ViewConfiguration.getDoubleTapTimeout().toLong())
         }
     }
-    fun hideFloatingToolbar() {
+    open fun hideFloatingToolbar() {
         removeCallbacks(showFloatingToolbar)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) selectionController?.actionMode?.hide(-1)
     }
-    fun onContextMenuClosed(menu: Menu?) { unsetStoredSelectedText() }
+    open fun onContextMenuClosed(menu: Menu?) { unsetStoredSelectedText() }
 
     @RequiresApi(Build.VERSION_CODES.O)
-    override fun autofill(value: AutofillValue?) {
+    override open fun autofill(value: AutofillValue?) {
         if (value?.isText == true) mTermSession?.write(value.textValue?.toString() ?: "")
         resetAutoFill()
     }
     @RequiresApi(Build.VERSION_CODES.O)
-    override fun getAutofillType() = autoFillType
+    override open fun getAutofillType() = autoFillType
     @RequiresApi(Build.VERSION_CODES.O)
-    override fun getAutofillHints(): Array<String> = autoFillHints
+    override open fun getAutofillHints(): Array<String> = autoFillHints
     @RequiresApi(Build.VERSION_CODES.O)
-    override fun getAutofillValue(): AutofillValue? = AutofillValue.forText("")
+    override open fun getAutofillValue(): AutofillValue? = AutofillValue.forText("")
     @RequiresApi(Build.VERSION_CODES.O)
-    override fun getImportantForAutofill() = autoFillImportance
+    override open fun getImportantForAutofill() = autoFillImportance
     @RequiresApi(Build.VERSION_CODES.O)
     private fun resetAutoFill() {
         autoFillType = AUTOFILL_TYPE_NONE
         autoFillImportance = IMPORTANT_FOR_AUTOFILL_NO
         autoFillHints = emptyArray()
     }
-    @RequiresApi(Build.VERSION_CODES.O)
-    fun getAutoFillManagerService() = context.getSystemService(AutofillManager::class.java)
-    @RequiresApi(Build.VERSION_CODES.O)
-    fun isAutoFillEnabled() = getAutoFillManagerService()?.isEnabled == true
-    @RequiresApi(Build.VERSION_CODES.O)
-    fun requestAutoFillUsername() = requestAutoFill(arrayOf("username"))
-    @RequiresApi(Build.VERSION_CODES.O)
-    fun requestAutoFillPassword() = requestAutoFill(arrayOf("password"))
-    @RequiresApi(Build.VERSION_CODES.O)
-    @Synchronized
-    fun requestAutoFill(autoFillHints: Array<String>) {
-        if (autoFillHints.isEmpty()) return
-        val manager = getAutoFillManagerService()
-        if (manager?.isEnabled == true) {
-            autoFillType = AUTOFILL_TYPE_TEXT
-            autoFillImportance = IMPORTANT_FOR_AUTOFILL_YES
-            this.autoFillHints = autoFillHints.copyOf()
-            manager.requestAutofill(this)
+    open fun getAutoFillManagerService(): AutofillManager? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return null
+        return try {
+            context.getSystemService(AutofillManager::class.java)
+        } catch (e: Exception) {
+            mClient?.logStackTraceWithMessage("TerminalView", "Failed to get AutofillManager service", e)
+            null
         }
     }
-    @RequiresApi(Build.VERSION_CODES.O)
-    fun cancelRequestAutoFill() = resetAutoFill()
+    open fun isAutoFillEnabled(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+        return try {
+            getAutoFillManagerService()?.isEnabled == true
+        } catch (e: Exception) {
+            mClient?.logStackTraceWithMessage("TerminalView", "Failed to check if Autofill is enabled", e)
+            false
+        }
+    }
+    open fun requestAutoFillUsername() = requestAutoFill(arrayOf("username"))
+    open fun requestAutoFillPassword() = requestAutoFill(arrayOf("password"))
+    @Synchronized
+    open fun requestAutoFill(autoFillHints: Array<String>) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        if (autoFillHints.isEmpty()) return
+        try {
+            val manager = getAutoFillManagerService()
+            if (manager?.isEnabled == true) {
+                autoFillType = AUTOFILL_TYPE_TEXT
+                autoFillImportance = IMPORTANT_FOR_AUTOFILL_YES
+                this.autoFillHints = autoFillHints.copyOf()
+                manager.requestAutofill(this)
+            }
+        } catch (e: Exception) {
+            mClient?.logStackTraceWithMessage("TerminalView", "Failed to request Autofill", e)
+        }
+    }
+    @Synchronized
+    open fun cancelRequestAutoFill() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || autoFillType == AUTOFILL_TYPE_NONE) return
+        try {
+            getAutoFillManagerService()?.takeIf { it.isEnabled }?.cancel()
+        } catch (e: Exception) {
+            mClient?.logStackTraceWithMessage("TerminalView", "Failed to cancel Autofill request", e)
+        } finally {
+            resetAutoFill()
+        }
+    }
 
-    fun setTerminalCursorBlinkerRate(blinkRate: Int): Boolean {
+    open fun setTerminalCursorBlinkerRate(blinkRate: Int): Boolean {
         if (blinkRate != 0 && blinkRate !in TERMINAL_CURSOR_BLINK_RATE_MIN..TERMINAL_CURSOR_BLINK_RATE_MAX) {
             cursorBlinkRate = 0
             stopTerminalCursorBlinker()
@@ -561,7 +710,7 @@ open class TerminalView @JvmOverloads constructor(
         if (blinkRate == 0) stopTerminalCursorBlinker()
         return true
     }
-    fun setTerminalCursorBlinkerState(start: Boolean, startOnlyIfCursorEnabled: Boolean) {
+    open fun setTerminalCursorBlinkerState(start: Boolean, startOnlyIfCursorEnabled: Boolean) {
         stopTerminalCursorBlinker()
         if (!start || mTermSession == null || cursorBlinkRate !in TERMINAL_CURSOR_BLINK_RATE_MIN..TERMINAL_CURSOR_BLINK_RATE_MAX ||
             (startOnlyIfCursorEnabled && !isCursorEnabled())
@@ -588,11 +737,17 @@ open class TerminalView @JvmOverloads constructor(
         mCoreAdapter?.setCursorBlinkState(visible)
     }
 
-    override fun onAttachedToWindow() {
+    override open fun onAttachedToWindow() {
         super.onAttachedToWindow()
         selectionController?.let { viewTreeObserver.addOnTouchModeChangeListener(it) }
     }
-    override fun onDetachedFromWindow() {
+    override open fun onDetachedFromWindow() {
+        if (isSelectingText()) {
+            selectionController?.forceHide()
+            mClient?.copyModeChanged(false)
+            invalidate()
+        }
+        stopTerminalCursorBlinker()
         selectionController?.let {
             viewTreeObserver.removeOnTouchModeChangeListener(it)
             it.onDetached()

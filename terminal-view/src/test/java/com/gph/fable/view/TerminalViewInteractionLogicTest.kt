@@ -47,6 +47,9 @@ class TerminalViewInteractionLogicTest {
         assertEquals(true, TerminalViewInteractionLogic.shouldReportMouseMove(true, true))
         assertEquals(false, TerminalViewInteractionLogic.shouldReportMouseMove(true, false))
         assertEquals(false, TerminalViewInteractionLogic.shouldReportMouseMove(false, true))
+        assertEquals(true, TerminalViewInteractionLogic.shouldStartLongPress(false, 1))
+        assertEquals(false, TerminalViewInteractionLogic.shouldStartLongPress(true, 1))
+        assertEquals(false, TerminalViewInteractionLogic.shouldStartLongPress(false, 2))
     }
 
     @Test fun translatesExpandedControlKeys() {
@@ -54,5 +57,49 @@ class TerminalViewInteractionLogicTest {
         assertEquals(0, TerminalViewInteractionLogic.translateControlCode(' '.code, true))
         assertEquals(27, TerminalViewInteractionLogic.translateControlCode('['.code, true))
         assertEquals('x'.code, TerminalViewInteractionLogic.translateControlCode('x'.code, false))
+    }
+
+    @Test fun translatesImeTextLikeLegacyTerminalView() {
+        assertEquals(
+            listOf(
+                TerminalViewInteractionLogic.ImeCodePoint('a'.code, false),
+                TerminalViewInteractionLogic.ImeCodePoint('m'.code, true),
+                TerminalViewInteractionLogic.ImeCodePoint(27, false),
+                TerminalViewInteractionLogic.ImeCodePoint('_'.code, true)
+            ),
+            TerminalViewInteractionLogic.translateImeText("a\n\u001b\u001f", shiftDown = false)
+        )
+    }
+
+    @Test fun translatesImeSurrogatePairsAndMalformedSurrogates() {
+        assertEquals(
+            listOf(
+                TerminalViewInteractionLogic.ImeCodePoint(0x1f600, false),
+                TerminalViewInteractionLogic.ImeCodePoint(0xfffd, false),
+                TerminalViewInteractionLogic.ImeCodePoint(0xfffd, false)
+            ),
+            TerminalViewInteractionLogic.translateImeText("\uD83D\uDE00\uDE00\uD83D", shiftDown = false)
+        )
+    }
+
+    @Test fun appliesImeShiftBeforeControlTranslation() {
+        assertEquals(
+            listOf(
+                TerminalViewInteractionLogic.ImeCodePoint('A'.code, false),
+                TerminalViewInteractionLogic.ImeCodePoint('m'.code, true)
+            ),
+            TerminalViewInteractionLogic.translateImeText("a\n", shiftDown = true)
+        )
+    }
+
+    @Test fun keepsCrossRowSelectionWhenColumnsMatch() {
+        assertEquals(
+            true,
+            TerminalViewInteractionLogic.hasSelection(2, 5, 3, 5)
+        )
+        assertEquals(
+            true,
+            TerminalViewInteractionLogic.hasSelection(2, 5, 2, 5)
+        )
     }
 }

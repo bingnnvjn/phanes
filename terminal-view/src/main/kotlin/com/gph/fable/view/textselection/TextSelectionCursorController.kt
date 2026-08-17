@@ -11,13 +11,12 @@ import android.view.MotionEvent
 import android.view.View
 import com.gph.fable.view.R
 import com.gph.fable.view.TerminalView
+import kotlin.math.roundToInt
 
-class TextSelectionCursorController(private val terminalView: TerminalView) : CursorController {
-    companion object {
-        const val ACTION_COPY = 1
-        const val ACTION_PASTE = 2
-        const val ACTION_MORE = 3
-    }
+open class TextSelectionCursorController(private val terminalView: TerminalView) : CursorController {
+    @JvmField val ACTION_COPY = 1
+    @JvmField val ACTION_PASTE = 2
+    @JvmField val ACTION_MORE = 3
 
     private val startHandle = TextSelectionHandleView(terminalView, this, TextSelectionHandleView.LEFT)
     private val endHandle = TextSelectionHandleView(terminalView, this, TextSelectionHandleView.RIGHT)
@@ -28,17 +27,18 @@ class TextSelectionCursorController(private val terminalView: TerminalView) : Cu
     private var selX2 = -1
     private var selY1 = -1
     private var selY2 = -1
-    var actionMode: ActionMode? = null
-        private set
+    private var currentActionMode: ActionMode? = null
+    open val actionMode: ActionMode?
+        get() = currentActionMode
     private var privateActionMode: ActionMode? = null
 
-    val selectedText: String?
+    open val selectedText: String?
         get() = terminalView.getCoreSelectionText()?.takeIf { it.isNotEmpty() }
 
-    val storedSelectedText: String?
+    open val storedSelectedText: String?
         get() = storedText
 
-    override fun show(event: MotionEvent) {
+    override open fun show(event: MotionEvent) {
         setInitialTextSelectionPosition(event)
         startHandle.positionAtCursor(selX1, selY1, true)
         endHandle.positionAtCursor(selX2 + 1, selY2, true)
@@ -49,28 +49,36 @@ class TextSelectionCursorController(private val terminalView: TerminalView) : Cu
         TerminalView.logDiagnostic("selection:actionModeStarted")
     }
 
-    override fun hide(): Boolean {
+    override open fun hide(): Boolean {
         if (!isSelecting) return false
         if (System.currentTimeMillis() - showStartTime < 300) return false
+        return hideImmediately()
+    }
+
+    fun forceHide() {
+        if (isSelecting) hideImmediately()
+    }
+
+    private fun hideImmediately(): Boolean {
         startHandle.hide()
         endHandle.hide()
         privateActionMode?.finish()
         privateActionMode = null
-        actionMode = null
+        currentActionMode = null
         selX1 = -1; selX2 = -1; selY1 = -1; selY2 = -1
         isSelecting = false
         terminalView.clearSelectionOverlays()
         return true
     }
 
-    override fun render() {
+    override open fun render() {
         if (!isSelecting) return
         startHandle.positionAtCursor(selX1, selY1, false)
         endHandle.positionAtCursor(selX2 + 1, selY2, false)
         privateActionMode?.invalidate()
     }
 
-    private fun setInitialTextSelectionPosition(event: MotionEvent) {
+    open fun setInitialTextSelectionPosition(event: MotionEvent) {
         val point = terminalView.getColumnAndRow(event, true)
         selX1 = point[0]; selX2 = point[0]
         selY1 = point[1]; selY2 = point[1]
@@ -80,7 +88,7 @@ class TextSelectionCursorController(private val terminalView: TerminalView) : Cu
         }
     }
 
-    private fun setActionModeCallbacks() {
+    open fun setActionModeCallbacks() {
         val callback = object : ActionMode.Callback {
             override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
                 val show = MenuItem.SHOW_AS_ACTION_IF_ROOM or MenuItem.SHOW_AS_ACTION_WITH_TEXT
@@ -120,18 +128,29 @@ class TextSelectionCursorController(private val terminalView: TerminalView) : Cu
                 override fun onActionItemClicked(mode: ActionMode, item: MenuItem) = callback.onActionItemClicked(mode, item)
                 override fun onDestroyActionMode(mode: ActionMode) = callback.onDestroyActionMode(mode)
                 override fun onGetContentRect(mode: ActionMode, view: View, outRect: Rect) {
-                    val x1 = (selX1 * terminalView.getCellWidthPx()).toInt()
-                    val x2 = (selX2 * terminalView.getCellWidthPx()).toInt()
-                    val y1 = ((selY1 - 1 - terminalView.getTopRow()) * terminalView.getCellHeightPx()).toInt()
-                    val y2 = ((selY2 + 1 - terminalView.getTopRow()) * terminalView.getCellHeightPx()).toInt()
-                    outRect.set(minOf(x1, x2), maxOf(0, y1), maxOf(x1, x2), minOf(terminalView.height, y2))
+                    var x1 = (selX1 * terminalView.getCellWidthPx()).roundToInt()
+                    var x2 = (selX2 * terminalView.getCellWidthPx()).roundToInt()
+                    if (x1 > x2) {
+                        val tmp = x1
+                        x1 = x2
+                        x2 = tmp
+                    }
+                    val y1 = ((selY1 - 1 - terminalView.getTopRow()) * terminalView.getCellHeightPx()).roundToInt()
+                    val y2 = ((selY2 + 1 - terminalView.getTopRow()) * terminalView.getCellHeightPx()).roundToInt()
+                    val handleHeight = maxOf(startHandle.getHandleHeight(), endHandle.getHandleHeight())
+                    val terminalBottom = terminalView.bottom
+                    var top = y1 + handleHeight
+                    var bottom = y2 + handleHeight
+                    if (top > terminalBottom) top = terminalBottom
+                    if (bottom > terminalBottom) bottom = terminalBottom
+                    outRect.set(x1, top, x2, bottom)
                 }
             }, ActionMode.TYPE_PRIMARY)
         } else terminalView.startActionMode(callback)
-        actionMode = privateActionMode
+        currentActionMode = privateActionMode
     }
 
-    override fun updatePosition(handle: TextSelectionHandleView, x: Int, y: Int) {
+    override open fun updatePosition(handle: TextSelectionHandleView, x: Int, y: Int) {
         val event = MotionEvent.obtain(0, 0, MotionEvent.ACTION_MOVE, x.toFloat(), y.toFloat(), 0)
         val point = terminalView.getColumnAndRow(event, true)
         event.recycle()
@@ -171,22 +190,29 @@ class TextSelectionCursorController(private val terminalView: TerminalView) : Cu
     }
 
     private fun updateCoreSelection() {
-        val range = com.gph.fable.view.TerminalViewInteractionLogic.normalizeSelection(selY1, selX1, selY2, selX2)
-        terminalView.mCoreAdapter?.setSelection(
-            range.startRow - terminalView.getTopRow(),
-            range.startCol,
-            range.endCol + 1
-        )
+        terminalView.syncSelectionToCore()
     }
 
-    override fun onTouchEvent(event: MotionEvent) = isSelecting
-    override fun onDetached() { hide() }
-    override fun isActive() = isSelecting
-    override fun onTouchModeChanged(isInTouchMode: Boolean) { if (!isInTouchMode) terminalView.stopTextSelectionMode() }
+    override open fun onTouchEvent(event: MotionEvent) = isSelecting
+    override open fun onDetached() { forceHide() }
+    override open fun isActive() = isSelecting
+    override open fun onTouchModeChanged(isInTouchMode: Boolean) { if (!isInTouchMode) terminalView.stopTextSelectionMode() }
 
-    fun getSelectors(out: IntArray) {
+    open fun getSelectors(out: IntArray) {
         if (out.size >= 4) { out[0] = selY1; out[1] = selY2; out[2] = selX1; out[3] = selX2 }
     }
-    fun unsetStoredSelectedText() { storedText = null }
-    fun decrementY(decrement: Int) { if (isSelecting) { selY1 -= decrement; selY2 -= decrement } }
+    open fun unsetStoredSelectedText() { storedText = null }
+    open fun decrementY(decrement: Int) { if (isSelecting) { selY1 -= decrement; selY2 -= decrement } }
+
+    open fun setActionModeCallBacks() {
+        setActionModeCallbacks()
+    }
+
+    open fun decrementYTextSelectionCursors(decrement: Int) {
+        decrementY(decrement)
+    }
+
+    open fun isSelectionStartDragged() = startHandle.isDragging()
+    open fun isSelectionEndDragged() = endHandle.isDragging()
+
 }

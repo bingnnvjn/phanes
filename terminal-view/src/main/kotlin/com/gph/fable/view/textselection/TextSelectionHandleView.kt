@@ -15,12 +15,13 @@ import android.widget.PopupWindow
 import com.gph.fable.view.R
 import com.gph.fable.view.TerminalView
 import com.gph.fable.view.support.PopupWindowCompatGingerbread
+import kotlin.math.roundToInt
 
 @SuppressLint("ViewConstructor")
-class TextSelectionHandleView(
+open class TextSelectionHandleView(
     private val terminalView: TerminalView,
     private val cursorController: CursorController,
-    initialOrientation: Int
+    private val initialOrientation: Int
 ) : View(terminalView.context) {
     companion object {
         const val LEFT = 0
@@ -54,7 +55,7 @@ class TextSelectionHandleView(
 
     init { setOrientation(initialOrientation) }
 
-    fun setOrientation(value: Int) {
+    open fun setOrientation(value: Int) {
         orientation = value
         drawable = if (value == RIGHT) rightDrawable else leftDrawable
         handleWidth = drawable.intrinsicWidth
@@ -65,11 +66,11 @@ class TextSelectionHandleView(
         requestLayout()
         invalidate()
     }
-    fun changeOrientation(value: Int) { if (orientation != value) setOrientation(value) }
-    fun isDragging() = dragging
-    fun getHandleHeight() = handleHeight
-    fun getHandleWidth() = handleWidth
-    fun isShowing() = popup?.isShowing == true
+    open fun changeOrientation(value: Int) { if (orientation != value) setOrientation(value) }
+    open fun isDragging() = dragging
+    open fun getHandleHeight() = handleHeight
+    open fun getHandleWidth() = handleWidth
+    open fun isShowing() = popup?.isShowing == true
 
     private fun initPopup() {
         popup = PopupWindow(context, null, android.R.attr.textSelectHandleWindowStyle).apply {
@@ -88,7 +89,7 @@ class TextSelectionHandleView(
         }
     }
 
-    fun show() {
+    open fun show() {
         if (!isPositionVisible() && !dragging) { hide(); return }
         removeFromParent()
         initPopup()
@@ -97,19 +98,20 @@ class TextSelectionHandleView(
         popup?.showAtLocation(terminalView, 0, coords[0] + pointX, coords[1] + pointY)
         invalidate()
     }
-    fun hide() {
+    open fun hide() {
         dragging = false
         popup?.dismiss()
         removeFromParent()
         popup = null
         invalidate()
     }
-    fun removeFromParent() { (parent as? ViewGroup)?.removeView(this) }
+    open fun removeFromParent() { (parent as? ViewGroup)?.removeView(this) }
+    open fun isParentNull() = parent == null
 
-    fun positionAtCursor(cx: Int, cy: Int, forceOrientationCheck: Boolean) {
+    open fun positionAtCursor(cx: Int, cy: Int, forceOrientationCheck: Boolean) {
         moveTo(terminalView.getPointX(cx), terminalView.getPointY(cy + 1), forceOrientationCheck)
     }
-    fun moveTo(x: Int, y: Int, forceOrientationCheck: Boolean) {
+    open fun moveTo(x: Int, y: Int, forceOrientationCheck: Boolean) {
         val oldHotspot = hotspotX
         checkChangedOrientation(x, forceOrientationCheck)
         pointX = (x - if (isShowing()) oldHotspot else hotspotX).toInt()
@@ -135,13 +137,17 @@ class TextSelectionHandleView(
         if (!force && now - lastOrientationCheck < 50) return
         lastOrientationCheck = now
         val parent = terminalView.parent ?: return
-        tempRect.set(terminalView.paddingLeft, terminalView.paddingTop,
-            terminalView.width - terminalView.paddingRight, terminalView.height - terminalView.paddingBottom)
+        tempRect.set(
+            terminalView.left + terminalView.paddingLeft,
+            terminalView.top + terminalView.paddingTop,
+            terminalView.width - terminalView.paddingRight,
+            terminalView.height - terminalView.paddingBottom
+        )
         if (!parent.getChildVisibleRect(terminalView, tempRect, null)) return
         when {
             posX - handleWidth < tempRect.left -> changeOrientation(RIGHT)
             posX + handleWidth > tempRect.right -> changeOrientation(LEFT)
-            else -> changeOrientation(if (orientation == LEFT || orientation == RIGHT) orientation else LEFT)
+            else -> changeOrientation(initialOrientation)
         }
     }
 
@@ -157,16 +163,16 @@ class TextSelectionHandleView(
         return x >= tempRect.left && x <= tempRect.right && y >= tempRect.top && y <= tempRect.bottom
     }
 
-    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+    public override open fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         setMeasuredDimension(handleWidth, handleHeight)
     }
-    override fun onDraw(canvas: Canvas) {
+    override open fun onDraw(canvas: Canvas) {
         drawable.setBounds(0, 0, drawable.intrinsicWidth, drawable.intrinsicHeight)
         drawable.draw(canvas)
     }
 
     @SuppressLint("ClickableViewAccessibility")
-    override fun onTouchEvent(event: MotionEvent): Boolean {
+    override open fun onTouchEvent(event: MotionEvent): Boolean {
         terminalView.updateFloatingToolbarVisibility(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
@@ -179,7 +185,7 @@ class TextSelectionHandleView(
             MotionEvent.ACTION_MOVE -> {
                 val x = event.rawX - touchToWindowOffsetX + hotspotX
                 val y = event.rawY - touchToWindowOffsetY + hotspotY + touchOffsetY
-                cursorController.updatePosition(this, x.toInt(), y.toInt())
+                cursorController.updatePosition(this, x.roundToInt(), y.roundToInt())
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> dragging = false
         }
