@@ -14,6 +14,8 @@ SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
 
 CRATES=(fable-boo spike-render spike-session)
+EXPECTED_GITLEAKS_VERSION="v8.29.0"
+GITLEAKS_CONFIG="$REPO_ROOT/docs/security/gitleaks-public-release.toml"
 FAILED=0
 CHECKS=0
 FAILURES=0
@@ -100,19 +102,11 @@ for crate in "${CRATES[@]}"; do
         continue
     fi
 
-    if [[ -z "$(git -C "$repo" remote)" ]]; then
-        pass "$crate has no remote configured while publication is frozen"
-    else
-        fail "$crate has a configured remote; remove it or document a Fable-owned target before publication"
-    fi
-
     for path in Cargo.toml Cargo.lock README.md LICENSE SECURITY.md CONTRIBUTING.md \
+        THIRD_PARTY.md \
         .github/CODEOWNERS .github/dependabot.yml; do
         required_file "$repo" "$path"
     done
-    if [[ "$crate" == "spike-render" || "$crate" == "spike-session" ]]; then
-        required_file "$repo" THIRD_PARTY.md
-    fi
     workflow_files=""
     if [[ -d "$repo/.github/workflows" ]]; then
         workflow_files="$(
@@ -125,11 +119,14 @@ for crate in "${CRATES[@]}"; do
     else
         fail "$crate has no CI workflow; add it only after confirming a Fable-owned remote (工单 51)"
     fi
-    if [[ "$crate" == "spike-render" ]] &&
-        grep -q 'still require verification' "$repo/THIRD_PARTY.md" 2>/dev/null; then
-        fail "spike-render JetBrains Mono provenance/license is unresolved"
-    elif [[ "$crate" == "spike-render" ]]; then
-        pass "spike-render font provenance has no unresolved blocker marker"
+    if [[ "$crate" == "spike-render" ]]; then
+        if grep -q 'still require verification' "$repo/THIRD_PARTY.md" 2>/dev/null; then
+            fail "spike-render JetBrains Mono provenance/license is unresolved"
+        elif [[ ! -f "$repo/assets/JETBRAINS-MONO-LICENSE.txt" ]]; then
+            fail "spike-render JetBrains Mono license notice is missing"
+        else
+            pass "spike-render JetBrains Mono provenance and license notice are present"
+        fi
     fi
     if has_forbidden_tracked_path "$repo"; then
         fail "$crate contains a signing, credential, build, or environment artifact"
@@ -151,6 +148,17 @@ else
     fail "Fable root repository is not readable"
 fi
 
+if [[ -f "$REPO_ROOT/docs/security/third-party-sources.md" ]]; then
+    pass "third-party source and license ledger exists"
+else
+    fail "third-party source and license ledger is missing"
+fi
+if [[ -f "$GITLEAKS_CONFIG" ]]; then
+    pass "gitleaks public-release path policy exists"
+else
+    fail "gitleaks public-release path policy is missing"
+fi
+
 fable_app="$REPO_ROOT/fable-app"
 upstream_url="$(git -C "$fable_app" config --get remote.origin.url 2>/dev/null || true)"
 if [[ "$upstream_url" == "https://github.com/termux/termux-app.git" ]]; then
@@ -169,8 +177,11 @@ for sensitive in "$fable_app/keystore/<旧签名材料>" \
 done
 
 testkey="$fable_app/app/<上游测试签名材料>"
-if [[ ! -f "$testkey" ]]; then
-    pass "fable-app <上游测试签名材料> is absent"
+if [[ ! -f "$testkey" ]] &&
+    git -C "$fable_app" ls-files --error-unmatch -- app/<上游测试签名材料> >/dev/null 2>&1; then
+    fail "fable-app <上游测试签名材料> is absent from the working tree but remains indexed; purpose review and explicit removal decision are required"
+elif [[ ! -f "$testkey" ]]; then
+    pass "fable-app <上游测试签名材料> is absent from the working tree and index"
 else
     # Do not accept a password on argv or print keytool output. Without a
     # verified password, this deliberately remains an unclassified blocker.
@@ -188,6 +199,15 @@ else
         fail "fable-app <上游测试签名材料> could not be classified without its password"
     fi
 fi
+
+for historical_path in app/<上游测试签名材料> keystore/<旧签名材料>; do
+    if git -C "$fable_app" log --all --reflog --format=%H -- "$historical_path" |
+        grep -q .; then
+        fail "fable-app history or reflog retains $historical_path; confirm purpose, revoke or rotate if usable, then decide historical treatment"
+    else
+        pass "fable-app history and reflog contain no $historical_path path"
+    fi
+done
 
 secret_regex='BEGIN[[:space:]]+(RSA|EC|OPENSSH|DSA|PGP)[[:space:]]+PRIVATE KEY|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[0-9A-Za-z-]{10,}|aws_secret_access_key[[:space:]]*=[[:space:]]*[^[:space:]]{16,}|https?://[^[:space:]/]+:[^[:space:]@]+@'
 
@@ -241,6 +261,34 @@ scan_worktree() {
     fi
 }
 
+scan_gitleaks_unreachable_blobs() {
+    local scanner="$1"
+    local repo="$2"
+    local label="$3"
+    local object_id scanned=0 failed=0
+
+    while IFS= read -r object_id; do
+        [[ -n "$object_id" ]] || continue
+        scanned=$((scanned + 1))
+        if ! git -C "$repo" cat-file blob "$object_id" |
+            "$scanner" stdin --no-banner --redact --exit-code 1 \
+                --config "$GITLEAKS_CONFIG" >/dev/null 2>&1; then
+            failed=1
+        fi
+    done < <(
+        git -C "$repo" fsck --full --no-reflogs --unreachable 2>/dev/null |
+            awk '$1 == "unreachable" && $2 == "blob" { print $3 }'
+    )
+
+    if [[ "$failed" -eq 0 ]]; then
+        pass "$label gitleaks scanned $scanned unreachable Git blobs without findings"
+        return 0
+    else
+        fail "$label gitleaks found a secret-like value or could not scan an unreachable Git blob"
+        return 1
+    fi
+}
+
 for repo_label in . fable-boo spike-render spike-session fable-app; do
     repo="$REPO_ROOT/$repo_label"
     scan_worktree "$repo" "$repo_label"
@@ -258,13 +306,27 @@ else
     case "$scanner_name" in
         gitleaks)
             scanner_failed=0
+            scanner_version="$("$scanner" version 2>/dev/null || true)"
+            if [[ "$scanner_version" != "$EXPECTED_GITLEAKS_VERSION" ]]; then
+                fail "gitleaks version is not pinned to $EXPECTED_GITLEAKS_VERSION"
+                scanner_failed=1
+            fi
+            if [[ ! -f "$GITLEAKS_CONFIG" ]]; then
+                scanner_failed=1
+            fi
             for repo_label in . fable-boo spike-render spike-session fable-app; do
                 if ! "$scanner" dir --no-banner --redact --exit-code 1 \
+                    --config "$GITLEAKS_CONFIG" \
                     "$REPO_ROOT/$repo_label" >/dev/null 2>&1; then
                     scanner_failed=1
                 fi
                 if ! "$scanner" git --no-banner --redact --exit-code 1 \
+                    --config "$GITLEAKS_CONFIG" \
                     --log-opts='--all --reflog' "$REPO_ROOT/$repo_label" >/dev/null 2>&1; then
+                    scanner_failed=1
+                fi
+                if ! scan_gitleaks_unreachable_blobs \
+                    "$scanner" "$REPO_ROOT/$repo_label" "$repo_label"; then
                     scanner_failed=1
                 fi
             done

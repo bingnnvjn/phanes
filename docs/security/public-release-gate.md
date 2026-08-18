@@ -13,7 +13,14 @@
 - `fable-app` 的 `origin` 仍是 `https://github.com/termux/termux-app.git`；
   在另建 Fable 自有 fork、清理历史和确认发布边界前，不得向它写入 Fable
   workflow 或推送 Fable 分支。
-- 当前三个 Rust 仓库无 remote；这是刻意的冻结状态，不是发布准备完成。
+- 2026-08-15 的预远端冻结状态是三个 Rust 仓库无 remote；这是当时刻意的冻结状态，
+  不是发布准备完成。
+- 2026-08-16 工单 58 已创建三个 Fable-owned private remote 并推送已审计 `master`
+  refs；它们仍不是 public 发布。CI、分支保护和 public release 继续由工单 51/59
+  处理，不能把 private rehearsal 解释为公开就绪。
+- 本地 remote 名称与 fetch/push URL 固定在
+  `docs/security/rust-private-remotes.tsv`；该台账仅验证本地配置，不能替代
+  GitHub 所有权、权限或可见性的人工复核。
 
 ## 允许发布路径
 
@@ -24,8 +31,8 @@
 
 | 仓库 | 允许路径 |
 | --- | --- |
-| `fable-boo` | `Cargo.toml`、`Cargo.lock`、`README.md`、`LICENSE`、`SECURITY.md`、`CONTRIBUTING.md`、`.github/CODEOWNERS`、`.github/dependabot.yml`、`build.rs`、`src/**`、`data/frames/**`、`.gitignore` |
-| `spike-render` | 上述公共文件，加 `docs/**`、`examples/**`、`assets/JetBrainsMono-Regular.ttf`、`assets/NotoColorEmoji.ttf`、`assets/NOTO-EMOJI-LICENSE.txt`、`third_party/freetype/**` |
+| `fable-boo` | `Cargo.toml`、`Cargo.lock`、`README.md`、`LICENSE`、`SECURITY.md`、`CONTRIBUTING.md`、`THIRD_PARTY.md`、`.github/CODEOWNERS`、`.github/dependabot.yml`、`build.rs`、`src/**`、`data/frames/**`、`.gitignore` |
+| `spike-render` | 上述公共文件，加 `docs/**`、`examples/**`、`assets/JetBrainsMono-Regular.ttf`、`assets/JETBRAINS-MONO-LICENSE.txt`、`assets/NotoColorEmoji.ttf`、`assets/NOTO-EMOJI-LICENSE.txt`、`third_party/freetype/**` |
 | `spike-session` | 上述公共文件，加 `build.rs`、`src/**`、`tests/**`、`vendor/portable-pty/**` |
 
 `target/`、日志、APK/AAB、`.env`、`local.properties`、签名文件、keystore、
@@ -38,32 +45,47 @@
 SECRET_SCANNER_BIN=/path/to/gitleaks scripts/public-release-gate.sh
 ```
 
-当前环境（2026-08-15）没有安装 `gitleaks` 或 `cargo-deny`，
-所以本地闸门应当失败。失败是发布阻断证据，不能通过删掉报告或跳过命令来
-“清零”。闸门会调用根仓库现有的 `scripts/rust-quality-gate.sh` 和
-`scripts/rust-supply-chain-gate.sh`；它们的失败会直接使发布闸门失败。
+工具固定版本、来源和本机摘要见 `docs/security/public-release-tools.md`：
+gitleaks `v8.29.0`、cargo-deny `0.20.2`。闸门会校验 gitleaks 版本，并调用
+根仓库现有的 `scripts/rust-quality-gate.sh` 和
+`scripts/rust-supply-chain-gate.sh`；缺少工具或任一门禁失败都会阻断发布。
+失败是发布阻断证据，不能通过删掉报告或跳过命令来“清零”。
 
-`spike-render` 的 JetBrains Mono 资产目前缺少可复核的来源 revision 和许可证
-notice；公开闸门会把 `THIRD_PARTY.md` 中的未决标记当作阻断项。
+gitleaks 使用 `docs/security/gitleaks-public-release.toml`，仅排除明确不属于
+公开发布输入的内部资料和构建缓存；它会扫描工作树、可达 refs、reflog 与
+不可达 blob。crate 的 Git allow-list、禁止路径以及 Git 对象 marker 扫描仍独立执行。
+
+`spike-render` 的 JetBrains Mono 资产来源现已固定为 JetBrains Mono `v2.304`
+tag commit `cd5227bd1f61dff3bbd6c814ceaf7ffd95e947d9`，并在资产旁提供
+`JETBRAINS-MONO-LICENSE.txt` 和 SHA-256。公开闸门仍会检查该 notice 与
+`THIRD_PARTY.md` 是否同步；任何未决标记仍是阻断项。
+
+完整第三方来源台账见 `docs/security/third-party-sources.md`。
+签名材料的路径、条目类型、隔离位置和历史策略见
+`docs/security/signing-material-inventory.md`；该台账不含任何秘密值。
 
 闸门还会在不读取密码的情况下尝试分类
 `fable-app/app/<上游测试签名材料>`。无法证明它不是可用私钥时，结果保持
 阻断；不得把“当前构建脚本没有引用”当成密钥安全证明。`keystore/<旧签名材料>`
 和 `release-missing-credentials.log` 即使被忽略，也始终属于发布范围外的
-敏感材料。
+敏感材料。当前两份 JKS 均已从工作树隔离，但历史用途、撤销/轮换和历史清理
+仍需人工确认。已知 JKS 即使只残留在 `fable-app` 索引、refs 或 reflog，
+总闸门也会阻断；“工作树文件已删”不构成通过条件。
 
 ## 尚需 Fable 自有远端的验收
 
-以下动作故意不在本地完成：
+工单 58 已于 2026-08-16 完成三个 Fable-owned private remote 的创建、精确
+`master` refs 推送和私有预演；以下 public/CI 动作仍故意不在本地完成：
 
-1. 创建仓库、推送 branch/tag、启用 workflow；
+1. 从同一份已审计 refs 创建 public 仓库、发布 branch/tag、启用 public workflow；
 2. 配置 required checks、分支保护、CODEOWNERS 的实际审查者和管理员绕过
    审计；
-3. 在临时 private 仓库预演，然后从同一份已审计 refs 创建 public 仓库；
-4. 运行故意失败 PR、匿名检查、artifact/日志检查和 fork 行为检查；
-5. 指定安全报告入口、凭据撤销/轮换责任人和泄露公告责任人。
+3. 在 private rehearsal 之外运行故意失败 PR、匿名检查、artifact/日志检查和 fork
+   行为检查；
+4. 指定安全报告入口、凭据撤销/轮换责任人和泄露公告责任人。
 
-取得每个 Fable 自有远端及管理员权限后，才可按工单 51 接入 CI。CI 应使用
+已取得每个 Fable 自有远端及管理员权限，但当前账户计划对 private 仓库的分支保护
+API 返回 403；工单 51 仍需解决计划/权限后再接入 CI。CI 应使用
 `pull_request`、`contents: read`、GitHub-hosted runner、无 PR 发布 secret，
 并将第三方 Action 固定到完整 commit SHA；质量、rustdoc、锁文件和供应链
 门禁必须成为 required checks。

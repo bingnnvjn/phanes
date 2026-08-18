@@ -376,6 +376,12 @@ run_cargo_deny() {
     if manifest_has_advisory_exception "$manifest"; then
         advisory_lint=(-D advisory-not-detected)
     fi
+    # Termux's TLS path can intermittently fail when cargo-deny refreshes the
+    # RustSec Git database over HTTP/2. Keep the retry deterministic without
+    # changing the user's global Git configuration.
+    GIT_CONFIG_COUNT=1 \
+    GIT_CONFIG_KEY_0=http.version \
+    GIT_CONFIG_VALUE_0=HTTP/1.1 \
     "$CARGO_DENY_BIN" --manifest-path "$manifest" --config "$CONFIG_FILE" \
         --all-features --locked check -A unmatched-skip "${advisory_lint[@]}" \
         advisories bans licenses sources

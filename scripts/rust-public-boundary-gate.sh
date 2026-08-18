@@ -14,6 +14,7 @@ SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
 ALLOWLIST="$REPO_ROOT/docs/security/rust-public-boundary.allowlist"
 REFS="$REPO_ROOT/docs/security/rust-public-boundary.refs"
+REMOTE_LEDGER="$REPO_ROOT/docs/security/rust-private-remotes.tsv"
 CRATES=(fable-boo spike-render spike-session)
 
 failed=0
@@ -38,6 +39,9 @@ fi
 if [[ ! -f "$REFS" ]]; then
     fail "missing canonical ref ledger: $REFS"
 fi
+if [[ ! -f "$REMOTE_LEDGER" ]]; then
+    fail "missing private-rehearsal remote ledger: $REMOTE_LEDGER"
+fi
 
 expected_ref() {
     local crate="$1"
@@ -55,6 +59,53 @@ expected_ref() {
         return 0
     done < "$REFS"
     return 1
+}
+
+expected_remote_field() {
+    local crate="$1"
+    local wanted_field="$2"
+    local record_crate remote_name fetch_url push_url
+
+    while IFS=$'\t' read -r record_crate remote_name fetch_url push_url; do
+        [[ -z "$record_crate" || "${record_crate:0:1}" == "#" ]] && continue
+        [[ "$record_crate" == "$crate" ]] || continue
+        case "$wanted_field" in
+            name) printf '%s\n' "$remote_name" ;;
+            fetch) printf '%s\n' "$fetch_url" ;;
+            push) printf '%s\n' "$push_url" ;;
+            *) return 2 ;;
+        esac
+        return 0
+    done < "$REMOTE_LEDGER"
+    return 1
+}
+
+check_private_remote() {
+    local crate="$1"
+    local repo="$2"
+    local expected_name expected_fetch expected_push actual_names actual_fetch actual_push
+
+    expected_name="$(expected_remote_field "$crate" name || true)"
+    expected_fetch="$(expected_remote_field "$crate" fetch || true)"
+    expected_push="$(expected_remote_field "$crate" push || true)"
+    if [[ -z "$expected_name" || -z "$expected_fetch" || -z "$expected_push" ]]; then
+        fail "$crate is missing an approved private-rehearsal remote record"
+        return
+    fi
+
+    actual_names="$(git -C "$repo" remote)"
+    if [[ "$actual_names" != "$expected_name" ]]; then
+        fail "$crate remote names differ from the approved private-rehearsal ledger"
+        return
+    fi
+
+    actual_fetch="$(git -C "$repo" remote get-url "$expected_name" 2>/dev/null || true)"
+    actual_push="$(git -C "$repo" remote get-url --push "$expected_name" 2>/dev/null || true)"
+    if [[ "$actual_fetch" == "$expected_fetch" && "$actual_push" == "$expected_push" ]]; then
+        pass "$crate remote matches the approved private-rehearsal ledger"
+    else
+        fail "$crate remote URL differs from the approved private-rehearsal ledger"
+    fi
 }
 
 allowed_path() {
@@ -152,11 +203,7 @@ check_repo() {
         fail "$crate worktree has tracked changes"
     fi
 
-    if [[ -z "$(git -C "$repo" remote)" ]]; then
-        pass "$crate has no remote while publication is frozen"
-    else
-        fail "$crate has a configured remote"
-    fi
+    check_private_remote "$crate" "$repo"
 
     if git -C "$repo" diff --check; then
         pass "$crate working tree diff --check"

@@ -1,0 +1,25 @@
+title = "Fable public-release secret scan"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Files outside the public release input"
+paths = [
+  '''(^|/)\.git(/|$)''',
+  '''(^|/)\.scratch(/|$)''',
+  '''(^|/)\.crew(/|$)''',
+  '''(^|/)target(/|$)''',
+  '''(^|/)build(/|$)''',
+  '''(^|/)\.gradle(/|$)''',
+  '''(^|/)\.cxx(/|$)''',
+  '''(^|/)\.externalNativeBuild(/|$)''',
+  '''(^|/).*\.log$''',
+  '''(^|/)coverage_report\.txt$''',
+  '''(^|/)out\.png$''',
+]
+
+# This is a path boundary, not a finding suppression. The canonical
+# Rust-public allow-list and forbidden-artifact checks still reject a tracked
+# credential/build path inside a crate. Any new excluded path requires a
+# corresponding public-boundary review.
