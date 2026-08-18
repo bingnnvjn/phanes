@@ -8,12 +8,26 @@ import org.junit.runner.RunWith;
 import org.robolectric.annotation.ConscryptMode;
 import org.robolectric.RobolectricTestRunner;
 
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.List;
 
 @RunWith(RobolectricTestRunner.class)
 @ConscryptMode(ConscryptMode.Mode.OFF)
 public class FileReceiverActivityTest {
+
+    @Test
+    public void staticSharingEntryPointsKeepTheirJvmAbi() throws Exception {
+        Method isSharedTextAnUrl = FileReceiverActivity.class.getDeclaredMethod(
+            "isSharedTextAnUrl", String.class);
+        Assert.assertTrue(Modifier.isStatic(isSharedTextAnUrl.getModifiers()));
+
+        Method updateComponentState = FileReceiverActivity.class.getDeclaredMethod(
+            "updateFileReceiverActivityComponentsState", android.content.Context.class);
+        Assert.assertTrue(Modifier.isPublic(updateComponentState.getModifiers()));
+        Assert.assertTrue(Modifier.isStatic(updateComponentState.getModifiers()));
+    }
 
     @Test
     public void testIsSharedTextAnUrl() {
