@@ -270,9 +270,13 @@ scan_gitleaks_unreachable_blobs() {
     while IFS= read -r object_id; do
         [[ -n "$object_id" ]] || continue
         scanned=$((scanned + 1))
-        if ! git -C "$repo" cat-file blob "$object_id" |
-            "$scanner" stdin --no-banner --redact --exit-code 1 \
-                --config "$GITLEAKS_CONFIG" >/dev/null 2>&1; then
+        if ! git -C "$repo" cat-file blob "$object_id" >/dev/null 2>&1; then
+            failed=1
+            continue
+        fi
+        if ! "$scanner" stdin --no-banner --redact --exit-code 1 \
+            --config "$GITLEAKS_CONFIG" \
+            < <(git -C "$repo" cat-file blob "$object_id") >/dev/null 2>&1; then
             failed=1
         fi
     done < <(
