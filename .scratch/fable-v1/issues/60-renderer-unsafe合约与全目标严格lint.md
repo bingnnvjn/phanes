@@ -43,3 +43,10 @@ mmap、native window/wgpu、renderer 线程与 PTY shim 现在都有可审查的
 host CI 不会跳过诊断 example。工单 61 可把 `spike-render` 纳入公开前 CI/ref 审计；
 工单 59 前仍须补一次成功的 APK 构建和真机回归，不能把本次 TLS 下载失败视为 Android
 验收通过。
+
+2026-08-19 补充 Android 验证：本机找到并校验了 SHA-256 为
+`d9fc5f96691afdeb83ecffc0e9571a7e88cf127d775beefc53d9a0e353e0a601` 的既有
+aarch64 bootstrap 缓存后，`cd fable-app && ./gradlew :app:externalNativeBuildDebug`
+通过。`buildFableSession`、字体 SHA 校验和 app/termux-shared 的 arm64-v8a、
+armeabi-v7a、x86、x86_64 NDK 构建均成功。`adb devices -l` 无设备，且完整 APK
+打包仍会下载其他 bootstrap，因此 APK 安装和真机回归仍待人工验收。
