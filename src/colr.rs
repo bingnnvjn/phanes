@@ -189,6 +189,8 @@ enum Fill {
 
 fn zeroed_paint() -> FT_COLR_Paint {
     // union 无法 Default，用零初始化（所有成员可拷贝）。
+    // SAFETY: `FT_COLR_Paint` is a repr(C) value-only union. Zero is valid for
+    // every member and FreeType fills the selected member before it is read.
     unsafe { std::mem::zeroed() }
 }
 
@@ -201,6 +203,8 @@ fn palette_color(ctx: &ColrCtx, idx: FT_ColorIndex) -> [u8; 4] {
     if ctx.palette.is_null() || idx.palette_index as usize >= ctx.palette_len {
         return [255, 255, 255, (a * 255.0).round() as u8];
     }
+    // SAFETY: `palette_len` comes from FreeType and the index was range checked
+    // against it above, so the palette entry is initialized and in bounds.
     let c = unsafe { *ctx.palette.add(idx.palette_index as usize) };
     let ca = (c.alpha as f64 / 255.0 * a).clamp(0.0, 1.0);
     [c.red, c.green, c.blue, (ca * 255.0).round() as u8]
@@ -212,6 +216,8 @@ pub fn render_color_glyph(ctx: &ColrCtx, glyph_id: u32, pixels_per_em: u16) -> O
         return None;
     }
     let mut root = FT_OpaquePaint::default();
+    // SAFETY: `ctx.face` is checked non-null; FreeType owns the face and writes
+    // the output handle for this call.
     if unsafe {
         FT_Get_Color_Glyph_Paint(
             ctx.face,
@@ -236,14 +242,20 @@ fn render_paint(
         return None;
     }
     let mut paint = zeroed_paint();
+    // SAFETY: `ctx.face` and `op` originate from the same successful
+    // FreeType paint query, and `paint` is a valid output slot.
     if unsafe { FT_Get_Paint(ctx.face, op, &mut paint) } == 0 {
         return None;
     }
     match paint.format {
         FT_COLR_PAINTFORMAT_COLR_LAYERS => {
             let mut acc: Option<RgbaImage> = None;
+            // SAFETY: the paint format selects `colr_layers`, which FreeType
+            // initialized in the returned union.
             let mut it = unsafe { paint.u.colr_layers.layer_iterator };
             let mut layer = FT_OpaquePaint::default();
+            // SAFETY: `it` is the iterator returned by FreeType for this face
+            // and `layer` is a valid output slot.
             while unsafe { FT_Get_Paint_Layers(ctx.face, &mut it, &mut layer) } != 0 {
                 if let Some(img) = render_paint(ctx, layer, affine, depth + 1) {
                     acc = Some(match acc {
@@ -259,13 +271,19 @@ fn render_paint(
             acc
         }
         FT_COLR_PAINTFORMAT_GLYPH => {
+            // SAFETY: the paint format selects `glyph`, initialized by
+            // FreeType in the preceding query.
             let glyph = unsafe { paint.u.glyph };
             let fill = read_fill(ctx, glyph.paint, depth + 1)?;
             render_glyph(ctx, glyph.glyph_id, affine, &fill)
         }
         FT_COLR_PAINTFORMAT_COLR_GLYPH => {
+            // SAFETY: the paint format selects `colr_glyph`, initialized by
+            // FreeType in the preceding query.
             let gid = unsafe { paint.u.colr_glyph.glyph_id };
             let mut sub = FT_OpaquePaint::default();
+            // SAFETY: `ctx.face` is the face that produced `op`; `sub` is a
+            // valid output handle for the nested glyph query.
             if unsafe {
                 FT_Get_Color_Glyph_Paint(ctx.face, gid, FT_COLOR_NO_ROOT_TRANSFORM, &mut sub)
             } != 0
@@ -277,10 +295,15 @@ fn render_paint(
         }
         FT_COLR_PAINTFORMAT_TRANSFORM => {
             let mut m = *affine;
-            m.compose(&Affine::from_23(&unsafe { paint.u.transform.affine }));
-            render_paint(ctx, unsafe { paint.u.transform.paint }, &m, depth + 1)
+            // SAFETY: the paint format selects `transform`; both fields were
+            // initialized by FreeType.
+            let transform = unsafe { paint.u.transform };
+            m.compose(&Affine::from_23(&transform.affine));
+            render_paint(ctx, transform.paint, &m, depth + 1)
         }
         FT_COLR_PAINTFORMAT_TRANSLATE => {
+            // SAFETY: the paint format selects `translate`, initialized by
+            // FreeType in the returned union.
             let t = unsafe { paint.u.translate };
             let mut m = *affine;
             m.compose(&Affine::translate(
@@ -290,6 +313,8 @@ fn render_paint(
             render_paint(ctx, t.paint, &m, depth + 1)
         }
         FT_COLR_PAINTFORMAT_SCALE => {
+            // SAFETY: the paint format selects `scale`, initialized by
+            // FreeType in the returned union.
             let s = unsafe { paint.u.scale };
             let cx = s.center_x as f64 / 65536.0;
             let cy = s.center_y as f64 / 65536.0;
@@ -303,6 +328,8 @@ fn render_paint(
             render_paint(ctx, s.paint, &m, depth + 1)
         }
         FT_COLR_PAINTFORMAT_ROTATE => {
+            // SAFETY: the paint format selects `rotate`, initialized by
+            // FreeType in the returned union.
             let r = unsafe { paint.u.rotate };
             let cx = r.center_x as f64 / 65536.0;
             let cy = r.center_y as f64 / 65536.0;
@@ -313,6 +340,8 @@ fn render_paint(
             render_paint(ctx, r.paint, &m, depth + 1)
         }
         FT_COLR_PAINTFORMAT_SKEW => {
+            // SAFETY: the paint format selects `skew`, initialized by
+            // FreeType in the returned union.
             let k = unsafe { paint.u.skew };
             let cx = k.center_x as f64 / 65536.0;
             let cy = k.center_y as f64 / 65536.0;
@@ -326,6 +355,8 @@ fn render_paint(
             render_paint(ctx, k.paint, &m, depth + 1)
         }
         FT_COLR_PAINTFORMAT_COMPOSITE => {
+            // SAFETY: the paint format selects `composite`, initialized by
+            // FreeType in the returned union.
             let c = unsafe { paint.u.composite };
             let backdrop = render_paint(ctx, c.backdrop_paint, affine, depth + 1);
             let mut source = render_paint(ctx, c.source_paint, affine, depth + 1);
@@ -352,20 +383,31 @@ fn read_fill(ctx: &ColrCtx, op: FT_OpaquePaint, depth: u32) -> Option<Fill> {
         return None;
     }
     let mut paint = zeroed_paint();
+    // SAFETY: `ctx.face` and `op` are FreeType handles from the same face;
+    // `paint` is a valid output slot.
     if unsafe { FT_Get_Paint(ctx.face, op, &mut paint) } == 0 {
         return None;
     }
     match paint.format {
+        // SAFETY: the paint format selects `solid`, initialized by FreeType.
         FT_COLR_PAINTFORMAT_SOLID => Some(Fill::Solid(palette_color(ctx, unsafe {
             paint.u.solid.color
         }))),
         FT_COLR_PAINTFORMAT_LINEAR_GRADIENT => {
+            // SAFETY: the paint format selects `linear_gradient`, initialized
+            // by FreeType.
             Some(Fill::Linear(unsafe { paint.u.linear_gradient }))
         }
         FT_COLR_PAINTFORMAT_RADIAL_GRADIENT => {
+            // SAFETY: the paint format selects `radial_gradient`, initialized
+            // by FreeType.
             Some(Fill::Radial(unsafe { paint.u.radial_gradient }))
         }
-        FT_COLR_PAINTFORMAT_SWEEP_GRADIENT => Some(Fill::Sweep(unsafe { paint.u.sweep_gradient })),
+        FT_COLR_PAINTFORMAT_SWEEP_GRADIENT => {
+            // SAFETY: the paint format selects `sweep_gradient`, initialized
+            // by FreeType.
+            Some(Fill::Sweep(unsafe { paint.u.sweep_gradient }))
+        }
         _ => None,
     }
 }
@@ -373,6 +415,8 @@ fn read_fill(ctx: &ColrCtx, op: FT_OpaquePaint, depth: u32) -> Option<Fill> {
 /// 渲染单个 GLYPH 层：NO_SCALE outline 按当前仿射变换后光栅为覆盖率，
 /// 再用 fill 着色（solid 或渐变）。
 fn render_glyph(ctx: &ColrCtx, gid: u32, affine: &Affine, fill: &Fill) -> Option<RgbaImage> {
+    // SAFETY: all FreeType calls use the live face owned by `ctx`; FreeType
+    // owns the glyph slot and bitmap for the duration of this block.
     unsafe {
         if FT_Load_Glyph(ctx.face, gid, FT_LOAD_NO_SCALE) != 0 {
             return None;
@@ -492,6 +536,8 @@ fn fill_paint_bounds(
     bounds: &RgbaImage,
 ) -> Option<RgbaImage> {
     let mut paint = zeroed_paint();
+    // SAFETY: `ctx.face` and `op` are FreeType handles from the same face;
+    // `paint` is a valid output slot.
     if unsafe { FT_Get_Paint(ctx.face, op, &mut paint) } == 0 {
         return None;
     }
@@ -508,43 +554,62 @@ fn fill_paint_bounds(
         for x in 0..img.width as usize {
             let di = (y * img.width as usize + x) * 4;
             let c = match paint.format {
-                FT_COLR_PAINTFORMAT_SOLID => palette_color(ctx, unsafe { paint.u.solid.color }),
-                FT_COLR_PAINTFORMAT_LINEAR_GRADIENT => gradient_color(
-                    ctx,
-                    inv.as_ref(),
-                    &unsafe { paint.u.linear_gradient }.p0,
-                    &unsafe { paint.u.linear_gradient }.p1,
-                    &unsafe { paint.u.linear_gradient }.p2,
-                    &unsafe { paint.u.linear_gradient }.colorline,
-                    x,
-                    y,
-                    left,
-                    top,
-                )?,
-                FT_COLR_PAINTFORMAT_RADIAL_GRADIENT => gradient_color_radial(
-                    ctx,
-                    inv.as_ref(),
-                    &unsafe { paint.u.radial_gradient }.p0,
-                    &unsafe { paint.u.radial_gradient }.p1,
-                    &unsafe { paint.u.radial_gradient }.p2,
-                    &unsafe { paint.u.radial_gradient }.colorline,
-                    x,
-                    y,
-                    left,
-                    top,
-                )?,
-                FT_COLR_PAINTFORMAT_SWEEP_GRADIENT => gradient_color_sweep(
-                    ctx,
-                    inv.as_ref(),
-                    &unsafe { paint.u.sweep_gradient }.center,
-                    unsafe { paint.u.sweep_gradient }.start_angle,
-                    unsafe { paint.u.sweep_gradient }.end_angle,
-                    &unsafe { paint.u.sweep_gradient }.colorline,
-                    x,
-                    y,
-                    left,
-                    top,
-                )?,
+                FT_COLR_PAINTFORMAT_SOLID => {
+                    // SAFETY: the paint format selects `solid`, initialized by
+                    // FreeType.
+                    palette_color(ctx, unsafe { paint.u.solid.color })
+                }
+                FT_COLR_PAINTFORMAT_LINEAR_GRADIENT => {
+                    // SAFETY: `paint.format` selects `linear_gradient`; FreeType
+                    // initialized this union member in the successful query above.
+                    let gradient = unsafe { paint.u.linear_gradient };
+                    gradient_color(
+                        ctx,
+                        inv.as_ref(),
+                        &gradient.p0,
+                        &gradient.p1,
+                        &gradient.p2,
+                        &gradient.colorline,
+                        x,
+                        y,
+                        left,
+                        top,
+                    )?
+                }
+                FT_COLR_PAINTFORMAT_RADIAL_GRADIENT => {
+                    // SAFETY: `paint.format` selects `radial_gradient`; FreeType
+                    // initialized this union member in the successful query above.
+                    let gradient = unsafe { paint.u.radial_gradient };
+                    gradient_color_radial(
+                        ctx,
+                        inv.as_ref(),
+                        &gradient.p0,
+                        &gradient.p1,
+                        &gradient.p2,
+                        &gradient.colorline,
+                        x,
+                        y,
+                        left,
+                        top,
+                    )?
+                }
+                FT_COLR_PAINTFORMAT_SWEEP_GRADIENT => {
+                    // SAFETY: `paint.format` selects `sweep_gradient`; FreeType
+                    // initialized this union member in the successful query above.
+                    let gradient = unsafe { paint.u.sweep_gradient };
+                    gradient_color_sweep(
+                        ctx,
+                        inv.as_ref(),
+                        &gradient.center,
+                        gradient.start_angle,
+                        gradient.end_angle,
+                        &gradient.colorline,
+                        x,
+                        y,
+                        left,
+                        top,
+                    )?
+                }
                 _ => return None,
             };
             img.pixels[di..di + 4].copy_from_slice(&c);
@@ -657,6 +722,8 @@ fn colorline_color(ctx: &ColrCtx, colorline: &FT_ColorLine, t: f64) -> [u8; 4] {
     let mut stops: Vec<(f64, [u8; 4])> = Vec::new();
     let mut it = colorline.color_stop_iterator;
     let mut st = FT_ColorStop::default();
+    // SAFETY: `it` was initialized from the FreeType colorline and `st` is a
+    // valid output slot for each iterator step.
     while unsafe { FT_Get_Colorline_Stops(ctx.face, &mut st, &mut it) } != 0 {
         stops.push((
             st.stop_offset as f64 / 65536.0,

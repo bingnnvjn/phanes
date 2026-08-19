@@ -42,9 +42,9 @@ window 和跨线程 renderer 边界的实现合约。代码中的 `SAFETY:` 注�
 | native window / wgpu | `src/jni.rs`, `src/render_android.rs` | attach/detach/reset、离屏 GPU 自检；真机释放顺序需 Android 验收 |
 | renderer 跨线程 | `src/render_android.rs::Renderer` | renderer thread/mailbox 句柄测试与既有回归探针 |
 
-## 例外政策
+## lint 门禁
 
-`unsafe_op_in_unsafe_fn` 只在 Ghostty snapshot 适配模块保留局部 `expect`，因为该
-模块把一组同一 C ABI 合约的读取集中在历史 `unsafe fn` 中；新增 unsafe 不得沿用该
-例外，必须写显式 `unsafe {}` 与邻接 `SAFETY:`，并补边界测试。其余模块继续由
-crate 级 `deny` 阻断。
+crate、每个诊断 example 和 CI 的全目标 Clippy 都拒绝
+`unsafe_op_in_unsafe_fn` 与 `clippy::undocumented_unsafe_blocks`。每个显式
+`unsafe` block 紧邻 `SAFETY:`，说明所用指针的来源、ABI、所有权、线程条件或
+有效期。不得用 crate 级 `allow`、无到期条件的例外或跳过 example 绕开此门禁。

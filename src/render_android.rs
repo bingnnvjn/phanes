@@ -82,6 +82,8 @@ extern "C" {
 pub fn log_info(msg: &str) {
     let tag = CString::new(LOG_TAG).unwrap_or_default();
     let text = CString::new(msg).unwrap_or_default();
+    // SAFETY: both CStrings are NUL-terminated and live for the call; the
+    // Android logger only reads them synchronously.
     unsafe {
         fable_android_log(ANDROID_LOG_INFO, tag.as_ptr(), text.as_ptr());
     }
@@ -90,6 +92,8 @@ pub fn log_info(msg: &str) {
 pub fn log_error(msg: &str) {
     let tag = CString::new(LOG_TAG).unwrap_or_default();
     let text = CString::new(msg).unwrap_or_default();
+    // SAFETY: both CStrings are NUL-terminated and live for the call; the
+    // Android logger only reads them synchronously.
     unsafe {
         fable_android_log(ANDROID_LOG_ERROR, tag.as_ptr(), text.as_ptr());
     }
@@ -268,51 +272,45 @@ fn check(result: GhosttyResult, what: &str) -> bool {
     }
 }
 
-#[expect(
-    unsafe_op_in_unsafe_fn,
-    reason = "工单 50：Ghostty C ABI 标量读取适配；前提见 docs/ffi-contracts.md"
-)]
 unsafe fn get_u16(state: GhosttyRenderState, data: i32) -> u16 {
     let mut v: u16 = 0;
-    let _ = ghostty_render_state_get(state, data, &mut v as *mut u16 as *mut c_void);
+    // SAFETY: caller guarantees that `state` is a live render state; `v` is a
+    // properly aligned output slot with the ABI-selected `u16` layout.
+    let _ = unsafe { ghostty_render_state_get(state, data, &mut v as *mut u16 as *mut c_void) };
     v
 }
 
-#[expect(
-    unsafe_op_in_unsafe_fn,
-    reason = "工单 50：Ghostty C ABI 标量读取适配；前提见 docs/ffi-contracts.md"
-)]
 unsafe fn get_bool(state: GhosttyRenderState, data: i32) -> bool {
     let mut v: bool = false;
-    let _ = ghostty_render_state_get(state, data, &mut v as *mut bool as *mut c_void);
+    // SAFETY: caller guarantees that `state` is a live render state; `v` is a
+    // properly aligned output slot with the ABI-selected bool layout.
+    let _ = unsafe { ghostty_render_state_get(state, data, &mut v as *mut bool as *mut c_void) };
     v
 }
 
-#[expect(
-    unsafe_op_in_unsafe_fn,
-    reason = "工单 50：Ghostty C ABI 标量读取适配；前提见 docs/ffi-contracts.md"
-)]
 unsafe fn get_i32(state: GhosttyRenderState, data: i32) -> i32 {
     let mut v: i32 = 0;
-    let _ = ghostty_render_state_get(state, data, &mut v as *mut i32 as *mut c_void);
+    // SAFETY: caller guarantees that `state` is a live render state; `v` is a
+    // properly aligned output slot with the ABI-selected `i32` layout.
+    let _ = unsafe { ghostty_render_state_get(state, data, &mut v as *mut i32 as *mut c_void) };
     v
 }
 
-#[expect(
-    unsafe_op_in_unsafe_fn,
-    reason = "工单 50：Ghostty C ABI 行文本读取适配；前提见 docs/ffi-contracts.md"
-)]
 unsafe fn cell_text(cells: GhosttyRenderStateRowCells) -> String {
     let mut buf = GhosttyBuffer {
         ptr: std::ptr::null_mut(),
         cap: 0,
         len: 0,
     };
-    let r = ghostty_render_state_row_cells_get(
-        cells,
-        CELL_DATA_GRAPHEMES_UTF8,
-        &mut buf as *mut GhosttyBuffer as *mut c_void,
-    );
+    // SAFETY: caller guarantees that `cells` is positioned on a live cell;
+    // `buf` is a repr(C) output slot used only during this synchronous call.
+    let r = unsafe {
+        ghostty_render_state_row_cells_get(
+            cells,
+            CELL_DATA_GRAPHEMES_UTF8,
+            &mut buf as *mut GhosttyBuffer as *mut c_void,
+        )
+    };
     if r == GHOSTTY_OUT_OF_SPACE && buf.len > 0 {
         let mut bytes = vec![0u8; buf.len];
         let mut buf2 = GhosttyBuffer {
@@ -320,11 +318,15 @@ unsafe fn cell_text(cells: GhosttyRenderStateRowCells) -> String {
             cap: bytes.len(),
             len: 0,
         };
-        let _ = ghostty_render_state_row_cells_get(
-            cells,
-            CELL_DATA_GRAPHEMES_UTF8,
-            &mut buf2 as *mut GhosttyBuffer as *mut c_void,
-        );
+        // SAFETY: the first query supplied `buf.len`; `bytes` owns exactly
+        // that capacity and `buf2` points into it for this synchronous fill.
+        let _ = unsafe {
+            ghostty_render_state_row_cells_get(
+                cells,
+                CELL_DATA_GRAPHEMES_UTF8,
+                &mut buf2 as *mut GhosttyBuffer as *mut c_void,
+            )
+        };
         bytes.truncate(buf2.len);
         String::from_utf8_lossy(&bytes).into_owned()
     } else {
@@ -332,17 +334,17 @@ unsafe fn cell_text(cells: GhosttyRenderStateRowCells) -> String {
     }
 }
 
-#[expect(
-    unsafe_op_in_unsafe_fn,
-    reason = "工单 50：Ghostty C ABI 颜色读取适配；前提见 docs/ffi-contracts.md"
-)]
 unsafe fn cell_color(cells: GhosttyRenderStateRowCells, data: i32) -> Option<Rgb> {
     let mut c = GhosttyColorRgb { r: 0, g: 0, b: 0 };
-    let r = ghostty_render_state_row_cells_get(
-        cells,
-        data,
-        &mut c as *mut GhosttyColorRgb as *mut c_void,
-    );
+    // SAFETY: caller guarantees that `cells` is positioned on a live cell;
+    // `c` is a repr(C) output slot with the requested color layout.
+    let r = unsafe {
+        ghostty_render_state_row_cells_get(
+            cells,
+            data,
+            &mut c as *mut GhosttyColorRgb as *mut c_void,
+        )
+    };
     if r == GHOSTTY_SUCCESS {
         Some(Rgb {
             r: c.r,
@@ -361,252 +363,253 @@ unsafe fn cell_color(cells: GhosttyRenderStateRowCells, data: i32) -> Option<Rgb
 /// `state` 必须是仍由调用方持有、已初始化且未并发销毁的
 /// `GhosttyRenderState`；其内部指针和行/列范围必须满足 libghostty-vt
 /// C API 合约。`colors` 必须指向与该状态同一生命周期内的有效颜色表。
-#[expect(
-    unsafe_op_in_unsafe_fn,
-    reason = "工单 50：Ghostty C ABI 快照读取适配；前提见 docs/ffi-contracts.md"
-)]
 pub unsafe fn collect_snapshot(
     state: GhosttyRenderState,
     colors: &GhosttyRenderStateColors,
     ansi_override: Option<[Rgb; 16]>,
 ) -> Snapshot {
-    let cols = get_u16(state, DATA_COLS);
-    let rows = get_u16(state, DATA_ROWS);
-    let dirty = get_i32(state, DATA_DIRTY);
-    let cursor_style = get_i32(state, DATA_CURSOR_VISUAL_STYLE);
-    let cursor_visible = get_bool(state, DATA_CURSOR_VISIBLE);
-    let cursor = if cursor_visible {
-        Some((
-            get_u16(state, DATA_CURSOR_VIEWPORT_X),
-            get_u16(state, DATA_CURSOR_VIEWPORT_Y),
-        ))
-    } else {
-        None
-    };
-
-    let mut row_it: GhosttyRenderStateRowIterator = std::ptr::null_mut();
-    if !check(
-        ghostty_render_state_row_iterator_new(std::ptr::null(), &mut row_it),
-        "row_iterator_new",
-    ) {
-        return Snapshot {
-            cols,
-            rows,
-            lines: Vec::new(),
-            cursor,
-            cursor_style,
-            default_fg: Rgb {
-                r: colors.foreground.r,
-                g: colors.foreground.g,
-                b: colors.foreground.b,
-            },
-            default_bg: Rgb {
-                r: colors.background.r,
-                g: colors.background.g,
-                b: colors.background.b,
-            },
-            cursor_color: Rgb {
-                r: colors.cursor.r,
-                g: colors.cursor.g,
-                b: colors.cursor.b,
-            },
-            dirty,
-            dirty_rows: Vec::new(),
-            selection_color: DEFAULT_SELECTION_COLOR,
-            palette: None,
-            ansi_override,
+    // SAFETY: the caller's `# Safety` contract guarantees a live, exclusively
+    // used render state. All temporary output slots below have the exact C ABI
+    // layout, and iterators/cells are freed on every path after construction.
+    unsafe {
+        let cols = get_u16(state, DATA_COLS);
+        let rows = get_u16(state, DATA_ROWS);
+        let dirty = get_i32(state, DATA_DIRTY);
+        let cursor_style = get_i32(state, DATA_CURSOR_VISUAL_STYLE);
+        let cursor_visible = get_bool(state, DATA_CURSOR_VISIBLE);
+        let cursor = if cursor_visible {
+            Some((
+                get_u16(state, DATA_CURSOR_VIEWPORT_X),
+                get_u16(state, DATA_CURSOR_VIEWPORT_Y),
+            ))
+        } else {
+            None
         };
-    }
-    check(
-        ghostty_render_state_get(
-            state,
-            DATA_ROW_ITERATOR,
-            &mut row_it as *mut _ as *mut c_void,
-        ),
-        "get row_iterator",
-    );
 
-    let mut cells: GhosttyRenderStateRowCells = std::ptr::null_mut();
-    if !check(
-        ghostty_render_state_row_cells_new(std::ptr::null(), &mut cells),
-        "row_cells_new",
-    ) {
-        ghostty_render_state_row_iterator_free(row_it);
-        return Snapshot {
-            cols,
-            rows,
-            lines: Vec::new(),
-            cursor,
-            cursor_style,
-            default_fg: Rgb {
-                r: colors.foreground.r,
-                g: colors.foreground.g,
-                b: colors.foreground.b,
-            },
-            default_bg: Rgb {
-                r: colors.background.r,
-                g: colors.background.g,
-                b: colors.background.b,
-            },
-            cursor_color: Rgb {
-                r: colors.cursor.r,
-                g: colors.cursor.g,
-                b: colors.cursor.b,
-            },
-            dirty,
-            dirty_rows: Vec::new(),
-            selection_color: DEFAULT_SELECTION_COLOR,
-            palette: None,
-            ansi_override,
-        };
-    }
-
-    let mut lines = Vec::new();
-    let mut dirty_rows = Vec::new();
-    while ghostty_render_state_row_iterator_next(row_it) {
-        let mut row_dirty: bool = false;
-        let _ = ghostty_render_state_row_get(
-            row_it,
-            ROW_DATA_DIRTY,
-            &mut row_dirty as *mut bool as *mut c_void,
-        );
-        if row_dirty {
-            dirty_rows.push(lines.len());
-        }
-        let _ = ghostty_render_state_row_get(
-            row_it,
-            ROW_DATA_CELLS,
-            &mut cells as *mut _ as *mut c_void,
-        );
-        let mut row_cells = Vec::new();
-        while ghostty_render_state_row_cells_next(cells) {
-            let text = cell_text(cells);
-            let mut raw: GhosttyCell = 0;
-            let mut wide: i32 = CELL_WIDE_NARROW;
-            let r_raw = ghostty_render_state_row_cells_get(
-                cells,
-                CELL_DATA_RAW,
-                &mut raw as *mut GhosttyCell as *mut c_void,
-            );
-            if r_raw == GHOSTTY_SUCCESS
-                && ghostty_cell_get(
-                    raw,
-                    GHOSTTY_CELL_DATA_WIDE,
-                    &mut wide as *mut i32 as *mut c_void,
-                ) == GHOSTTY_SUCCESS
-            {
-                // wide 取值 0..=3；异常值按 NARROW 处理。
-                if !(CELL_WIDE_NARROW..=CELL_WIDE_SPACER_HEAD).contains(&wide) {
-                    wide = CELL_WIDE_NARROW;
-                }
-            }
-            let mut fg = cell_color(cells, CELL_DATA_FG_COLOR);
-            let mut bg = cell_color(cells, CELL_DATA_BG_COLOR);
-            let mut selected: bool = false;
-            let _ = ghostty_render_state_row_cells_get(
-                cells,
-                CELL_DATA_SELECTED,
-                &mut selected as *mut bool as *mut c_void,
-            );
-            let mut style = GhosttyStyle {
-                size: std::mem::size_of::<GhosttyStyle>(),
-                fg_color: GhosttyStyleColor {
-                    tag: 0,
-                    value: GhosttyStyleColorValue { palette: 0 },
+        let mut row_it: GhosttyRenderStateRowIterator = std::ptr::null_mut();
+        if !check(
+            ghostty_render_state_row_iterator_new(std::ptr::null(), &mut row_it),
+            "row_iterator_new",
+        ) {
+            return Snapshot {
+                cols,
+                rows,
+                lines: Vec::new(),
+                cursor,
+                cursor_style,
+                default_fg: Rgb {
+                    r: colors.foreground.r,
+                    g: colors.foreground.g,
+                    b: colors.foreground.b,
                 },
-                bg_color: GhosttyStyleColor {
-                    tag: 0,
-                    value: GhosttyStyleColorValue { palette: 0 },
+                default_bg: Rgb {
+                    r: colors.background.r,
+                    g: colors.background.g,
+                    b: colors.background.b,
                 },
-                underline_color: GhosttyStyleColor {
-                    tag: 0,
-                    value: GhosttyStyleColorValue { palette: 0 },
+                cursor_color: Rgb {
+                    r: colors.cursor.r,
+                    g: colors.cursor.g,
+                    b: colors.cursor.b,
                 },
-                bold: false,
-                italic: false,
-                faint: false,
-                blink: false,
-                inverse: false,
-                invisible: false,
-                strikethrough: false,
-                overline: false,
-                underline: 0,
+                dirty,
+                dirty_rows: Vec::new(),
+                selection_color: DEFAULT_SELECTION_COLOR,
+                palette: None,
+                ansi_override,
             };
-            let _ = ghostty_render_state_row_cells_get(
-                cells,
-                CELL_DATA_STYLE,
-                &mut style as *mut GhosttyStyle as *mut c_void,
-            );
-            fg = apply_ansi_override(
-                style.fg_color.tag,
-                style.fg_color.value.palette,
-                fg,
-                ansi_override,
-            );
-            bg = apply_ansi_override(
-                style.bg_color.tag,
-                style.bg_color.value.palette,
-                bg,
-                ansi_override,
-            );
-            row_cells.push(Cell {
-                text,
-                fg,
-                bg,
-                selected,
-                underline: style.underline != SGR_UNDERLINE_NONE,
-                underline_color: match style.underline_color.tag {
-                    1 => apply_ansi_override(
-                        style.underline_color.tag,
-                        style.underline_color.value.palette,
-                        fg,
-                        ansi_override,
-                    ),
-                    2 => Some(Rgb {
-                        r: style.underline_color.value.rgb.r,
-                        g: style.underline_color.value.rgb.g,
-                        b: style.underline_color.value.rgb.b,
-                    }),
-                    _ => None,
-                },
-                strikethrough: style.strikethrough,
-                overline: style.overline,
-                col_span: 1,
-                wide,
-            });
         }
-        lines.push(row_cells);
-    }
+        check(
+            ghostty_render_state_get(
+                state,
+                DATA_ROW_ITERATOR,
+                &mut row_it as *mut _ as *mut c_void,
+            ),
+            "get row_iterator",
+        );
 
-    ghostty_render_state_row_cells_free(cells);
-    ghostty_render_state_row_iterator_free(row_it);
+        let mut cells: GhosttyRenderStateRowCells = std::ptr::null_mut();
+        if !check(
+            ghostty_render_state_row_cells_new(std::ptr::null(), &mut cells),
+            "row_cells_new",
+        ) {
+            ghostty_render_state_row_iterator_free(row_it);
+            return Snapshot {
+                cols,
+                rows,
+                lines: Vec::new(),
+                cursor,
+                cursor_style,
+                default_fg: Rgb {
+                    r: colors.foreground.r,
+                    g: colors.foreground.g,
+                    b: colors.foreground.b,
+                },
+                default_bg: Rgb {
+                    r: colors.background.r,
+                    g: colors.background.g,
+                    b: colors.background.b,
+                },
+                cursor_color: Rgb {
+                    r: colors.cursor.r,
+                    g: colors.cursor.g,
+                    b: colors.cursor.b,
+                },
+                dirty,
+                dirty_rows: Vec::new(),
+                selection_color: DEFAULT_SELECTION_COLOR,
+                palette: None,
+                ansi_override,
+            };
+        }
 
-    Snapshot {
-        cols,
-        rows,
-        lines,
-        cursor,
-        cursor_style,
-        default_fg: Rgb {
-            r: colors.foreground.r,
-            g: colors.foreground.g,
-            b: colors.foreground.b,
-        },
-        default_bg: Rgb {
-            r: colors.background.r,
-            g: colors.background.g,
-            b: colors.background.b,
-        },
-        cursor_color: Rgb {
-            r: colors.cursor.r,
-            g: colors.cursor.g,
-            b: colors.cursor.b,
-        },
-        dirty,
-        dirty_rows,
-        selection_color: DEFAULT_SELECTION_COLOR,
-        palette: None,
-        ansi_override,
+        let mut lines = Vec::new();
+        let mut dirty_rows = Vec::new();
+        while ghostty_render_state_row_iterator_next(row_it) {
+            let mut row_dirty: bool = false;
+            let _ = ghostty_render_state_row_get(
+                row_it,
+                ROW_DATA_DIRTY,
+                &mut row_dirty as *mut bool as *mut c_void,
+            );
+            if row_dirty {
+                dirty_rows.push(lines.len());
+            }
+            let _ = ghostty_render_state_row_get(
+                row_it,
+                ROW_DATA_CELLS,
+                &mut cells as *mut _ as *mut c_void,
+            );
+            let mut row_cells = Vec::new();
+            while ghostty_render_state_row_cells_next(cells) {
+                let text = cell_text(cells);
+                let mut raw: GhosttyCell = 0;
+                let mut wide: i32 = CELL_WIDE_NARROW;
+                let r_raw = ghostty_render_state_row_cells_get(
+                    cells,
+                    CELL_DATA_RAW,
+                    &mut raw as *mut GhosttyCell as *mut c_void,
+                );
+                if r_raw == GHOSTTY_SUCCESS
+                    && ghostty_cell_get(
+                        raw,
+                        GHOSTTY_CELL_DATA_WIDE,
+                        &mut wide as *mut i32 as *mut c_void,
+                    ) == GHOSTTY_SUCCESS
+                {
+                    // wide 取值 0..=3；异常值按 NARROW 处理。
+                    if !(CELL_WIDE_NARROW..=CELL_WIDE_SPACER_HEAD).contains(&wide) {
+                        wide = CELL_WIDE_NARROW;
+                    }
+                }
+                let mut fg = cell_color(cells, CELL_DATA_FG_COLOR);
+                let mut bg = cell_color(cells, CELL_DATA_BG_COLOR);
+                let mut selected: bool = false;
+                let _ = ghostty_render_state_row_cells_get(
+                    cells,
+                    CELL_DATA_SELECTED,
+                    &mut selected as *mut bool as *mut c_void,
+                );
+                let mut style = GhosttyStyle {
+                    size: std::mem::size_of::<GhosttyStyle>(),
+                    fg_color: GhosttyStyleColor {
+                        tag: 0,
+                        value: GhosttyStyleColorValue { palette: 0 },
+                    },
+                    bg_color: GhosttyStyleColor {
+                        tag: 0,
+                        value: GhosttyStyleColorValue { palette: 0 },
+                    },
+                    underline_color: GhosttyStyleColor {
+                        tag: 0,
+                        value: GhosttyStyleColorValue { palette: 0 },
+                    },
+                    bold: false,
+                    italic: false,
+                    faint: false,
+                    blink: false,
+                    inverse: false,
+                    invisible: false,
+                    strikethrough: false,
+                    overline: false,
+                    underline: 0,
+                };
+                let _ = ghostty_render_state_row_cells_get(
+                    cells,
+                    CELL_DATA_STYLE,
+                    &mut style as *mut GhosttyStyle as *mut c_void,
+                );
+                fg = apply_ansi_override(
+                    style.fg_color.tag,
+                    style.fg_color.value.palette,
+                    fg,
+                    ansi_override,
+                );
+                bg = apply_ansi_override(
+                    style.bg_color.tag,
+                    style.bg_color.value.palette,
+                    bg,
+                    ansi_override,
+                );
+                row_cells.push(Cell {
+                    text,
+                    fg,
+                    bg,
+                    selected,
+                    underline: style.underline != SGR_UNDERLINE_NONE,
+                    underline_color: match style.underline_color.tag {
+                        1 => apply_ansi_override(
+                            style.underline_color.tag,
+                            style.underline_color.value.palette,
+                            fg,
+                            ansi_override,
+                        ),
+                        2 => Some(Rgb {
+                            r: style.underline_color.value.rgb.r,
+                            g: style.underline_color.value.rgb.g,
+                            b: style.underline_color.value.rgb.b,
+                        }),
+                        _ => None,
+                    },
+                    strikethrough: style.strikethrough,
+                    overline: style.overline,
+                    col_span: 1,
+                    wide,
+                });
+            }
+            lines.push(row_cells);
+        }
+
+        ghostty_render_state_row_cells_free(cells);
+        ghostty_render_state_row_iterator_free(row_it);
+
+        Snapshot {
+            cols,
+            rows,
+            lines,
+            cursor,
+            cursor_style,
+            default_fg: Rgb {
+                r: colors.foreground.r,
+                g: colors.foreground.g,
+                b: colors.foreground.b,
+            },
+            default_bg: Rgb {
+                r: colors.background.r,
+                g: colors.background.g,
+                b: colors.background.b,
+            },
+            cursor_color: Rgb {
+                r: colors.cursor.r,
+                g: colors.cursor.g,
+                b: colors.cursor.b,
+            },
+            dirty,
+            dirty_rows,
+            selection_color: DEFAULT_SELECTION_COLOR,
+            palette: None,
+            ansi_override,
+        }
     }
 }
 
@@ -2946,6 +2949,8 @@ impl GpuRuntime {
             if surface.window == window && surface.width == width && surface.height == height {
                 // RenderCommand 接管了 ANativeWindow_fromSurface 的引用；同 Surface
                 // 不替换时立即归还这次新取得的引用，保留已有 surface 的那一份。
+                // SAFETY: this command owns the newly acquired ANativeWindow
+                // reference and has not stored it, so it releases it once.
                 unsafe {
                     ANativeWindow_release(window);
                 }
@@ -2963,6 +2968,8 @@ impl GpuRuntime {
         let window_ptr = window.as_ptr();
         let raw_window_handle = wgpu::rwh::AndroidNdkWindowHandle::new(window).into();
         let raw_display_handle = wgpu::rwh::AndroidDisplayHandle::new().into();
+        // SAFETY: `window` is non-null and owned by this renderer command. It
+        // stays retained in `GpuSurface` until the wgpu surface is dropped.
         let surface = unsafe {
             self.instance
                 .create_surface_unsafe(wgpu::SurfaceTargetUnsafe::RawHandle {
@@ -2991,6 +2998,8 @@ impl GpuRuntime {
     fn detach_surface(&mut self) {
         if let Some(surface) = self.surface.take() {
             if !surface.window.is_null() {
+                // SAFETY: `GpuSurface` owns exactly this ANativeWindow
+                // reference and no other path can release it after `take()`.
                 unsafe {
                     ANativeWindow_release(surface.window);
                 }
@@ -3419,10 +3428,14 @@ impl GpuRuntime {
                 }
                 wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
                     self.acquire_outdated = self.acquire_outdated.saturating_add(1);
-                    let (actual_w, actual_h) = (
-                        unsafe { fable_anw_get_width(surface_runtime.window) },
-                        unsafe { fable_anw_get_height(surface_runtime.window) },
-                    );
+                    // SAFETY: `GpuSurface` retains a live ANativeWindow until
+                    // detach, and this renderer thread is its sole user.
+                    let (actual_w, actual_h) = unsafe {
+                        (
+                            fable_anw_get_width(surface_runtime.window),
+                            fable_anw_get_height(surface_runtime.window),
+                        )
+                    };
                     if actual_w > 0 && actual_h > 0 {
                         surface_runtime.width = actual_w as u32;
                         surface_runtime.height = actual_h as u32;
@@ -3713,6 +3726,8 @@ unsafe extern "C" fn terminal_title_changed(_terminal: GhosttyTerminal, userdata
     if userdata.is_null() {
         return;
     }
+    // SAFETY: RendererCore registers a pointer to its boxed `TerminalEvents`;
+    // callbacks run synchronously while that box remains owned by the core.
     let events = unsafe { &mut *(userdata as *mut TerminalEvents) };
     events.title_changed = true;
 }
@@ -3722,6 +3737,8 @@ unsafe extern "C" fn terminal_bell(_terminal: GhosttyTerminal, userdata: *mut c_
     if userdata.is_null() {
         return;
     }
+    // SAFETY: RendererCore registers a pointer to its boxed `TerminalEvents`;
+    // callbacks run synchronously while that box remains owned by the core.
     let events = unsafe { &mut *(userdata as *mut TerminalEvents) };
     events.bell = true;
 }
@@ -3734,16 +3751,20 @@ impl RendererCore {
             max_scrollback: 10000,
         };
         let mut terminal: GhosttyTerminal = std::ptr::null_mut();
-        if !check(
-            unsafe { ghostty_terminal_new(std::ptr::null(), &mut terminal, opts) },
-            "terminal_new",
-        ) {
+        let terminal_result = {
+            // SAFETY: `terminal` is a valid output slot and `opts` has the C
+            // ABI layout required by libghostty-vt.
+            unsafe { ghostty_terminal_new(std::ptr::null(), &mut terminal, opts) }
+        };
+        if !check(terminal_result, "terminal_new") {
             return None;
         }
         // 工单 29：注册 title/bell effect（userdata 指向 events Box 堆地址，
         // Box 本身随结构体移动但堆分配地址稳定，回调经原始指针可达）。
         let mut events = Box::<TerminalEvents>::default();
         let events_ptr = &mut *events as *mut TerminalEvents;
+        // SAFETY: `terminal` was created above; `events_ptr` points to the
+        // boxed state retained by this core, and callbacks match the C ABI.
         unsafe {
             let _ =
                 ghostty_terminal_set(terminal, TERMINAL_OPT_USERDATA, events_ptr as *const c_void);
@@ -3756,10 +3777,13 @@ impl RendererCore {
                 ghostty_terminal_set(terminal, TERMINAL_OPT_BELL, terminal_bell as *const c_void);
         }
         let mut state: GhosttyRenderState = std::ptr::null_mut();
-        if !check(
-            unsafe { ghostty_render_state_new(std::ptr::null(), &mut state) },
-            "render_state_new",
-        ) {
+        let state_result = {
+            // SAFETY: `state` is a valid output slot; libghostty-vt owns the
+            // returned state until the matching free below or in Drop.
+            unsafe { ghostty_render_state_new(std::ptr::null(), &mut state) }
+        };
+        if !check(state_result, "render_state_new") {
+            // SAFETY: this path still owns the successfully created terminal.
             unsafe { ghostty_terminal_free(terminal) };
             return None;
         }
@@ -3767,6 +3791,8 @@ impl RendererCore {
             Some(atlas) => atlas,
             None => {
                 log_error("no font loaded");
+                // SAFETY: this failure path owns both successfully created C
+                // handles and has not transferred them elsewhere.
                 unsafe {
                     ghostty_render_state_free(state);
                     ghostty_terminal_free(terminal);
@@ -3808,6 +3834,8 @@ impl RendererCore {
     }
 
     fn write(&mut self, data: &[u8]) {
+        // SAFETY: this core exclusively owns a live terminal; `data` remains
+        // valid for the synchronous libghostty-vt write.
         unsafe {
             ghostty_terminal_vt_write(self.terminal, data.as_ptr(), data.len());
         }
@@ -3821,6 +3849,8 @@ impl RendererCore {
                 ptr: std::ptr::null(),
                 len: 0,
             };
+            // SAFETY: the core exclusively owns `terminal`; `s` is a valid
+            // repr(C) output slot for the borrowed title descriptor.
             let r = unsafe {
                 ghostty_terminal_get(
                     self.terminal,
@@ -3829,6 +3859,8 @@ impl RendererCore {
                 )
             };
             if r == GHOSTTY_SUCCESS && !s.ptr.is_null() {
+                // SAFETY: libghostty-vt returned this borrowed title pointer
+                // and length; no terminal mutation occurs before copying it.
                 let bytes = unsafe { std::slice::from_raw_parts(s.ptr, s.len) };
                 self.events.title = String::from_utf8_lossy(bytes).into_owned();
             }
@@ -3852,6 +3884,8 @@ impl RendererCore {
 
     fn mode(&self, mode: GhosttyMode) -> bool {
         let mut v = false;
+        // SAFETY: the core exclusively owns a live terminal and `v` is a
+        // properly aligned output slot for the requested mode.
         let r = unsafe { ghostty_terminal_mode_get(self.terminal, mode, &mut v) };
         r == GHOSTTY_SUCCESS && v
     }
@@ -3864,6 +3898,8 @@ impl RendererCore {
     /// 任一 mouse tracking 模式（X10/1000/1002/1003）。
     fn mode_mouse_tracking(&self) -> bool {
         let mut v = false;
+        // SAFETY: the core exclusively owns a live terminal and `v` is a
+        // repr(C)-compatible bool output slot.
         let r = unsafe {
             ghostty_terminal_get(
                 self.terminal,
@@ -3910,6 +3946,8 @@ impl RendererCore {
     /// 终端数据查询（size_t 输出）。
     fn terminal_size_t(&self, data: i32) -> usize {
         let mut v: usize = 0;
+        // SAFETY: the core exclusively owns a live terminal and `v` is a
+        // properly aligned `size_t` output slot.
         let r = unsafe {
             ghostty_terminal_get(self.terminal, data, &mut v as *mut usize as *mut c_void)
         };
@@ -3945,6 +3983,9 @@ impl RendererCore {
 
     /// 单格字素文本（SCREEN 坐标；空格格返回 " "，空/占位格返回 ""，越界返回 None）。
     fn cell_graphemes(&self, col: u16, screen_y: u32) -> Option<String> {
+        // SAFETY: the core exclusively owns the terminal. Every pointer below
+        // is a stack or Vec output slot, and no terminal mutation occurs while
+        // the borrowed grid reference is queried.
         unsafe {
             let point = GhosttyPoint {
                 tag: POINT_TAG_SCREEN,
@@ -3995,6 +4036,9 @@ impl RendererCore {
 
     /// 某行（SCREEN 坐标）是否软换行续行（ROW_DATA_WRAP_CONTINUATION）。
     fn row_wrap_continuation(&self, screen_y: u32) -> bool {
+        // SAFETY: the core exclusively owns the terminal. Every pointer below
+        // is a stack output slot, and no terminal mutation occurs while the
+        // borrowed grid reference and row handle are queried.
         unsafe {
             let point = GhosttyPoint {
                 tag: POINT_TAG_SCREEN,
@@ -4210,6 +4254,8 @@ impl RendererCore {
         self.cols = cols;
         self.rows = rows;
         self.force_full = true;
+        // SAFETY: the core exclusively owns a live terminal; scalar arguments
+        // match the libghostty-vt resize ABI.
         unsafe {
             let _ = ghostty_terminal_resize(self.terminal, cols, rows, 0, 0);
         }
@@ -4217,6 +4263,8 @@ impl RendererCore {
 
     fn scroll(&mut self, delta: isize) {
         self.force_full = true;
+        // SAFETY: the core exclusively owns a live terminal and the tagged
+        // repr(C) viewport value selects its initialized `delta` field.
         unsafe {
             ghostty_terminal_scroll_viewport(
                 self.terminal,
@@ -4285,6 +4333,8 @@ impl RendererCore {
     /// （非空格 + 空占位格），选区与任一列相交都取整个 cluster 文本。
     fn selection_text(&self) -> String {
         // 渲染状态需先 update 才能反映已写入字节（渲染循环里 update 在渲染前）。
+        // SAFETY: this core exclusively owns the paired terminal and render
+        // state, so libghostty-vt sees no concurrent mutation.
         unsafe {
             let _ = ghostty_render_state_update(self.state, self.terminal);
         }
@@ -4319,6 +4369,8 @@ impl RendererCore {
 
     /// 工单 26：当前核心光标视口位置（行/列），无光标返回 None。
     fn cursor_position(&self) -> Option<(u16, u16)> {
+        // SAFETY: this core exclusively owns the paired terminal and render
+        // state, so libghostty-vt sees no concurrent mutation.
         unsafe {
             let _ = ghostty_render_state_update(self.state, self.terminal);
         }
@@ -4547,6 +4599,8 @@ impl RendererCore {
                 RenderCommand::Attach(window, width, height) => {
                     if let Err(error) = self.attach(window, width, height) {
                         // attach_surface 失败没有把 window 放入 GpuSurface，故由此处归还。
+                        // SAFETY: this command still owns the ANativeWindow
+                        // reference because attach did not transfer it.
                         unsafe {
                             ANativeWindow_release(window);
                         }
@@ -4641,10 +4695,14 @@ impl RendererCore {
         let (actual_w, actual_h) = if self.surface_window.is_null() {
             (0, 0)
         } else {
-            (
-                unsafe { fable_anw_get_width(self.surface_window) },
-                unsafe { fable_anw_get_height(self.surface_window) },
-            )
+            // SAFETY: RendererCore retains this ANativeWindow reference while
+            // attached, and the renderer thread is its only user.
+            unsafe {
+                (
+                    fable_anw_get_width(self.surface_window),
+                    fable_anw_get_height(self.surface_window),
+                )
+            }
         };
         let width_px = if actual_w > 0 {
             actual_w as u32
@@ -4656,6 +4714,8 @@ impl RendererCore {
         } else {
             height_px
         };
+        // SAFETY: this core exclusively owns the paired terminal and render
+        // state, so libghostty-vt sees no concurrent mutation.
         unsafe {
             if !check(
                 ghostty_render_state_update(self.state, self.terminal),
@@ -4669,18 +4729,23 @@ impl RendererCore {
         // 廉价全局元数据（不遍历行）。
         // 工单 30：核心光标可见性（DECTCEM ?25）与 UI 推送的闪烁相位 AND，
         // 与旧路径 shouldCursorBeVisible()（enabled && blink 相位）行为一致。
-        let cursor_visible =
-            unsafe { get_bool(self.state, DATA_CURSOR_VISIBLE) } && self.cursor_blink_phase;
+        // SAFETY: this core exclusively owns a live render state; the scalar
+        // reads use the matching libghostty-vt output types.
+        let (cursor_visible_from_core, cursor_x, cursor_y, cursor_style, dirty) = unsafe {
+            (
+                get_bool(self.state, DATA_CURSOR_VISIBLE),
+                get_u16(self.state, DATA_CURSOR_VIEWPORT_X),
+                get_u16(self.state, DATA_CURSOR_VIEWPORT_Y),
+                get_i32(self.state, DATA_CURSOR_VISUAL_STYLE),
+                get_i32(self.state, DATA_DIRTY),
+            )
+        };
+        let cursor_visible = cursor_visible_from_core && self.cursor_blink_phase;
         let cursor = if cursor_visible {
-            Some((
-                unsafe { get_u16(self.state, DATA_CURSOR_VIEWPORT_X) },
-                unsafe { get_u16(self.state, DATA_CURSOR_VIEWPORT_Y) },
-            ))
+            Some((cursor_x, cursor_y))
         } else {
             None
         };
-        let cursor_style = unsafe { get_i32(self.state, DATA_CURSOR_VISUAL_STYLE) };
-        let dirty = unsafe { get_i32(self.state, DATA_DIRTY) };
         let meta = (self.cols, self.rows, cursor, cursor_style);
         let overlays_signature = {
             let mut hasher = DefaultHasher::new();
@@ -4881,6 +4946,8 @@ impl RendererCore {
             cursor_has_value: false,
             palette: [GhosttyColorRgb { r: 0, g: 0, b: 0 }; 256],
         };
+        // SAFETY: this core exclusively owns the render state; `colors` is a
+        // correctly sized repr(C) output, then satisfies collect_snapshot.
         unsafe {
             let _ = ghostty_render_state_colors_get(self.state, &mut colors);
             collect_snapshot(self.state, &colors, self.palette.map(|p| p.ansi))
@@ -4891,6 +4958,8 @@ impl RendererCore {
     /// 否则 update 永远保持 FULL，脏行增量失效。
     fn reset_dirty(&mut self) {
         let false_value = false;
+        // SAFETY: this core exclusively owns the paired terminal and render
+        // state; iterator and all output values remain valid until freed here.
         unsafe {
             let _ = ghostty_render_state_set(
                 self.state,
@@ -5305,6 +5374,8 @@ impl Drop for Renderer {
 impl Drop for RendererCore {
     fn drop(&mut self) {
         self.detach();
+        // SAFETY: RendererCore owns both C handles and Drop runs once after
+        // the renderer thread stopped using them.
         unsafe {
             ghostty_render_state_free(self.state);
             ghostty_terminal_free(self.terminal);

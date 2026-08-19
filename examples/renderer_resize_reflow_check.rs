@@ -22,12 +22,16 @@ extern "C" {
 fn drain_pty(pty: i64) -> Vec<u8> {
     let mut out = Vec::new();
     let mut buf = [0u8; 4096];
-    while unsafe { fable_pty_read_ready(pty) } != 0 {
-        let n = unsafe { fable_pty_read(pty, buf.as_mut_ptr(), buf.len()) };
-        if n <= 0 {
-            break;
+    // SAFETY: caller owns a live PTY handle; `buf` is writable for the exact
+    // length given to the shim, which returns at most that many bytes.
+    unsafe {
+        while fable_pty_read_ready(pty) != 0 {
+            let n = fable_pty_read(pty, buf.as_mut_ptr(), buf.len());
+            if n <= 0 {
+                break;
+            }
+            out.extend_from_slice(&buf[..n as usize]);
         }
-        out.extend_from_slice(&buf[..n as usize]);
     }
     out
 }
@@ -57,6 +61,8 @@ fn main() {
     let renderer = Renderer::new(60, 24).expect("renderer");
 
     let shell_c = std::ffi::CString::new(SHELL).unwrap();
+    // SAFETY: `shell_c` is NUL-terminated and lives through the spawn call;
+    // this function owns the returned PTY handle until its final close.
     let pty = unsafe { fable_pty_spawn(shell_c.as_ptr(), 60, 24) };
     assert!(pty != 0, "pty spawn 失败");
 
@@ -72,6 +78,8 @@ fn main() {
     }
 
     let ps1 = "PS1='$ '\r";
+    // SAFETY: this function owns a live PTY and `ps1` stays valid during the
+    // synchronous shim write.
     unsafe { fable_pty_write(pty, ps1.as_ptr(), ps1.len()) };
     thread::sleep(Duration::from_millis(300));
     let out = drain_pty(pty);
@@ -94,6 +102,8 @@ fn main() {
     ];
     let mut cols: u16 = 60;
     for (i, chunk) in chunks.iter().enumerate() {
+        // SAFETY: this function owns a live PTY and `chunk` stays valid during
+        // the synchronous shim write.
         unsafe { fable_pty_write(pty, chunk.as_ptr(), chunk.len()) };
         thread::sleep(Duration::from_millis(120));
         let out = drain_pty(pty);
@@ -104,6 +114,8 @@ fn main() {
         for _ in 0..3 {
             cols = (cols - 4).max(10);
             let rows = (24u16 * cols / 60).max(8);
+            // SAFETY: this function owns the PTY; columns and rows are plain
+            // C integers within the diagnostic's supported range.
             unsafe { fable_pty_resize(pty, cols as c_int, rows as c_int) };
             renderer.resize(cols, rows);
             thread::sleep(Duration::from_millis(30));
@@ -130,6 +142,8 @@ fn main() {
     // 输入完成后再放大回 60 列。
     for &target in &[40u16, 26, 18, 26, 40, 60] {
         let rows = (24u16 * target / 60).max(8);
+        // SAFETY: this function owns the PTY; columns and rows are plain C
+        // integers within the diagnostic's supported range.
         unsafe { fable_pty_resize(pty, target as c_int, rows as c_int) };
         renderer.resize(target, rows);
         thread::sleep(Duration::from_millis(80));
@@ -173,5 +187,7 @@ fn main() {
         std::process::exit(1);
     }
 
+    // SAFETY: this function still owns the nonzero PTY handle and closes it
+    // exactly once after all reads and writes finish.
     unsafe { fable_pty_close(pty) };
 }

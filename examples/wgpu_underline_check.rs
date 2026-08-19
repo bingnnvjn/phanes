@@ -60,20 +60,26 @@ const COLS: u16 = 80;
 const ROWS: u16 = 24;
 
 unsafe fn collect(state: GhosttyRenderState) -> Snapshot {
-    let mut colors = GhosttyRenderStateColors {
-        size: std::mem::size_of::<GhosttyRenderStateColors>(),
-        background: GhosttyColorRgb { r: 0, g: 0, b: 0 },
-        foreground: GhosttyColorRgb { r: 0, g: 0, b: 0 },
-        cursor: GhosttyColorRgb { r: 0, g: 0, b: 0 },
-        cursor_has_value: false,
-        palette: [GhosttyColorRgb { r: 0, g: 0, b: 0 }; 256],
-    };
-    let _ = ghostty_render_state_colors_get(state, &mut colors);
-    fable_render::render_android::collect_snapshot(state, &colors, None)
+    // SAFETY: caller supplies a live state, `colors` is a matching C output,
+    // and the snapshot copies all data before state is mutated again.
+    unsafe {
+        let mut colors = GhosttyRenderStateColors {
+            size: std::mem::size_of::<GhosttyRenderStateColors>(),
+            background: GhosttyColorRgb { r: 0, g: 0, b: 0 },
+            foreground: GhosttyColorRgb { r: 0, g: 0, b: 0 },
+            cursor: GhosttyColorRgb { r: 0, g: 0, b: 0 },
+            cursor_has_value: false,
+            palette: [GhosttyColorRgb { r: 0, g: 0, b: 0 }; 256],
+        };
+        let _ = ghostty_render_state_colors_get(state, &mut colors);
+        fable_render::render_android::collect_snapshot(state, &colors, None)
+    }
 }
 
 fn main() {
     fable_render::ffi::force_tls_pad();
+    // SAFETY: this check owns its terminal and render-state pair and releases
+    // both before returning.
     unsafe {
         let opts = GhosttyTerminalOptions {
             cols: COLS,

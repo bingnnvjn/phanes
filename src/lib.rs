@@ -1,6 +1,7 @@
 //! 工单 10：Fable 安卓渲染器（cdylib：libfable_render.so）。
 
 #![deny(unsafe_op_in_unsafe_fn)]
+#![deny(clippy::undocumented_unsafe_blocks)]
 #![deny(clippy::missing_safety_doc)]
 #![deny(clippy::todo, clippy::unimplemented, clippy::dbg_macro)]
 #![cfg_attr(

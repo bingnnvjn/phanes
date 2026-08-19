@@ -69,16 +69,20 @@ fn check(result: GhosttyResult, what: &str) {
 }
 
 unsafe fn collect(state: GhosttyRenderState) -> Snapshot {
-    let mut colors = GhosttyRenderStateColors {
-        size: std::mem::size_of::<GhosttyRenderStateColors>(),
-        background: GhosttyColorRgb { r: 0, g: 0, b: 0 },
-        foreground: GhosttyColorRgb { r: 0, g: 0, b: 0 },
-        cursor: GhosttyColorRgb { r: 0, g: 0, b: 0 },
-        cursor_has_value: false,
-        palette: [GhosttyColorRgb { r: 0, g: 0, b: 0 }; 256],
-    };
-    let _ = ghostty_render_state_colors_get(state, &mut colors);
-    fable_render::render_android::collect_snapshot(state, &colors, None)
+    // SAFETY: caller supplies a live state, `colors` is a matching C output,
+    // and the snapshot copies all data before state is mutated again.
+    unsafe {
+        let mut colors = GhosttyRenderStateColors {
+            size: std::mem::size_of::<GhosttyRenderStateColors>(),
+            background: GhosttyColorRgb { r: 0, g: 0, b: 0 },
+            foreground: GhosttyColorRgb { r: 0, g: 0, b: 0 },
+            cursor: GhosttyColorRgb { r: 0, g: 0, b: 0 },
+            cursor_has_value: false,
+            palette: [GhosttyColorRgb { r: 0, g: 0, b: 0 }; 256],
+        };
+        let _ = ghostty_render_state_colors_get(state, &mut colors);
+        fable_render::render_android::collect_snapshot(state, &colors, None)
+    }
 }
 
 fn print_case(ok: bool, label: &str, all_ok: &mut bool) {
@@ -775,172 +779,177 @@ fn dark_pixel_count(pixels: &[u8], width: u32, y0: u32, y1: u32, x1: u32) -> u32
 }
 
 unsafe fn gpu_checks() -> bool {
-    let mut all_ok = true;
-    let opts = GhosttyTerminalOptions {
-        cols: COLS,
-        rows: ROWS,
-        max_scrollback: 10000,
-    };
-    let mut terminal: GhosttyTerminal = std::ptr::null_mut();
-    check(
-        ghostty_terminal_new(std::ptr::null(), &mut terminal, opts),
-        "terminal_new",
-    );
-    let mut state: GhosttyRenderState = std::ptr::null_mut();
-    check(
-        ghostty_render_state_new(std::ptr::null(), &mut state),
-        "render_state_new",
-    );
-    let data = b"Hello World\r\n\x1b[31mRED\x1b[0m\r\n";
-    ghostty_terminal_vt_write(terminal, data.as_ptr(), data.len());
-    check(
-        ghostty_render_state_update(state, terminal),
-        "render_state_update",
-    );
-    let snapshot = collect(state);
+    // SAFETY: this self-check owns its terminal and render-state pair for the
+    // whole function and frees both after the final readback.
+    unsafe {
+        let mut all_ok = true;
+        let opts = GhosttyTerminalOptions {
+            cols: COLS,
+            rows: ROWS,
+            max_scrollback: 10000,
+        };
+        let mut terminal: GhosttyTerminal = std::ptr::null_mut();
+        check(
+            ghostty_terminal_new(std::ptr::null(), &mut terminal, opts),
+            "terminal_new",
+        );
+        let mut state: GhosttyRenderState = std::ptr::null_mut();
+        check(
+            ghostty_render_state_new(std::ptr::null(), &mut state),
+            "render_state_new",
+        );
+        let data = b"Hello World\r\n\x1b[31mRED\x1b[0m\r\n";
+        ghostty_terminal_vt_write(terminal, data.as_ptr(), data.len());
+        check(
+            ghostty_render_state_update(state, terminal),
+            "render_state_update",
+        );
+        let snapshot = collect(state);
 
-    let mut atlas = GlyphAtlas::new().expect("atlas");
+        let mut atlas = GlyphAtlas::new().expect("atlas");
 
-    // 字号像素断言：行高与字形像素随字号变化。
-    atlas.set_pixels_per_em(16.0);
-    let (cw16, ch16) = atlas.cell_size();
-    let frame16 = render_offscreen(
-        &snapshot,
-        &mut atlas,
-        &[],
-        cw16 * COLS as u32,
-        ch16 * ROWS as u32,
-        [0.12, 0.12, 0.12, 1.0],
-    );
-    atlas.set_pixels_per_em(24.0);
-    let (cw24, ch24) = atlas.cell_size();
-    let frame24 = render_offscreen(
-        &snapshot,
-        &mut atlas,
-        &[],
-        cw24 * COLS as u32,
-        ch24 * ROWS as u32,
-        [0.12, 0.12, 0.12, 1.0],
-    );
-    let bbox16 = text_bbox_height(&frame16, cw16 * COLS as u32, ch16);
-    let bbox24 = text_bbox_height(&frame24, cw24 * COLS as u32, ch24);
-    println!("font16 cell=({cw16},{ch16}) text_bbox_h={bbox16}");
-    println!("font24 cell=({cw24},{ch24}) text_bbox_h={bbox24}");
-    print_case(
-        ch24 > ch16 && cw24 > cw16,
-        "font: 行高/格宽像素随字号变大",
-        &mut all_ok,
-    );
-    print_case(bbox24 > bbox16, "font: 字形像素尺寸随字号变大", &mut all_ok);
+        // 字号像素断言：行高与字形像素随字号变化。
+        atlas.set_pixels_per_em(16.0);
+        let (cw16, ch16) = atlas.cell_size();
+        let frame16 = render_offscreen(
+            &snapshot,
+            &mut atlas,
+            &[],
+            cw16 * COLS as u32,
+            ch16 * ROWS as u32,
+            [0.12, 0.12, 0.12, 1.0],
+        );
+        atlas.set_pixels_per_em(24.0);
+        let (cw24, ch24) = atlas.cell_size();
+        let frame24 = render_offscreen(
+            &snapshot,
+            &mut atlas,
+            &[],
+            cw24 * COLS as u32,
+            ch24 * ROWS as u32,
+            [0.12, 0.12, 0.12, 1.0],
+        );
+        let bbox16 = text_bbox_height(&frame16, cw16 * COLS as u32, ch16);
+        let bbox24 = text_bbox_height(&frame24, cw24 * COLS as u32, ch24);
+        println!("font16 cell=({cw16},{ch16}) text_bbox_h={bbox16}");
+        println!("font24 cell=({cw24},{ch24}) text_bbox_h={bbox24}");
+        print_case(
+            ch24 > ch16 && cw24 > cw16,
+            "font: 行高/格宽像素随字号变大",
+            &mut all_ok,
+        );
+        print_case(bbox24 > bbox16, "font: 字形像素尺寸随字号变大", &mut all_ok);
 
-    // 未 push：维持现状（灰底 + 核心解析 + SGR 红色保留）。
-    let frame_default = render_offscreen(
-        &snapshot,
-        &mut atlas,
-        &[],
-        cw24 * COLS as u32,
-        ch24 * ROWS as u32,
-        [0.12, 0.12, 0.12, 1.0],
-    );
-    let (dr, dg, db) = pixel_at(&frame_default, cw24 * COLS as u32, cw24 * 30, ch24 * 5);
-    println!("default bg px=({dr},{dg},{db})");
-    print_case(
-        (25..=40).contains(&dr) && (25..=40).contains(&dg) && (25..=40).contains(&db),
-        "palette: 未 push 维持现状灰底",
-        &mut all_ok,
-    );
-    // SGR 红：第一行是 "Hello World"，第二行 "RED"。
-    let sgr_red = red_pixel_count(&frame_default, cw24 * COLS as u32, ch24, ch24 * 2);
-    println!("SGR red pixels={sgr_red}");
-    print_case(
-        sgr_red > 20,
-        "palette: 未 push 时 SGR 16 色语义保留",
-        &mut all_ok,
-    );
+        // 未 push：维持现状（灰底 + 核心解析 + SGR 红色保留）。
+        let frame_default = render_offscreen(
+            &snapshot,
+            &mut atlas,
+            &[],
+            cw24 * COLS as u32,
+            ch24 * ROWS as u32,
+            [0.12, 0.12, 0.12, 1.0],
+        );
+        let (dr, dg, db) = pixel_at(&frame_default, cw24 * COLS as u32, cw24 * 30, ch24 * 5);
+        println!("default bg px=({dr},{dg},{db})");
+        print_case(
+            (25..=40).contains(&dr) && (25..=40).contains(&dg) && (25..=40).contains(&db),
+            "palette: 未 push 维持现状灰底",
+            &mut all_ok,
+        );
+        // SGR 红：第一行是 "Hello World"，第二行 "RED"。
+        let sgr_red = red_pixel_count(&frame_default, cw24 * COLS as u32, ch24, ch24 * 2);
+        println!("SGR red pixels={sgr_red}");
+        print_case(
+            sgr_red > 20,
+            "palette: 未 push 时 SGR 16 色语义保留",
+            &mut all_ok,
+        );
 
-    // push 配色板：背景 / 前景 / 选择色像素变化。
-    let mut snap_pal = snapshot.clone();
-    let palette = Palette {
-        fg: Rgb {
-            r: 255,
-            g: 240,
-            b: 0,
-        },
-        bg: Rgb {
-            r: 20,
-            g: 80,
-            b: 20,
-        },
-        selection: Rgb {
-            r: 220,
-            g: 40,
-            b: 220,
-        },
-        cursor: Rgb { r: 0, g: 0, b: 0 },
-        ansi: fable_render::render_android::DEFAULT_ANSI_16,
-    };
-    apply_palette(&mut snap_pal, palette);
-    let overlays = [OverlayRange {
-        row: 0,
-        start_col: 5,
-        end_col: 7,
-    }];
-    let frame_pal = render_offscreen(
-        &snap_pal,
-        &mut atlas,
-        &overlays,
-        cw24 * COLS as u32,
-        ch24 * ROWS as u32,
-        [20.0 / 255.0, 80.0 / 255.0, 20.0 / 255.0, 1.0],
-    );
-    let (br, bg, bb) = pixel_at(&frame_pal, cw24 * COLS as u32, cw24 * 30, ch24 * 5);
-    println!("palette bg px=({br},{bg},{bb})");
-    print_case(
-        (10..=30).contains(&br) && (70..=95).contains(&bg) && (10..=30).contains(&bb),
-        "palette: push 后背景像素 = push bg",
-        &mut all_ok,
-    );
-    // 前景色断言：push fg=黄，第一行 "Hello World" 应出现黄色字形像素。
-    let pal_fg_yellow = yellow_pixel_count(&frame_pal, cw24 * COLS as u32, 0, ch24);
-    println!("palette fg yellow pixels={pal_fg_yellow}");
-    print_case(
-        pal_fg_yellow > 20,
-        "palette: push 后前景像素 = push fg",
-        &mut all_ok,
-    );
-    // 光标色：push 深色光标应原样渲染（不触发坑 H 近黑转亮蓝）。
-    let cursor_dark = dark_pixel_count(&frame_pal, cw24 * COLS as u32, ch24 * 2, ch24 * 3, cw24);
-    println!("palette cursor dark pixels={cursor_dark}");
-    print_case(
-        cursor_dark > 20,
-        "palette: push 深色光标原样渲染",
-        &mut all_ok,
-    );
-    // 选择色混合：0.45*sel + 0.55*bg ≈ (110,62,110)，取第 5 列空格中心避开字形。
-    let (cr, cg, cb) = pixel_at(
-        &frame_pal,
-        cw24 * COLS as u32,
-        cw24 * 5 + cw24 / 2,
-        ch24 / 2,
-    );
-    println!("palette selection px=({cr},{cg},{cb})");
-    print_case(
-        (85..=135).contains(&cr) && (40..=85).contains(&cg) && (85..=135).contains(&cb),
-        "palette: push 后选择色像素 = push selection 混合",
-        &mut all_ok,
-    );
-    // SGR 红在 push 配色板下仍保留（16 色语义不变）。
-    let pal_sgr_red = red_pixel_count(&frame_pal, cw24 * COLS as u32, ch24, ch24 * 2);
-    println!("palette SGR red pixels={pal_sgr_red}");
-    print_case(
-        pal_sgr_red > 20,
-        "palette: push 后 SGR 16 色仍保留",
-        &mut all_ok,
-    );
+        // push 配色板：背景 / 前景 / 选择色像素变化。
+        let mut snap_pal = snapshot.clone();
+        let palette = Palette {
+            fg: Rgb {
+                r: 255,
+                g: 240,
+                b: 0,
+            },
+            bg: Rgb {
+                r: 20,
+                g: 80,
+                b: 20,
+            },
+            selection: Rgb {
+                r: 220,
+                g: 40,
+                b: 220,
+            },
+            cursor: Rgb { r: 0, g: 0, b: 0 },
+            ansi: fable_render::render_android::DEFAULT_ANSI_16,
+        };
+        apply_palette(&mut snap_pal, palette);
+        let overlays = [OverlayRange {
+            row: 0,
+            start_col: 5,
+            end_col: 7,
+        }];
+        let frame_pal = render_offscreen(
+            &snap_pal,
+            &mut atlas,
+            &overlays,
+            cw24 * COLS as u32,
+            ch24 * ROWS as u32,
+            [20.0 / 255.0, 80.0 / 255.0, 20.0 / 255.0, 1.0],
+        );
+        let (br, bg, bb) = pixel_at(&frame_pal, cw24 * COLS as u32, cw24 * 30, ch24 * 5);
+        println!("palette bg px=({br},{bg},{bb})");
+        print_case(
+            (10..=30).contains(&br) && (70..=95).contains(&bg) && (10..=30).contains(&bb),
+            "palette: push 后背景像素 = push bg",
+            &mut all_ok,
+        );
+        // 前景色断言：push fg=黄，第一行 "Hello World" 应出现黄色字形像素。
+        let pal_fg_yellow = yellow_pixel_count(&frame_pal, cw24 * COLS as u32, 0, ch24);
+        println!("palette fg yellow pixels={pal_fg_yellow}");
+        print_case(
+            pal_fg_yellow > 20,
+            "palette: push 后前景像素 = push fg",
+            &mut all_ok,
+        );
+        // 光标色：push 深色光标应原样渲染（不触发坑 H 近黑转亮蓝）。
+        let cursor_dark =
+            dark_pixel_count(&frame_pal, cw24 * COLS as u32, ch24 * 2, ch24 * 3, cw24);
+        println!("palette cursor dark pixels={cursor_dark}");
+        print_case(
+            cursor_dark > 20,
+            "palette: push 深色光标原样渲染",
+            &mut all_ok,
+        );
+        // 选择色混合：0.45*sel + 0.55*bg ≈ (110,62,110)，取第 5 列空格中心避开字形。
+        let (cr, cg, cb) = pixel_at(
+            &frame_pal,
+            cw24 * COLS as u32,
+            cw24 * 5 + cw24 / 2,
+            ch24 / 2,
+        );
+        println!("palette selection px=({cr},{cg},{cb})");
+        print_case(
+            (85..=135).contains(&cr) && (40..=85).contains(&cg) && (85..=135).contains(&cb),
+            "palette: push 后选择色像素 = push selection 混合",
+            &mut all_ok,
+        );
+        // SGR 红在 push 配色板下仍保留（16 色语义不变）。
+        let pal_sgr_red = red_pixel_count(&frame_pal, cw24 * COLS as u32, ch24, ch24 * 2);
+        println!("palette SGR red pixels={pal_sgr_red}");
+        print_case(
+            pal_sgr_red > 20,
+            "palette: push 后 SGR 16 色仍保留",
+            &mut all_ok,
+        );
 
-    ghostty_render_state_free(state);
-    ghostty_terminal_free(terminal);
-    all_ok
+        ghostty_render_state_free(state);
+        ghostty_terminal_free(terminal);
+        all_ok
+    }
 }
 
 fn main() {
@@ -951,6 +960,7 @@ fn main() {
     print_case(mailbox_ok, "mailbox 层全过", &mut all_ok);
 
     println!("\n== 工单 14 GPU 离屏像素自检 ==");
+    // SAFETY: `gpu_checks` creates, uses, and frees every C handle internally.
     let gpu_ok = unsafe { gpu_checks() };
     print_case(gpu_ok, "GPU 像素层全过", &mut all_ok);
 

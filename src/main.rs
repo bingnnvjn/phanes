@@ -13,156 +13,187 @@ fn check(result: GhosttyResult, what: &str) {
 }
 
 unsafe fn get_u16(state: GhosttyRenderState, data: i32) -> u16 {
-    let mut v: u16 = 0;
-    check(
-        ghostty_render_state_get(state, data, &mut v as *mut u16 as *mut c_void),
-        "get_u16",
-    );
-    v
+    // SAFETY: caller supplies a live state and `v` has the requested C ABI.
+    unsafe {
+        let mut v: u16 = 0;
+        check(
+            ghostty_render_state_get(state, data, &mut v as *mut u16 as *mut c_void),
+            "get_u16",
+        );
+        v
+    }
 }
 
 unsafe fn get_bool(state: GhosttyRenderState, data: i32) -> bool {
-    let mut v: bool = false;
-    check(
-        ghostty_render_state_get(state, data, &mut v as *mut bool as *mut c_void),
-        "get_bool",
-    );
-    v
+    // SAFETY: caller supplies a live state and `v` has the requested C ABI.
+    unsafe {
+        let mut v: bool = false;
+        check(
+            ghostty_render_state_get(state, data, &mut v as *mut bool as *mut c_void),
+            "get_bool",
+        );
+        v
+    }
 }
 
 unsafe fn get_i32(state: GhosttyRenderState, data: i32) -> i32 {
-    let mut v: i32 = 0;
-    check(
-        ghostty_render_state_get(state, data, &mut v as *mut i32 as *mut c_void),
-        "get_i32",
-    );
-    v
+    // SAFETY: caller supplies a live state and `v` has the requested C ABI.
+    unsafe {
+        let mut v: i32 = 0;
+        check(
+            ghostty_render_state_get(state, data, &mut v as *mut i32 as *mut c_void),
+            "get_i32",
+        );
+        v
+    }
 }
 
 /// 取当前格子的 UTF-8 文本（两段式：先问长度，再取数据）。
 unsafe fn cell_text(cells: GhosttyRenderStateRowCells) -> String {
-    let mut buf = GhosttyBuffer {
-        ptr: std::ptr::null_mut(),
-        cap: 0,
-        len: 0,
-    };
-    let r = ghostty_render_state_row_cells_get(
-        cells,
-        CELL_DATA_GRAPHEMES_UTF8,
-        &mut buf as *mut GhosttyBuffer as *mut c_void,
-    );
-    if r == GHOSTTY_OUT_OF_SPACE && buf.len > 0 {
-        let mut bytes = vec![0u8; buf.len];
-        let mut buf2 = GhosttyBuffer {
-            ptr: bytes.as_mut_ptr(),
-            cap: bytes.len(),
+    // SAFETY: caller positions `cells` on a live cell and all output buffers
+    // remain valid for each synchronous libghostty-vt call.
+    unsafe {
+        let mut buf = GhosttyBuffer {
+            ptr: std::ptr::null_mut(),
+            cap: 0,
             len: 0,
         };
-        check(
-            ghostty_render_state_row_cells_get(
-                cells,
-                CELL_DATA_GRAPHEMES_UTF8,
-                &mut buf2 as *mut GhosttyBuffer as *mut c_void,
-            ),
-            "cell_text 取数据",
+        let r = ghostty_render_state_row_cells_get(
+            cells,
+            CELL_DATA_GRAPHEMES_UTF8,
+            &mut buf as *mut GhosttyBuffer as *mut c_void,
         );
-        bytes.truncate(buf2.len);
-        String::from_utf8_lossy(&bytes).into_owned()
-    } else {
-        String::new()
+        if r == GHOSTTY_OUT_OF_SPACE && buf.len > 0 {
+            let mut bytes = vec![0u8; buf.len];
+            let mut buf2 = GhosttyBuffer {
+                ptr: bytes.as_mut_ptr(),
+                cap: bytes.len(),
+                len: 0,
+            };
+            check(
+                ghostty_render_state_row_cells_get(
+                    cells,
+                    CELL_DATA_GRAPHEMES_UTF8,
+                    &mut buf2 as *mut GhosttyBuffer as *mut c_void,
+                ),
+                "cell_text 取数据",
+            );
+            bytes.truncate(buf2.len);
+            String::from_utf8_lossy(&bytes).into_owned()
+        } else {
+            String::new()
+        }
     }
 }
 
 unsafe fn cell_color(cells: GhosttyRenderStateRowCells, data: i32) -> Option<GhosttyColorRgb> {
-    let mut c = GhosttyColorRgb { r: 0, g: 0, b: 0 };
-    let r = ghostty_render_state_row_cells_get(
-        cells,
-        data,
-        &mut c as *mut GhosttyColorRgb as *mut c_void,
-    );
-    if r == GHOSTTY_SUCCESS {
-        Some(c)
-    } else {
-        None
+    // SAFETY: caller positions `cells` on a live cell and `c` is the matching
+    // repr(C) output slot.
+    unsafe {
+        let mut c = GhosttyColorRgb { r: 0, g: 0, b: 0 };
+        let r = ghostty_render_state_row_cells_get(
+            cells,
+            data,
+            &mut c as *mut GhosttyColorRgb as *mut c_void,
+        );
+        if r == GHOSTTY_SUCCESS {
+            Some(c)
+        } else {
+            None
+        }
     }
 }
 
 unsafe fn terminal_usize(terminal: GhosttyTerminal, data: i32) -> usize {
-    let mut v: usize = 0;
-    check(
-        ghostty_terminal_get(terminal, data, &mut v as *mut usize as *mut c_void),
-        "terminal_get usize",
-    );
-    v
+    // SAFETY: caller supplies a live terminal and `v` is a `size_t` output.
+    unsafe {
+        let mut v: usize = 0;
+        check(
+            ghostty_terminal_get(terminal, data, &mut v as *mut usize as *mut c_void),
+            "terminal_get usize",
+        );
+        v
+    }
 }
 
 unsafe fn terminal_bool(terminal: GhosttyTerminal, data: i32) -> bool {
-    let mut v: bool = false;
-    check(
-        ghostty_terminal_get(terminal, data, &mut v as *mut bool as *mut c_void),
-        "terminal_get bool",
-    );
-    v
+    // SAFETY: caller supplies a live terminal and `v` is the matching output.
+    unsafe {
+        let mut v: bool = false;
+        check(
+            ghostty_terminal_get(terminal, data, &mut v as *mut bool as *mut c_void),
+            "terminal_get bool",
+        );
+        v
+    }
 }
 
 unsafe fn terminal_scrollbar(terminal: GhosttyTerminal) -> GhosttyTerminalScrollbar {
-    let mut sb = GhosttyTerminalScrollbar {
-        total: 0,
-        offset: 0,
-        len: 0,
-    };
-    check(
-        ghostty_terminal_get(
-            terminal,
-            TERMINAL_DATA_SCROLLBAR,
-            &mut sb as *mut _ as *mut c_void,
-        ),
-        "terminal_get scrollbar",
-    );
-    sb
+    // SAFETY: caller supplies a live terminal and `sb` is the matching C
+    // output slot.
+    unsafe {
+        let mut sb = GhosttyTerminalScrollbar {
+            total: 0,
+            offset: 0,
+            len: 0,
+        };
+        check(
+            ghostty_terminal_get(
+                terminal,
+                TERMINAL_DATA_SCROLLBAR,
+                &mut sb as *mut _ as *mut c_void,
+            ),
+            "terminal_get scrollbar",
+        );
+        sb
+    }
 }
 
 /// 重新读取渲染状态的全部视口行文本（新迭代器，不依赖旧迭代器状态）。
 unsafe fn collect_rows_text(state: GhosttyRenderState) -> Vec<String> {
-    let mut row_it: GhosttyRenderStateRowIterator = std::ptr::null_mut();
-    check(
-        ghostty_render_state_row_iterator_new(std::ptr::null(), &mut row_it),
-        "row_iterator_new",
-    );
-    check(
-        ghostty_render_state_get(
-            state,
-            DATA_ROW_ITERATOR,
-            &mut row_it as *mut _ as *mut c_void,
-        ),
-        "get row_iterator",
-    );
-    let mut cells: GhosttyRenderStateRowCells = std::ptr::null_mut();
-    check(
-        ghostty_render_state_row_cells_new(std::ptr::null(), &mut cells),
-        "row_cells_new",
-    );
-
-    let mut rows = Vec::new();
-    while ghostty_render_state_row_iterator_next(row_it) {
+    // SAFETY: caller supplies a live state; this diagnostic owns and frees the
+    // iterator and cells handles after copying their borrowed content.
+    unsafe {
+        let mut row_it: GhosttyRenderStateRowIterator = std::ptr::null_mut();
         check(
-            ghostty_render_state_row_get(
-                row_it,
-                ROW_DATA_CELLS,
-                &mut cells as *mut _ as *mut c_void,
-            ),
-            "row cells",
+            ghostty_render_state_row_iterator_new(std::ptr::null(), &mut row_it),
+            "row_iterator_new",
         );
-        let mut line = String::new();
-        while ghostty_render_state_row_cells_next(cells) {
-            line.push_str(&cell_text(cells));
-        }
-        rows.push(line.trim_end().to_string());
-    }
+        check(
+            ghostty_render_state_get(
+                state,
+                DATA_ROW_ITERATOR,
+                &mut row_it as *mut _ as *mut c_void,
+            ),
+            "get row_iterator",
+        );
+        let mut cells: GhosttyRenderStateRowCells = std::ptr::null_mut();
+        check(
+            ghostty_render_state_row_cells_new(std::ptr::null(), &mut cells),
+            "row_cells_new",
+        );
 
-    ghostty_render_state_row_cells_free(cells);
-    ghostty_render_state_row_iterator_free(row_it);
-    rows
+        let mut rows = Vec::new();
+        while ghostty_render_state_row_iterator_next(row_it) {
+            check(
+                ghostty_render_state_row_get(
+                    row_it,
+                    ROW_DATA_CELLS,
+                    &mut cells as *mut _ as *mut c_void,
+                ),
+                "row cells",
+            );
+            let mut line = String::new();
+            while ghostty_render_state_row_cells_next(cells) {
+                line.push_str(&cell_text(cells));
+            }
+            rows.push(line.trim_end().to_string());
+        }
+
+        ghostty_render_state_row_cells_free(cells);
+        ghostty_render_state_row_iterator_free(row_it);
+        rows
+    }
 }
 
 fn check_case(ok: bool, label: &str, all_ok: &mut bool) {
@@ -587,231 +618,241 @@ fn rasterize_grid(
 
 /// 滚动缓冲验证：200 行输出，terminal_get 看总量，scroll_viewport 遍历历史。
 unsafe fn verify_scroll() -> bool {
-    let mut all_ok = true;
-    let opts = GhosttyTerminalOptions {
-        cols: 80,
-        rows: 24,
-        max_scrollback: 10000,
-    };
-    let mut term: GhosttyTerminal = std::ptr::null_mut();
-    check(
-        ghostty_terminal_new(std::ptr::null(), &mut term, opts),
-        "scroll terminal_new",
-    );
+    // SAFETY: this diagnostic owns the terminal and render-state pair it
+    // creates, plus all stack and Vec output slots passed to libghostty-vt.
+    unsafe {
+        let mut all_ok = true;
+        let opts = GhosttyTerminalOptions {
+            cols: 80,
+            rows: 24,
+            max_scrollback: 10000,
+        };
+        let mut term: GhosttyTerminal = std::ptr::null_mut();
+        check(
+            ghostty_terminal_new(std::ptr::null(), &mut term, opts),
+            "scroll terminal_new",
+        );
 
-    let mut expected = Vec::with_capacity(200);
-    let mut data = String::with_capacity(200 * 10);
-    for i in 0..200usize {
-        data.push_str(&format!("line-{i:03}\r\n"));
-        expected.push(format!("line-{i:03}"));
-    }
-    ghostty_terminal_vt_write(term, data.as_ptr(), data.len());
+        let mut expected = Vec::with_capacity(200);
+        let mut data = String::with_capacity(200 * 10);
+        for i in 0..200usize {
+            data.push_str(&format!("line-{i:03}\r\n"));
+            expected.push(format!("line-{i:03}"));
+        }
+        ghostty_terminal_vt_write(term, data.as_ptr(), data.len());
 
-    let total = terminal_usize(term, TERMINAL_DATA_TOTAL_ROWS);
-    let scrollback = terminal_usize(term, TERMINAL_DATA_SCROLLBACK_ROWS);
-    println!("\n== 滚动缓冲验证 ==");
-    println!("total_rows={total} scrollback_rows={scrollback} viewport=80x24");
-    check_case(
-        total > 24,
-        "scroll: total_rows > viewport rows",
-        &mut all_ok,
-    );
-    check_case(scrollback > 0, "scroll: scrollback_rows > 0", &mut all_ok);
+        let total = terminal_usize(term, TERMINAL_DATA_TOTAL_ROWS);
+        let scrollback = terminal_usize(term, TERMINAL_DATA_SCROLLBACK_ROWS);
+        println!("\n== 滚动缓冲验证 ==");
+        println!("total_rows={total} scrollback_rows={scrollback} viewport=80x24");
+        check_case(
+            total > 24,
+            "scroll: total_rows > viewport rows",
+            &mut all_ok,
+        );
+        check_case(scrollback > 0, "scroll: scrollback_rows > 0", &mut all_ok);
 
-    let mut state: GhosttyRenderState = std::ptr::null_mut();
-    check(
-        ghostty_render_state_new(std::ptr::null(), &mut state),
-        "scroll render_state_new",
-    );
-    check(
-        ghostty_render_state_update(state, term),
-        "scroll render_state_update",
-    );
+        let mut state: GhosttyRenderState = std::ptr::null_mut();
+        check(
+            ghostty_render_state_new(std::ptr::null(), &mut state),
+            "scroll render_state_new",
+        );
+        check(
+            ghostty_render_state_update(state, term),
+            "scroll render_state_update",
+        );
 
-    let bottom = collect_rows_text(state);
-    let bottom_nonempty: Vec<String> = bottom.iter().filter(|s| !s.is_empty()).cloned().collect();
-    let bottom_expected = expected[scrollback..].to_vec();
-    check_case(
-        bottom_nonempty == bottom_expected,
-        "scroll: 底部视口 = scrollback 起始后的全部内容行",
-        &mut all_ok,
-    );
+        let bottom = collect_rows_text(state);
+        let bottom_nonempty: Vec<String> =
+            bottom.iter().filter(|s| !s.is_empty()).cloned().collect();
+        let bottom_expected = expected[scrollback..].to_vec();
+        check_case(
+            bottom_nonempty == bottom_expected,
+            "scroll: 底部视口 = scrollback 起始后的全部内容行",
+            &mut all_ok,
+        );
 
-    let mut sb = terminal_scrollbar(term);
-    println!(
-        "scrollbar(total={}, offset={}, len={})",
-        sb.total, sb.offset, sb.len
-    );
-    check_case(
-        sb.total > 24 && sb.len == 24,
-        "scroll: scrollbar total>24 len=24",
-        &mut all_ok,
-    );
+        let mut sb = terminal_scrollbar(term);
+        println!(
+            "scrollbar(total={}, offset={}, len={})",
+            sb.total, sb.offset, sb.len
+        );
+        check_case(
+            sb.total > 24 && sb.len == 24,
+            "scroll: scrollbar total>24 len=24",
+            &mut all_ok,
+        );
 
-    // 视口滚到历史顶部：ROW 0 = scrollback 第一行
-    ghostty_terminal_scroll_viewport(
-        term,
-        GhosttyTerminalScrollViewport {
-            tag: SCROLL_VIEWPORT_ROW,
-            value: GhosttyTerminalScrollViewportValue { row: 0 },
-        },
-    );
-    check(
-        ghostty_render_state_update(state, term),
-        "scroll update after top",
-    );
-    let top = collect_rows_text(state);
-    check_case(
-        top == expected[0..24].to_vec(),
-        "scroll: 顶部视口 = line-000..line-023",
-        &mut all_ok,
-    );
-    sb = terminal_scrollbar(term);
-    check_case(
-        sb.offset == 0,
-        "scroll: scrollbar offset=0 at top",
-        &mut all_ok,
-    );
-
-    // 按 24 行一屏遍历整个 scrollback，确认全量 200 行都可从 render state 取出
-    let mut seen = [false; 200];
-    let last_start = expected.len() - 24;
-    let mut start = 0usize;
-    while start < 200 {
+        // 视口滚到历史顶部：ROW 0 = scrollback 第一行
         ghostty_terminal_scroll_viewport(
             term,
             GhosttyTerminalScrollViewport {
                 tag: SCROLL_VIEWPORT_ROW,
-                value: GhosttyTerminalScrollViewportValue { row: start },
+                value: GhosttyTerminalScrollViewportValue { row: 0 },
             },
         );
         check(
             ghostty_render_state_update(state, term),
-            "scroll update walk",
+            "scroll update after top",
         );
-        let rows = collect_rows_text(state);
-        for (i, text) in rows.iter().enumerate() {
-            let idx = start + i;
-            if idx < expected.len() && expected[idx] == *text {
-                seen[idx] = true;
+        let top = collect_rows_text(state);
+        check_case(
+            top == expected[0..24].to_vec(),
+            "scroll: 顶部视口 = line-000..line-023",
+            &mut all_ok,
+        );
+        sb = terminal_scrollbar(term);
+        check_case(
+            sb.offset == 0,
+            "scroll: scrollbar offset=0 at top",
+            &mut all_ok,
+        );
+
+        // 按 24 行一屏遍历整个 scrollback，确认全量 200 行都可从 render state 取出
+        let mut seen = [false; 200];
+        let last_start = expected.len() - 24;
+        let mut start = 0usize;
+        while start < 200 {
+            ghostty_terminal_scroll_viewport(
+                term,
+                GhosttyTerminalScrollViewport {
+                    tag: SCROLL_VIEWPORT_ROW,
+                    value: GhosttyTerminalScrollViewportValue { row: start },
+                },
+            );
+            check(
+                ghostty_render_state_update(state, term),
+                "scroll update walk",
+            );
+            let rows = collect_rows_text(state);
+            for (i, text) in rows.iter().enumerate() {
+                let idx = start + i;
+                if idx < expected.len() && expected[idx] == *text {
+                    seen[idx] = true;
+                }
             }
+            if start == last_start {
+                break;
+            }
+            start = (start + 24).min(last_start);
         }
-        if start == last_start {
-            break;
-        }
-        start = (start + 24).min(last_start);
+        check_case(
+            seen.iter().all(|&x| x),
+            "scroll: 全量 200 行可经 viewport 遍历取出",
+            &mut all_ok,
+        );
+
+        // 滚回底部：视口应重新钉住 active area
+        ghostty_terminal_scroll_viewport(
+            term,
+            GhosttyTerminalScrollViewport {
+                tag: SCROLL_VIEWPORT_BOTTOM,
+                value: GhosttyTerminalScrollViewportValue { row: 0 },
+            },
+        );
+        check(
+            ghostty_render_state_update(state, term),
+            "scroll update after bottom",
+        );
+        let active = terminal_bool(term, TERMINAL_DATA_VIEWPORT_ACTIVE);
+        check_case(
+            active,
+            "scroll: viewport_active=true after bottom",
+            &mut all_ok,
+        );
+        let bottom2 = collect_rows_text(state);
+        let bottom2_nonempty: Vec<String> =
+            bottom2.iter().filter(|s| !s.is_empty()).cloned().collect();
+        check_case(
+            bottom2_nonempty == bottom_expected,
+            "scroll: 底部视口再次 = scrollback 起始后的全部内容行",
+            &mut all_ok,
+        );
+
+        ghostty_render_state_free(state);
+        ghostty_terminal_free(term);
+        all_ok
     }
-    check_case(
-        seen.iter().all(|&x| x),
-        "scroll: 全量 200 行可经 viewport 遍历取出",
-        &mut all_ok,
-    );
-
-    // 滚回底部：视口应重新钉住 active area
-    ghostty_terminal_scroll_viewport(
-        term,
-        GhosttyTerminalScrollViewport {
-            tag: SCROLL_VIEWPORT_BOTTOM,
-            value: GhosttyTerminalScrollViewportValue { row: 0 },
-        },
-    );
-    check(
-        ghostty_render_state_update(state, term),
-        "scroll update after bottom",
-    );
-    let active = terminal_bool(term, TERMINAL_DATA_VIEWPORT_ACTIVE);
-    check_case(
-        active,
-        "scroll: viewport_active=true after bottom",
-        &mut all_ok,
-    );
-    let bottom2 = collect_rows_text(state);
-    let bottom2_nonempty: Vec<String> = bottom2.iter().filter(|s| !s.is_empty()).cloned().collect();
-    check_case(
-        bottom2_nonempty == bottom_expected,
-        "scroll: 底部视口再次 = scrollback 起始后的全部内容行",
-        &mut all_ok,
-    );
-
-    ghostty_render_state_free(state);
-    ghostty_terminal_free(term);
-    all_ok
 }
 
 /// resize 重排验证：80x24 写 100 字符长行 → 40x10 → 应重排为 40/40/20 三行。
 unsafe fn verify_resize() -> bool {
-    let mut all_ok = true;
-    let opts = GhosttyTerminalOptions {
-        cols: 80,
-        rows: 24,
-        max_scrollback: 10000,
-    };
-    let mut term: GhosttyTerminal = std::ptr::null_mut();
-    check(
-        ghostty_terminal_new(std::ptr::null(), &mut term, opts),
-        "resize terminal_new",
-    );
+    // SAFETY: this diagnostic owns the terminal and render-state pair it
+    // creates, plus all stack and Vec output slots passed to libghostty-vt.
+    unsafe {
+        let mut all_ok = true;
+        let opts = GhosttyTerminalOptions {
+            cols: 80,
+            rows: 24,
+            max_scrollback: 10000,
+        };
+        let mut term: GhosttyTerminal = std::ptr::null_mut();
+        check(
+            ghostty_terminal_new(std::ptr::null(), &mut term, opts),
+            "resize terminal_new",
+        );
 
-    let line = "0123456789".repeat(10);
-    ghostty_terminal_vt_write(term, line.as_ptr(), line.len());
-    check(
-        ghostty_terminal_resize(term, 40, 10, 10, 20),
-        "resize(40x10)",
-    );
+        let line = "0123456789".repeat(10);
+        ghostty_terminal_vt_write(term, line.as_ptr(), line.len());
+        check(
+            ghostty_terminal_resize(term, 40, 10, 10, 20),
+            "resize(40x10)",
+        );
 
-    let mut state: GhosttyRenderState = std::ptr::null_mut();
-    check(
-        ghostty_render_state_new(std::ptr::null(), &mut state),
-        "resize render_state_new",
-    );
-    check(
-        ghostty_render_state_update(state, term),
-        "resize render_state_update",
-    );
+        let mut state: GhosttyRenderState = std::ptr::null_mut();
+        check(
+            ghostty_render_state_new(std::ptr::null(), &mut state),
+            "resize render_state_new",
+        );
+        check(
+            ghostty_render_state_update(state, term),
+            "resize render_state_update",
+        );
 
-    let cols = get_u16(state, DATA_COLS);
-    let rows = get_u16(state, DATA_ROWS);
-    let text_rows = collect_rows_text(state);
-    let nonempty: Vec<String> = text_rows
-        .iter()
-        .filter(|s| !s.is_empty())
-        .cloned()
-        .collect();
-    let expected_rows = vec![
-        line[0..40].to_string(),
-        line[40..80].to_string(),
-        line[80..100].to_string(),
-    ];
+        let cols = get_u16(state, DATA_COLS);
+        let rows = get_u16(state, DATA_ROWS);
+        let text_rows = collect_rows_text(state);
+        let nonempty: Vec<String> = text_rows
+            .iter()
+            .filter(|s| !s.is_empty())
+            .cloned()
+            .collect();
+        let expected_rows = vec![
+            line[0..40].to_string(),
+            line[40..80].to_string(),
+            line[80..100].to_string(),
+        ];
 
-    println!("\n== resize 重排验证 ==");
-    println!(
-        "after resize cols={cols} rows={rows} nonempty_rows={}",
-        nonempty.len()
-    );
-    check_case(
-        cols == 40 && rows == 10,
-        "resize: cols=40 rows=10",
-        &mut all_ok,
-    );
-    check_case(
-        nonempty.len() == 3,
-        "resize: 100 字符重排成 3 行",
-        &mut all_ok,
-    );
-    check_case(
-        nonempty == expected_rows,
-        "resize: 重排行 = 40/40/20 内容正确",
-        &mut all_ok,
-    );
-    check_case(
-        nonempty.concat() == line,
-        "resize: 三行拼接与原始长行一致",
-        &mut all_ok,
-    );
+        println!("\n== resize 重排验证 ==");
+        println!(
+            "after resize cols={cols} rows={rows} nonempty_rows={}",
+            nonempty.len()
+        );
+        check_case(
+            cols == 40 && rows == 10,
+            "resize: cols=40 rows=10",
+            &mut all_ok,
+        );
+        check_case(
+            nonempty.len() == 3,
+            "resize: 100 字符重排成 3 行",
+            &mut all_ok,
+        );
+        check_case(
+            nonempty == expected_rows,
+            "resize: 重排行 = 40/40/20 内容正确",
+            &mut all_ok,
+        );
+        check_case(
+            nonempty.concat() == line,
+            "resize: 三行拼接与原始长行一致",
+            &mut all_ok,
+        );
 
-    ghostty_render_state_free(state);
-    ghostty_terminal_free(term);
-    all_ok
+        ghostty_render_state_free(state);
+        ghostty_terminal_free(term);
+        all_ok
+    }
 }
 
 /// 工单 29：UI 状态验证（title / bell / mode）。libghostty-vt 的 title/bell
@@ -825,6 +866,8 @@ struct UiEvents {
 
 unsafe extern "C" fn ui_title_changed(_terminal: GhosttyTerminal, userdata: *mut c_void) {
     if !userdata.is_null() {
+        // SAFETY: verify_ui_state registers a pointer to its stack `UiEvents`
+        // and callbacks run synchronously before that function returns.
         let events = unsafe { &mut *(userdata as *mut UiEvents) };
         events.title_changed = true;
     }
@@ -832,218 +875,234 @@ unsafe extern "C" fn ui_title_changed(_terminal: GhosttyTerminal, userdata: *mut
 
 unsafe extern "C" fn ui_bell(_terminal: GhosttyTerminal, userdata: *mut c_void) {
     if !userdata.is_null() {
+        // SAFETY: verify_ui_state registers a pointer to its stack `UiEvents`
+        // and callbacks run synchronously before that function returns.
         let events = unsafe { &mut *(userdata as *mut UiEvents) };
         events.bell = true;
     }
 }
 
 unsafe fn terminal_title(terminal: GhosttyTerminal) -> String {
-    let mut s = GhosttyString {
-        ptr: std::ptr::null(),
-        len: 0,
-    };
-    check(
-        ghostty_terminal_get(
-            terminal,
-            TERMINAL_DATA_TITLE,
-            &mut s as *mut GhosttyString as *mut c_void,
-        ),
-        "terminal_get title",
-    );
-    if s.ptr.is_null() {
-        return String::new();
+    // SAFETY: caller supplies a live terminal and this function copies the
+    // library-borrowed title before any terminal mutation can occur.
+    unsafe {
+        let mut s = GhosttyString {
+            ptr: std::ptr::null(),
+            len: 0,
+        };
+        check(
+            ghostty_terminal_get(
+                terminal,
+                TERMINAL_DATA_TITLE,
+                &mut s as *mut GhosttyString as *mut c_void,
+            ),
+            "terminal_get title",
+        );
+        if s.ptr.is_null() {
+            return String::new();
+        }
+        String::from_utf8_lossy(std::slice::from_raw_parts(s.ptr, s.len)).into_owned()
     }
-    String::from_utf8_lossy(unsafe { std::slice::from_raw_parts(s.ptr, s.len) }).into_owned()
 }
 
 unsafe fn terminal_mode(terminal: GhosttyTerminal, mode: GhosttyMode) -> bool {
-    let mut v = false;
-    check(
-        ghostty_terminal_mode_get(terminal, mode, &mut v),
-        "terminal_mode_get",
-    );
-    v
+    // SAFETY: caller supplies a live terminal and `v` is the matching mode
+    // output slot.
+    unsafe {
+        let mut v = false;
+        check(
+            ghostty_terminal_mode_get(terminal, mode, &mut v),
+            "terminal_mode_get",
+        );
+        v
+    }
 }
 
 unsafe fn verify_ui_state() -> bool {
-    let mut all_ok = true;
-    let opts = GhosttyTerminalOptions {
-        cols: 80,
-        rows: 24,
-        max_scrollback: 10000,
-    };
-    let mut term: GhosttyTerminal = std::ptr::null_mut();
-    check(
-        ghostty_terminal_new(std::ptr::null(), &mut term, opts),
-        "ui terminal_new",
-    );
+    // SAFETY: this diagnostic owns the terminal it creates and the registered
+    // `UiEvents` box remains live for every synchronous callback.
+    unsafe {
+        let mut all_ok = true;
+        let opts = GhosttyTerminalOptions {
+            cols: 80,
+            rows: 24,
+            max_scrollback: 10000,
+        };
+        let mut term: GhosttyTerminal = std::ptr::null_mut();
+        check(
+            ghostty_terminal_new(std::ptr::null(), &mut term, opts),
+            "ui terminal_new",
+        );
 
-    let mut events = UiEvents::default();
-    let events_ptr = &mut events as *mut UiEvents;
-    let _ = ghostty_terminal_set(term, TERMINAL_OPT_USERDATA, events_ptr as *const c_void);
-    let _ = ghostty_terminal_set(
-        term,
-        TERMINAL_OPT_TITLE_CHANGED,
-        ui_title_changed as *const c_void,
-    );
-    let _ = ghostty_terminal_set(term, TERMINAL_OPT_BELL, ui_bell as *const c_void);
+        let mut events = UiEvents::default();
+        let events_ptr = &mut events as *mut UiEvents;
+        let _ = ghostty_terminal_set(term, TERMINAL_OPT_USERDATA, events_ptr as *const c_void);
+        let _ = ghostty_terminal_set(
+            term,
+            TERMINAL_OPT_TITLE_CHANGED,
+            ui_title_changed as *const c_void,
+        );
+        let _ = ghostty_terminal_set(term, TERMINAL_OPT_BELL, ui_bell as *const c_void);
 
-    println!("\n== UI 状态（title / bell / mode）验证 ==");
-    check_case(
-        terminal_title(term).is_empty(),
-        "ui: 初始无标题",
-        &mut all_ok,
-    );
-    check_case(
-        !events.title_changed && !events.bell,
-        "ui: 初始无事件",
-        &mut all_ok,
-    );
-    check_case(
-        !terminal_mode(term, GHOSTTY_MODE_ALT_SCREEN)
-            && !terminal_mode(term, GHOSTTY_MODE_ALT_SCREEN_SAVE),
-        "ui: 初始非 alt screen",
-        &mut all_ok,
-    );
-    check_case(
-        !terminal_bool(term, TERMINAL_DATA_MOUSE_TRACKING),
-        "ui: 初始无 mouse tracking",
-        &mut all_ok,
-    );
-    check_case(
-        terminal_mode(term, GHOSTTY_MODE_CURSOR_VISIBLE),
-        "ui: 初始光标可见",
-        &mut all_ok,
-    );
-    check_case(
-        !terminal_mode(term, GHOSTTY_MODE_CURSOR_BLINKING),
-        "ui: 初始不闪烁",
-        &mut all_ok,
-    );
-    check_case(
-        !terminal_mode(term, GHOSTTY_MODE_CURSOR_KEYS_APPLICATION),
-        "ui: 初始非 DECCKM",
-        &mut all_ok,
-    );
-    check_case(
-        !terminal_mode(term, GHOSTTY_MODE_KEYPAD_APPLICATION),
-        "ui: 初始非 DECKPAM",
-        &mut all_ok,
-    );
-    check_case(
-        !terminal_mode(term, GHOSTTY_MODE_BRACKETED_PASTE),
-        "ui: 初始非 bracketed paste",
-        &mut all_ok,
-    );
+        println!("\n== UI 状态（title / bell / mode）验证 ==");
+        check_case(
+            terminal_title(term).is_empty(),
+            "ui: 初始无标题",
+            &mut all_ok,
+        );
+        check_case(
+            !events.title_changed && !events.bell,
+            "ui: 初始无事件",
+            &mut all_ok,
+        );
+        check_case(
+            !terminal_mode(term, GHOSTTY_MODE_ALT_SCREEN)
+                && !terminal_mode(term, GHOSTTY_MODE_ALT_SCREEN_SAVE),
+            "ui: 初始非 alt screen",
+            &mut all_ok,
+        );
+        check_case(
+            !terminal_bool(term, TERMINAL_DATA_MOUSE_TRACKING),
+            "ui: 初始无 mouse tracking",
+            &mut all_ok,
+        );
+        check_case(
+            terminal_mode(term, GHOSTTY_MODE_CURSOR_VISIBLE),
+            "ui: 初始光标可见",
+            &mut all_ok,
+        );
+        check_case(
+            !terminal_mode(term, GHOSTTY_MODE_CURSOR_BLINKING),
+            "ui: 初始不闪烁",
+            &mut all_ok,
+        );
+        check_case(
+            !terminal_mode(term, GHOSTTY_MODE_CURSOR_KEYS_APPLICATION),
+            "ui: 初始非 DECCKM",
+            &mut all_ok,
+        );
+        check_case(
+            !terminal_mode(term, GHOSTTY_MODE_KEYPAD_APPLICATION),
+            "ui: 初始非 DECKPAM",
+            &mut all_ok,
+        );
+        check_case(
+            !terminal_mode(term, GHOSTTY_MODE_BRACKETED_PASTE),
+            "ui: 初始非 bracketed paste",
+            &mut all_ok,
+        );
 
-    let title0 = b"\x1b]0;fable-title\x07";
-    ghostty_terminal_vt_write(term, title0.as_ptr(), title0.len());
-    check_case(
-        terminal_title(term) == "fable-title",
-        "ui: OSC 0 标题可读",
-        &mut all_ok,
-    );
-    check_case(
-        events.title_changed,
-        "ui: title_changed 回调触发",
-        &mut all_ok,
-    );
+        let title0 = b"\x1b]0;fable-title\x07";
+        ghostty_terminal_vt_write(term, title0.as_ptr(), title0.len());
+        check_case(
+            terminal_title(term) == "fable-title",
+            "ui: OSC 0 标题可读",
+            &mut all_ok,
+        );
+        check_case(
+            events.title_changed,
+            "ui: title_changed 回调触发",
+            &mut all_ok,
+        );
 
-    let title2 = b"\x1b]2;second-title\x07";
-    ghostty_terminal_vt_write(term, title2.as_ptr(), title2.len());
-    check_case(
-        terminal_title(term) == "second-title",
-        "ui: OSC 2 覆盖标题可读",
-        &mut all_ok,
-    );
+        let title2 = b"\x1b]2;second-title\x07";
+        ghostty_terminal_vt_write(term, title2.as_ptr(), title2.len());
+        check_case(
+            terminal_title(term) == "second-title",
+            "ui: OSC 2 覆盖标题可读",
+            &mut all_ok,
+        );
 
-    ghostty_terminal_vt_write(term, b"\x07".as_ptr(), 1);
-    check_case(events.bell, "ui: bell 回调触发", &mut all_ok);
+        ghostty_terminal_vt_write(term, b"\x07".as_ptr(), 1);
+        check_case(events.bell, "ui: bell 回调触发", &mut all_ok);
 
-    let modes_on = b"\x1b[?1049h\x1b[?1000h\x1b[?25l\x1b[?12h\x1b[?1h\x1b[?66h\x1b[?2004h";
-    ghostty_terminal_vt_write(term, modes_on.as_ptr(), modes_on.len());
-    check_case(
-        terminal_mode(term, GHOSTTY_MODE_ALT_SCREEN)
-            || terminal_mode(term, GHOSTTY_MODE_ALT_SCREEN_SAVE),
-        "ui: 1049 进入 alt screen",
-        &mut all_ok,
-    );
-    check_case(
-        terminal_bool(term, TERMINAL_DATA_MOUSE_TRACKING),
-        "ui: 1000 启用 mouse tracking",
-        &mut all_ok,
-    );
-    check_case(
-        !terminal_mode(term, GHOSTTY_MODE_CURSOR_VISIBLE),
-        "ui: 25l 隐藏光标",
-        &mut all_ok,
-    );
-    check_case(
-        terminal_mode(term, GHOSTTY_MODE_CURSOR_BLINKING),
-        "ui: 12h 开启闪烁",
-        &mut all_ok,
-    );
-    check_case(
-        terminal_mode(term, GHOSTTY_MODE_CURSOR_KEYS_APPLICATION),
-        "ui: ?1h 开启 DECCKM",
-        &mut all_ok,
-    );
-    check_case(
-        terminal_mode(term, GHOSTTY_MODE_KEYPAD_APPLICATION),
-        "ui: ?66h 开启 DECKPAM",
-        &mut all_ok,
-    );
-    check_case(
-        terminal_mode(term, GHOSTTY_MODE_BRACKETED_PASTE),
-        "ui: ?2004h 开启 bracketed paste",
-        &mut all_ok,
-    );
+        let modes_on = b"\x1b[?1049h\x1b[?1000h\x1b[?25l\x1b[?12h\x1b[?1h\x1b[?66h\x1b[?2004h";
+        ghostty_terminal_vt_write(term, modes_on.as_ptr(), modes_on.len());
+        check_case(
+            terminal_mode(term, GHOSTTY_MODE_ALT_SCREEN)
+                || terminal_mode(term, GHOSTTY_MODE_ALT_SCREEN_SAVE),
+            "ui: 1049 进入 alt screen",
+            &mut all_ok,
+        );
+        check_case(
+            terminal_bool(term, TERMINAL_DATA_MOUSE_TRACKING),
+            "ui: 1000 启用 mouse tracking",
+            &mut all_ok,
+        );
+        check_case(
+            !terminal_mode(term, GHOSTTY_MODE_CURSOR_VISIBLE),
+            "ui: 25l 隐藏光标",
+            &mut all_ok,
+        );
+        check_case(
+            terminal_mode(term, GHOSTTY_MODE_CURSOR_BLINKING),
+            "ui: 12h 开启闪烁",
+            &mut all_ok,
+        );
+        check_case(
+            terminal_mode(term, GHOSTTY_MODE_CURSOR_KEYS_APPLICATION),
+            "ui: ?1h 开启 DECCKM",
+            &mut all_ok,
+        );
+        check_case(
+            terminal_mode(term, GHOSTTY_MODE_KEYPAD_APPLICATION),
+            "ui: ?66h 开启 DECKPAM",
+            &mut all_ok,
+        );
+        check_case(
+            terminal_mode(term, GHOSTTY_MODE_BRACKETED_PASTE),
+            "ui: ?2004h 开启 bracketed paste",
+            &mut all_ok,
+        );
 
-    let modes_off = b"\x1b[?1049l\x1b[?1000l\x1b[?25h\x1b[?12l\x1b[?1l\x1b[?66l\x1b[?2004l";
-    ghostty_terminal_vt_write(term, modes_off.as_ptr(), modes_off.len());
-    check_case(
-        !terminal_mode(term, GHOSTTY_MODE_ALT_SCREEN)
-            && !terminal_mode(term, GHOSTTY_MODE_ALT_SCREEN_SAVE),
-        "ui: 1049l 退出 alt screen",
-        &mut all_ok,
-    );
-    check_case(
-        !terminal_bool(term, TERMINAL_DATA_MOUSE_TRACKING),
-        "ui: 1000l 关闭 mouse tracking",
-        &mut all_ok,
-    );
-    check_case(
-        terminal_mode(term, GHOSTTY_MODE_CURSOR_VISIBLE),
-        "ui: 25h 恢复光标",
-        &mut all_ok,
-    );
-    check_case(
-        !terminal_mode(term, GHOSTTY_MODE_CURSOR_BLINKING),
-        "ui: 12l 关闭闪烁",
-        &mut all_ok,
-    );
-    check_case(
-        !terminal_mode(term, GHOSTTY_MODE_CURSOR_KEYS_APPLICATION),
-        "ui: ?1l 关闭 DECCKM",
-        &mut all_ok,
-    );
-    check_case(
-        !terminal_mode(term, GHOSTTY_MODE_KEYPAD_APPLICATION),
-        "ui: ?66l 关闭 DECKPAM",
-        &mut all_ok,
-    );
-    check_case(
-        !terminal_mode(term, GHOSTTY_MODE_BRACKETED_PASTE),
-        "ui: ?2004l 关闭 bracketed paste",
-        &mut all_ok,
-    );
+        let modes_off = b"\x1b[?1049l\x1b[?1000l\x1b[?25h\x1b[?12l\x1b[?1l\x1b[?66l\x1b[?2004l";
+        ghostty_terminal_vt_write(term, modes_off.as_ptr(), modes_off.len());
+        check_case(
+            !terminal_mode(term, GHOSTTY_MODE_ALT_SCREEN)
+                && !terminal_mode(term, GHOSTTY_MODE_ALT_SCREEN_SAVE),
+            "ui: 1049l 退出 alt screen",
+            &mut all_ok,
+        );
+        check_case(
+            !terminal_bool(term, TERMINAL_DATA_MOUSE_TRACKING),
+            "ui: 1000l 关闭 mouse tracking",
+            &mut all_ok,
+        );
+        check_case(
+            terminal_mode(term, GHOSTTY_MODE_CURSOR_VISIBLE),
+            "ui: 25h 恢复光标",
+            &mut all_ok,
+        );
+        check_case(
+            !terminal_mode(term, GHOSTTY_MODE_CURSOR_BLINKING),
+            "ui: 12l 关闭闪烁",
+            &mut all_ok,
+        );
+        check_case(
+            !terminal_mode(term, GHOSTTY_MODE_CURSOR_KEYS_APPLICATION),
+            "ui: ?1l 关闭 DECCKM",
+            &mut all_ok,
+        );
+        check_case(
+            !terminal_mode(term, GHOSTTY_MODE_KEYPAD_APPLICATION),
+            "ui: ?66l 关闭 DECKPAM",
+            &mut all_ok,
+        );
+        check_case(
+            !terminal_mode(term, GHOSTTY_MODE_BRACKETED_PASTE),
+            "ui: ?2004l 关闭 bracketed paste",
+            &mut all_ok,
+        );
 
-    ghostty_terminal_free(term);
-    all_ok
+        ghostty_terminal_free(term);
+        all_ok
+    }
 }
 
 fn main() {
     force_tls_pad();
+    // SAFETY: this diagnostic owns all terminal, render-state, iterator, and
+    // cell handles it creates and frees every matching resource before exit.
     unsafe {
         // 1. 建终端（80x24，滚动缓冲 10000）
         let opts = GhosttyTerminalOptions {

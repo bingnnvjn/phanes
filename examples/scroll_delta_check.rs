@@ -4,54 +4,64 @@ use fable_render::ffi::*;
 use std::ffi::c_void;
 
 unsafe fn collect_text(state: GhosttyRenderState) -> Vec<String> {
-    let mut row_it: GhosttyRenderStateRowIterator = std::ptr::null_mut();
-    ghostty_render_state_row_iterator_new(std::ptr::null(), &mut row_it);
-    ghostty_render_state_get(
-        state,
-        DATA_ROW_ITERATOR,
-        &mut row_it as *mut _ as *mut c_void,
-    );
-    let mut cells: GhosttyRenderStateRowCells = std::ptr::null_mut();
-    ghostty_render_state_row_cells_new(std::ptr::null(), &mut cells);
-    let mut rows = Vec::new();
-    while ghostty_render_state_row_iterator_next(row_it) {
-        ghostty_render_state_row_get(row_it, ROW_DATA_CELLS, &mut cells as *mut _ as *mut c_void);
-        let mut line = String::new();
-        while ghostty_render_state_row_cells_next(cells) {
-            let mut buf = GhosttyBuffer {
-                ptr: std::ptr::null_mut(),
-                cap: 0,
-                len: 0,
-            };
-            let r = ghostty_render_state_row_cells_get(
-                cells,
-                CELL_DATA_GRAPHEMES_UTF8,
-                &mut buf as *mut GhosttyBuffer as *mut c_void,
+    // SAFETY: caller supplies a live state; this diagnostic owns the iterator
+    // and cells handles and frees them after copying all borrowed text.
+    unsafe {
+        let mut row_it: GhosttyRenderStateRowIterator = std::ptr::null_mut();
+        ghostty_render_state_row_iterator_new(std::ptr::null(), &mut row_it);
+        ghostty_render_state_get(
+            state,
+            DATA_ROW_ITERATOR,
+            &mut row_it as *mut _ as *mut c_void,
+        );
+        let mut cells: GhosttyRenderStateRowCells = std::ptr::null_mut();
+        ghostty_render_state_row_cells_new(std::ptr::null(), &mut cells);
+        let mut rows = Vec::new();
+        while ghostty_render_state_row_iterator_next(row_it) {
+            ghostty_render_state_row_get(
+                row_it,
+                ROW_DATA_CELLS,
+                &mut cells as *mut _ as *mut c_void,
             );
-            if r == GHOSTTY_OUT_OF_SPACE && buf.len > 0 {
-                let mut bytes = vec![0u8; buf.len];
-                let mut buf2 = GhosttyBuffer {
-                    ptr: bytes.as_mut_ptr(),
-                    cap: bytes.len(),
+            let mut line = String::new();
+            while ghostty_render_state_row_cells_next(cells) {
+                let mut buf = GhosttyBuffer {
+                    ptr: std::ptr::null_mut(),
+                    cap: 0,
                     len: 0,
                 };
-                ghostty_render_state_row_cells_get(
+                let r = ghostty_render_state_row_cells_get(
                     cells,
                     CELL_DATA_GRAPHEMES_UTF8,
-                    &mut buf2 as *mut GhosttyBuffer as *mut c_void,
+                    &mut buf as *mut GhosttyBuffer as *mut c_void,
                 );
-                bytes.truncate(buf2.len);
-                line.push_str(&String::from_utf8_lossy(&bytes));
+                if r == GHOSTTY_OUT_OF_SPACE && buf.len > 0 {
+                    let mut bytes = vec![0u8; buf.len];
+                    let mut buf2 = GhosttyBuffer {
+                        ptr: bytes.as_mut_ptr(),
+                        cap: bytes.len(),
+                        len: 0,
+                    };
+                    ghostty_render_state_row_cells_get(
+                        cells,
+                        CELL_DATA_GRAPHEMES_UTF8,
+                        &mut buf2 as *mut GhosttyBuffer as *mut c_void,
+                    );
+                    bytes.truncate(buf2.len);
+                    line.push_str(&String::from_utf8_lossy(&bytes));
+                }
             }
+            rows.push(line.trim_end().to_string());
         }
-        rows.push(line.trim_end().to_string());
+        ghostty_render_state_row_cells_free(cells);
+        ghostty_render_state_row_iterator_free(row_it);
+        rows
     }
-    ghostty_render_state_row_cells_free(cells);
-    ghostty_render_state_row_iterator_free(row_it);
-    rows
 }
 
 fn main() {
+    // SAFETY: this diagnostic owns the paired terminal and render state and
+    // releases both after the viewport experiment.
     unsafe {
         let opts = GhosttyTerminalOptions {
             cols: 80,

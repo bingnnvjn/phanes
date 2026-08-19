@@ -2,31 +2,35 @@
 use fable_render::ffi::*;
 use std::ffi::c_void;
 unsafe fn cell_text(cells: GhosttyRenderStateRowCells) -> String {
-    let mut buf = GhosttyBuffer {
-        ptr: std::ptr::null_mut(),
-        cap: 0,
-        len: 0,
-    };
-    let r = ghostty_render_state_row_cells_get(
-        cells,
-        CELL_DATA_GRAPHEMES_UTF8,
-        &mut buf as *mut GhosttyBuffer as *mut c_void,
-    );
-    if r == GHOSTTY_OUT_OF_SPACE && buf.len > 0 {
-        let mut bytes = vec![0u8; buf.len];
-        let mut buf2 = GhosttyBuffer {
-            ptr: bytes.as_mut_ptr(),
-            cap: bytes.len(),
+    // SAFETY: callers position `cells` on a live cell; all output slots and
+    // byte buffers below remain valid for the synchronous C calls.
+    unsafe {
+        let mut buf = GhosttyBuffer {
+            ptr: std::ptr::null_mut(),
+            cap: 0,
             len: 0,
         };
-        ghostty_render_state_row_cells_get(
+        let r = ghostty_render_state_row_cells_get(
             cells,
             CELL_DATA_GRAPHEMES_UTF8,
-            &mut buf2 as *mut GhosttyBuffer as *mut c_void,
+            &mut buf as *mut GhosttyBuffer as *mut c_void,
         );
-        return String::from_utf8_lossy(&bytes[..buf2.len]).into_owned();
+        if r == GHOSTTY_OUT_OF_SPACE && buf.len > 0 {
+            let mut bytes = vec![0u8; buf.len];
+            let mut buf2 = GhosttyBuffer {
+                ptr: bytes.as_mut_ptr(),
+                cap: bytes.len(),
+                len: 0,
+            };
+            ghostty_render_state_row_cells_get(
+                cells,
+                CELL_DATA_GRAPHEMES_UTF8,
+                &mut buf2 as *mut GhosttyBuffer as *mut c_void,
+            );
+            return String::from_utf8_lossy(&bytes[..buf2.len]).into_owned();
+        }
+        String::new()
     }
-    String::new()
 }
 fn esc(s: &str) -> String {
     if s.is_empty() {
@@ -46,6 +50,8 @@ fn esc(s: &str) -> String {
 }
 fn main() {
     force_tls_pad();
+    // SAFETY: this diagnostic owns every terminal, render-state, iterator,
+    // and cell handle it creates, then releases them before returning.
     unsafe {
         let opts = GhosttyTerminalOptions {
             cols: 40,

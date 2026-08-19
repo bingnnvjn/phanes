@@ -14,6 +14,7 @@ const H0: [u32; 8] = [
 ];
 
 pub fn sha256(data: &[u8]) -> [u8; 32] {
+    // SAFETY: the shim reads no Rust memory and only reports CPU capability.
     if unsafe { fable_sha256_hw() } != 0 {
         return sha256_hw(data);
     }
@@ -31,6 +32,8 @@ fn sha256_hw(data: &[u8]) -> [u8; 32] {
     let mut state = H0;
     let full_blocks = data.len() / 64;
     if full_blocks > 0 {
+        // SAFETY: `state` has eight writable words and `data` has at least
+        // `full_blocks * 64` bytes; the shim processes exactly that many blocks.
         unsafe { fable_sha256_blocks(state.as_mut_ptr(), data.as_ptr(), full_blocks) };
     }
     // padding：0x80 + 0 到 ≡56 mod 64 + 8 字节大端位长。
@@ -42,6 +45,8 @@ fn sha256_hw(data: &[u8]) -> [u8; 32] {
     }
     padded.extend_from_slice(&((data.len() as u64).wrapping_mul(8)).to_be_bytes());
     if !padded.is_empty() {
+        // SAFETY: `state` has eight writable words and padding is a whole
+        // number of 64-byte blocks owned by this function.
         unsafe { fable_sha256_blocks(state.as_mut_ptr(), padded.as_ptr(), padded.len() / 64) };
     }
     let mut out = [0u8; 32];

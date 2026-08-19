@@ -36,9 +36,13 @@ impl MappedFont {
     pub fn open(path: &Path) -> Option<Self> {
         let c_path = std::ffi::CString::new(path.as_os_str().to_str()?).ok()?;
         let mut len: usize = 0;
+        // SAFETY: `c_path` is NUL-terminated and `out_len` points to a live
+        // local. The shim returns a read-only mapping or null.
         let ptr = unsafe { fable_mmap_file(c_path.as_ptr(), &mut len) };
         if ptr.is_null() || len == 0 {
             if !ptr.is_null() {
+                // SAFETY: this branch owns the mapping returned above and has
+                // not exposed it, so this is its single matching unmap.
                 unsafe { fable_munmap(ptr, len) };
             }
             return None;
@@ -47,6 +51,8 @@ impl MappedFont {
     }
 
     pub fn as_slice(&self) -> &[u8] {
+        // SAFETY: `open` stores only a non-null, non-empty live mapping and
+        // Drop cannot unmap it while this shared borrow is alive.
         unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
     }
 }
@@ -54,6 +60,8 @@ impl MappedFont {
 impl Drop for MappedFont {
     fn drop(&mut self) {
         if !self.ptr.is_null() {
+            // SAFETY: `MappedFont` owns this mapping and Drop runs once, so
+            // this matches the successful `fable_mmap_file` call exactly once.
             unsafe { fable_munmap(self.ptr, self.len) };
         }
     }

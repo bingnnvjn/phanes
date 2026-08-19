@@ -15,93 +15,107 @@ fn check(result: GhosttyResult, what: &str) {
 
 #[expect(dead_code, reason = "工单 50：诊断例程保留供手工探针调用")]
 unsafe fn get_u16(state: GhosttyRenderState, data: i32) -> u16 {
-    let mut v: u16 = 0;
-    check(
-        ghostty_render_state_get(state, data, &mut v as *mut u16 as *mut c_void),
-        "get_u16",
-    );
-    v
+    // SAFETY: caller supplies a live render state and `v` is the matching C
+    // ABI output slot for this scalar query.
+    unsafe {
+        let mut v: u16 = 0;
+        check(
+            ghostty_render_state_get(state, data, &mut v as *mut u16 as *mut c_void),
+            "get_u16",
+        );
+        v
+    }
 }
 
 unsafe fn cell_text(cells: GhosttyRenderStateRowCells) -> String {
-    let mut buf = GhosttyBuffer {
-        ptr: std::ptr::null_mut(),
-        cap: 0,
-        len: 0,
-    };
-    let r = ghostty_render_state_row_cells_get(
-        cells,
-        CELL_DATA_GRAPHEMES_UTF8,
-        &mut buf as *mut GhosttyBuffer as *mut c_void,
-    );
-    if r == GHOSTTY_OUT_OF_SPACE && buf.len > 0 {
-        let mut bytes = vec![0u8; buf.len];
-        let mut buf2 = GhosttyBuffer {
-            ptr: bytes.as_mut_ptr(),
-            cap: bytes.len(),
+    // SAFETY: callers position `cells` on a live cell; all output slots and
+    // byte buffers below remain valid for the synchronous C calls.
+    unsafe {
+        let mut buf = GhosttyBuffer {
+            ptr: std::ptr::null_mut(),
+            cap: 0,
             len: 0,
         };
-        check(
-            ghostty_render_state_row_cells_get(
-                cells,
-                CELL_DATA_GRAPHEMES_UTF8,
-                &mut buf2 as *mut GhosttyBuffer as *mut c_void,
-            ),
-            "cell_text 取数据",
+        let r = ghostty_render_state_row_cells_get(
+            cells,
+            CELL_DATA_GRAPHEMES_UTF8,
+            &mut buf as *mut GhosttyBuffer as *mut c_void,
         );
-        bytes.truncate(buf2.len);
-        String::from_utf8_lossy(&bytes).into_owned()
-    } else {
-        String::new()
+        if r == GHOSTTY_OUT_OF_SPACE && buf.len > 0 {
+            let mut bytes = vec![0u8; buf.len];
+            let mut buf2 = GhosttyBuffer {
+                ptr: bytes.as_mut_ptr(),
+                cap: bytes.len(),
+                len: 0,
+            };
+            check(
+                ghostty_render_state_row_cells_get(
+                    cells,
+                    CELL_DATA_GRAPHEMES_UTF8,
+                    &mut buf2 as *mut GhosttyBuffer as *mut c_void,
+                ),
+                "cell_text 取数据",
+            );
+            bytes.truncate(buf2.len);
+            String::from_utf8_lossy(&bytes).into_owned()
+        } else {
+            String::new()
+        }
     }
 }
 
 /// 读全部视口行文本（新迭代器，不依赖旧状态）。
 unsafe fn collect_rows_text(state: GhosttyRenderState) -> Vec<String> {
-    let mut row_it: GhosttyRenderStateRowIterator = std::ptr::null_mut();
-    check(
-        ghostty_render_state_row_iterator_new(std::ptr::null(), &mut row_it),
-        "row_iterator_new",
-    );
-    check(
-        ghostty_render_state_get(
-            state,
-            DATA_ROW_ITERATOR,
-            &mut row_it as *mut _ as *mut c_void,
-        ),
-        "get row_iterator",
-    );
-    let mut cells: GhosttyRenderStateRowCells = std::ptr::null_mut();
-    check(
-        ghostty_render_state_row_cells_new(std::ptr::null(), &mut cells),
-        "row_cells_new",
-    );
-
-    let mut rows = Vec::new();
-    while ghostty_render_state_row_iterator_next(row_it) {
+    // SAFETY: caller supplies a live state; this diagnostic owns the iterator
+    // and cells handles and frees them after copying all borrowed text.
+    unsafe {
+        let mut row_it: GhosttyRenderStateRowIterator = std::ptr::null_mut();
         check(
-            ghostty_render_state_row_get(
-                row_it,
-                ROW_DATA_CELLS,
-                &mut cells as *mut _ as *mut c_void,
-            ),
-            "row cells",
+            ghostty_render_state_row_iterator_new(std::ptr::null(), &mut row_it),
+            "row_iterator_new",
         );
-        let mut line = String::new();
-        while ghostty_render_state_row_cells_next(cells) {
-            line.push_str(&cell_text(cells));
-        }
-        rows.push(line.trim_end().to_string());
-    }
+        check(
+            ghostty_render_state_get(
+                state,
+                DATA_ROW_ITERATOR,
+                &mut row_it as *mut _ as *mut c_void,
+            ),
+            "get row_iterator",
+        );
+        let mut cells: GhosttyRenderStateRowCells = std::ptr::null_mut();
+        check(
+            ghostty_render_state_row_cells_new(std::ptr::null(), &mut cells),
+            "row_cells_new",
+        );
 
-    ghostty_render_state_row_cells_free(cells);
-    ghostty_render_state_row_iterator_free(row_it);
-    rows
+        let mut rows = Vec::new();
+        while ghostty_render_state_row_iterator_next(row_it) {
+            check(
+                ghostty_render_state_row_get(
+                    row_it,
+                    ROW_DATA_CELLS,
+                    &mut cells as *mut _ as *mut c_void,
+                ),
+                "row cells",
+            );
+            let mut line = String::new();
+            while ghostty_render_state_row_cells_next(cells) {
+                line.push_str(&cell_text(cells));
+            }
+            rows.push(line.trim_end().to_string());
+        }
+
+        ghostty_render_state_row_cells_free(cells);
+        ghostty_render_state_row_iterator_free(row_it);
+        rows
+    }
 }
 
 fn main() {
     const LINE: &str = "白日依山尽，黄河入海流";
     force_tls_pad();
+    // SAFETY: this diagnostic owns the paired terminal and render state and
+    // releases both after the resize sequence.
     unsafe {
         let mut terminal: GhosttyTerminal = std::ptr::null_mut();
         check(

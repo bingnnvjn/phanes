@@ -382,6 +382,8 @@ pub fn force_tls_pad() {
     extern "C" {
         fn fable_render_tls_pad_anchor();
     }
+    // SAFETY: the C shim takes no arguments, holds no Rust references, and is
+    // linked specifically to retain the required TLS padding object.
     unsafe {
         fable_render_tls_pad_anchor();
     }

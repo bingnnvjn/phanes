@@ -7,20 +7,26 @@ use std::ffi::c_void;
 use std::time::Instant;
 
 unsafe fn collect(state: GhosttyRenderState) -> Snapshot {
-    let mut colors = GhosttyRenderStateColors {
-        size: std::mem::size_of::<GhosttyRenderStateColors>(),
-        background: GhosttyColorRgb { r: 0, g: 0, b: 0 },
-        foreground: GhosttyColorRgb { r: 0, g: 0, b: 0 },
-        cursor: GhosttyColorRgb { r: 0, g: 0, b: 0 },
-        cursor_has_value: false,
-        palette: [GhosttyColorRgb { r: 0, g: 0, b: 0 }; 256],
-    };
-    let _ = ghostty_render_state_colors_get(state, &mut colors);
-    fable_render::render_android::collect_snapshot(state, &colors, None)
+    // SAFETY: caller supplies a live state, `colors` is a matching C output,
+    // and the snapshot copies all data before state is mutated again.
+    unsafe {
+        let mut colors = GhosttyRenderStateColors {
+            size: std::mem::size_of::<GhosttyRenderStateColors>(),
+            background: GhosttyColorRgb { r: 0, g: 0, b: 0 },
+            foreground: GhosttyColorRgb { r: 0, g: 0, b: 0 },
+            cursor: GhosttyColorRgb { r: 0, g: 0, b: 0 },
+            cursor_has_value: false,
+            palette: [GhosttyColorRgb { r: 0, g: 0, b: 0 }; 256],
+        };
+        let _ = ghostty_render_state_colors_get(state, &mut colors);
+        fable_render::render_android::collect_snapshot(state, &colors, None)
+    }
 }
 
 fn main() {
     force_tls_pad();
+    // SAFETY: this benchmark owns its terminal and render-state pair for the
+    // full run and frees both before it returns.
     unsafe {
         let opts = GhosttyTerminalOptions {
             cols: 80,
@@ -170,18 +176,26 @@ fn check(result: GhosttyResult, what: &str) {
 }
 
 unsafe fn reset_dirty(state: GhosttyRenderState) {
-    let f = false;
-    let _ = ghostty_render_state_set(
-        state,
-        RENDER_STATE_OPTION_DIRTY,
-        &f as *const bool as *const c_void,
-    );
-    let mut it: GhosttyRenderStateRowIterator = std::ptr::null_mut();
-    let _ = ghostty_render_state_row_iterator_new(std::ptr::null(), &mut it);
-    let _ = ghostty_render_state_get(state, DATA_ROW_ITERATOR, &mut it as *mut _ as *mut c_void);
-    while ghostty_render_state_row_iterator_next(it) {
+    // SAFETY: caller supplies a live state; this helper owns and frees its
+    // temporary iterator before it returns.
+    unsafe {
+        let f = false;
+        let _ = ghostty_render_state_set(
+            state,
+            RENDER_STATE_OPTION_DIRTY,
+            &f as *const bool as *const c_void,
+        );
+        let mut it: GhosttyRenderStateRowIterator = std::ptr::null_mut();
+        let _ = ghostty_render_state_row_iterator_new(std::ptr::null(), &mut it);
         let _ =
-            ghostty_render_state_row_set(it, ROW_OPTION_DIRTY, &f as *const bool as *const c_void);
+            ghostty_render_state_get(state, DATA_ROW_ITERATOR, &mut it as *mut _ as *mut c_void);
+        while ghostty_render_state_row_iterator_next(it) {
+            let _ = ghostty_render_state_row_set(
+                it,
+                ROW_OPTION_DIRTY,
+                &f as *const bool as *const c_void,
+            );
+        }
+        ghostty_render_state_row_iterator_free(it);
     }
-    ghostty_render_state_row_iterator_free(it);
 }

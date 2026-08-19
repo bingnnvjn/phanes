@@ -126,6 +126,9 @@ impl EmojiFont {
     }
 
     fn open(data: Vec<u8>) -> Option<Self> {
+        // SAFETY: every FreeType output pointer is initialized before use. The
+        // face borrows `data`, which is stored in the returned struct until
+        // `FT_Done_Face` runs in Drop.
         unsafe {
             let mut library = std::ptr::null_mut();
             if FT_Init_FreeType(&mut library) != 0 {
@@ -171,6 +174,8 @@ impl EmojiFont {
 
 impl Drop for EmojiFont {
     fn drop(&mut self) {
+        // SAFETY: `face` and `library` were created by this instance and each
+        // is released at most once here after null checks.
         unsafe {
             if !self.face.is_null() {
                 FT_Done_Face(self.face);
@@ -185,6 +190,8 @@ impl Drop for EmojiFont {
 impl EmojiFont {
     /// 诊断用：字体是否带彩色字形能力（COLR/CBDT/sbix）。
     pub fn has_color(&self) -> bool {
+        // SAFETY: a successful constructor stores a non-null live FreeType
+        // face; Drop cannot run while this shared borrow exists.
         unsafe { (*self.face).face_flags & FT_FACE_FLAG_COLOR != 0 }
     }
 
@@ -216,6 +223,8 @@ impl EmojiFont {
 
         let upem = self.units_per_em.max(1) as f32;
         let scale = pixels_per_em as f32 / upem;
+        // SAFETY: `self.face` belongs to this font, remains live for the
+        // method, and FreeType's slot/bitmap borrows stay within this block.
         unsafe {
             if FT_Set_Pixel_Sizes(self.face, 0, pixels_per_em as FT_UInt) != 0 {
                 return None;
@@ -387,6 +396,8 @@ fn decode_bgra(bitmap: &FT_Bitmap, w: usize, h: usize) -> Option<Vec<u8>> {
         return None;
     }
     let pitch = bitmap.pitch as usize;
+    // SAFETY: callers reject a null buffer; FreeType owns at least
+    // `pitch * h` bytes for the rendered bitmap during this call.
     let src = unsafe { std::slice::from_raw_parts(bitmap.buffer, pitch * h) };
     let mut rgba = Vec::with_capacity(w * h * 4);
     for row in 0..h {
@@ -415,6 +426,8 @@ fn decode_gray(bitmap: &FT_Bitmap, w: usize, h: usize) -> Vec<u8> {
     } else {
         bitmap.pitch as usize
     };
+    // SAFETY: callers reject a null buffer; FreeType owns at least
+    // `pitch * h` bytes for the rendered bitmap during this call.
     let src = unsafe { std::slice::from_raw_parts(bitmap.buffer, pitch * h) };
     let mut rgba = Vec::with_capacity(w * h * 4);
     for row in 0..h {

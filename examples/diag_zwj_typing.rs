@@ -32,65 +32,77 @@ fn check(result: GhosttyResult, what: &str) {
 }
 
 unsafe fn cell_text(cells: GhosttyRenderStateRowCells) -> String {
-    let mut buf = GhosttyBuffer {
-        ptr: ptr::null_mut(),
-        cap: 0,
-        len: 0,
-    };
-    let r = ghostty_render_state_row_cells_get(
-        cells,
-        CELL_DATA_GRAPHEMES_UTF8,
-        &mut buf as *mut GhosttyBuffer as *mut c_void,
-    );
-    if r == GHOSTTY_OUT_OF_SPACE && buf.len > 0 {
-        let mut bytes = vec![0u8; buf.len];
-        let mut buf2 = GhosttyBuffer {
-            ptr: bytes.as_mut_ptr(),
-            cap: bytes.len(),
+    // SAFETY: callers position `cells` on a live cell; all output slots and
+    // byte buffers below remain valid for the synchronous C calls.
+    unsafe {
+        let mut buf = GhosttyBuffer {
+            ptr: ptr::null_mut(),
+            cap: 0,
             len: 0,
         };
-        let _ = ghostty_render_state_row_cells_get(
+        let r = ghostty_render_state_row_cells_get(
             cells,
             CELL_DATA_GRAPHEMES_UTF8,
-            &mut buf2 as *mut GhosttyBuffer as *mut c_void,
+            &mut buf as *mut GhosttyBuffer as *mut c_void,
         );
-        bytes.truncate(buf2.len);
-        String::from_utf8_lossy(&bytes).into_owned()
-    } else {
-        String::new()
+        if r == GHOSTTY_OUT_OF_SPACE && buf.len > 0 {
+            let mut bytes = vec![0u8; buf.len];
+            let mut buf2 = GhosttyBuffer {
+                ptr: bytes.as_mut_ptr(),
+                cap: bytes.len(),
+                len: 0,
+            };
+            let _ = ghostty_render_state_row_cells_get(
+                cells,
+                CELL_DATA_GRAPHEMES_UTF8,
+                &mut buf2 as *mut GhosttyBuffer as *mut c_void,
+            );
+            bytes.truncate(buf2.len);
+            String::from_utf8_lossy(&bytes).into_owned()
+        } else {
+            String::new()
+        }
     }
 }
 
 unsafe fn cell_raw_wide(cells: GhosttyRenderStateRowCells) -> i32 {
-    let mut raw: u64 = 0;
-    let r = ghostty_render_state_row_cells_get(
-        cells,
-        CELL_DATA_RAW,
-        &mut raw as *mut u64 as *mut c_void,
-    );
-    if r != GHOSTTY_SUCCESS || raw == 0 {
-        return -1;
+    // SAFETY: caller positions `cells` on a live cell; raw and wide are
+    // correctly sized stack output slots for the two C queries.
+    unsafe {
+        let mut raw: u64 = 0;
+        let r = ghostty_render_state_row_cells_get(
+            cells,
+            CELL_DATA_RAW,
+            &mut raw as *mut u64 as *mut c_void,
+        );
+        if r != GHOSTTY_SUCCESS || raw == 0 {
+            return -1;
+        }
+        let mut wide: i32 = -1;
+        ghostty_cell_get(
+            raw,
+            GHOSTTY_CELL_DATA_WIDE,
+            &mut wide as *mut i32 as *mut c_void,
+        );
+        wide
     }
-    let mut wide: i32 = -1;
-    ghostty_cell_get(
-        raw,
-        GHOSTTY_CELL_DATA_WIDE,
-        &mut wide as *mut i32 as *mut c_void,
-    );
-    wide
 }
 
 unsafe fn drain_pty(pty: i64) -> Vec<u8> {
-    let mut out = Vec::new();
-    let mut buf = [0u8; 4096];
-    while fable_pty_read_ready(pty) != 0 {
-        let n = fable_pty_read(pty, buf.as_mut_ptr(), buf.len());
-        if n <= 0 {
-            break;
+    // SAFETY: caller owns a live PTY handle; `buf` is writable for the exact
+    // length supplied to the shim, which returns at most that many bytes.
+    unsafe {
+        let mut out = Vec::new();
+        let mut buf = [0u8; 4096];
+        while fable_pty_read_ready(pty) != 0 {
+            let n = fable_pty_read(pty, buf.as_mut_ptr(), buf.len());
+            if n <= 0 {
+                break;
+            }
+            out.extend_from_slice(&buf[..n as usize]);
         }
-        out.extend_from_slice(&buf[..n as usize]);
+        out
     }
-    out
 }
 
 /// 字节流摘要：可打印字符 + 转义缩写 → 判断 readline 是否发 \r。
@@ -110,82 +122,86 @@ fn summarize(bytes: &[u8]) -> String {
 }
 
 unsafe fn dump_core(state: GhosttyRenderState, label: &str) {
-    let mut row_it: GhosttyRenderStateRowIterator = ptr::null_mut();
-    check(
-        ghostty_render_state_row_iterator_new(ptr::null(), &mut row_it),
-        "row_iterator_new",
-    );
-    check(
-        ghostty_render_state_get(
-            state,
-            DATA_ROW_ITERATOR,
-            &mut row_it as *mut _ as *mut c_void,
-        ),
-        "get row_iterator",
-    );
-    let mut cells: GhosttyRenderStateRowCells = ptr::null_mut();
-    check(
-        ghostty_render_state_row_cells_new(ptr::null(), &mut cells),
-        "row_cells_new",
-    );
-    let mut cur_x: u16 = 0;
-    let mut cur_y: u16 = 0;
-    let mut has: bool = false;
-    let _ = ghostty_render_state_get(
-        state,
-        DATA_CURSOR_VIEWPORT_HAS_VALUE,
-        &mut has as *mut bool as *mut c_void,
-    );
-    if has {
-        let _ = ghostty_render_state_get(
-            state,
-            DATA_CURSOR_VIEWPORT_X,
-            &mut cur_x as *mut u16 as *mut c_void,
-        );
-        let _ = ghostty_render_state_get(
-            state,
-            DATA_CURSOR_VIEWPORT_Y,
-            &mut cur_y as *mut u16 as *mut c_void,
-        );
-    }
-    print!("{label} cursor=({cur_x},{cur_y}) has={has}");
-    let mut row_idx = 0usize;
-    while ghostty_render_state_row_iterator_next(row_it) {
+    // SAFETY: caller supplies a live state; this diagnostic owns the iterator
+    // and cells handles and frees them after copying all borrowed text.
+    unsafe {
+        let mut row_it: GhosttyRenderStateRowIterator = ptr::null_mut();
         check(
-            ghostty_render_state_row_get(
-                row_it,
-                ROW_DATA_CELLS,
-                &mut cells as *mut _ as *mut c_void,
-            ),
-            "row cells",
+            ghostty_render_state_row_iterator_new(ptr::null(), &mut row_it),
+            "row_iterator_new",
         );
-        let mut col = 0usize;
-        let mut parts = Vec::new();
-        while ghostty_render_state_row_cells_next(cells) {
-            let text = cell_text(cells);
-            let wide = cell_raw_wide(cells);
-            let wname = match wide {
-                CELL_WIDE_WIDE => "W",
-                CELL_WIDE_SPACER_TAIL => "T",
-                CELL_WIDE_SPACER_HEAD => "H",
-                _ => ".",
-            };
-            if !text.is_empty() || wide == CELL_WIDE_WIDE || wide == CELL_WIDE_SPACER_TAIL {
-                parts.push(format!(
-                    "c{col}:{wname}{}",
-                    if text.is_empty() { "" } else { &text }
-                ));
+        check(
+            ghostty_render_state_get(
+                state,
+                DATA_ROW_ITERATOR,
+                &mut row_it as *mut _ as *mut c_void,
+            ),
+            "get row_iterator",
+        );
+        let mut cells: GhosttyRenderStateRowCells = ptr::null_mut();
+        check(
+            ghostty_render_state_row_cells_new(ptr::null(), &mut cells),
+            "row_cells_new",
+        );
+        let mut cur_x: u16 = 0;
+        let mut cur_y: u16 = 0;
+        let mut has: bool = false;
+        let _ = ghostty_render_state_get(
+            state,
+            DATA_CURSOR_VIEWPORT_HAS_VALUE,
+            &mut has as *mut bool as *mut c_void,
+        );
+        if has {
+            let _ = ghostty_render_state_get(
+                state,
+                DATA_CURSOR_VIEWPORT_X,
+                &mut cur_x as *mut u16 as *mut c_void,
+            );
+            let _ = ghostty_render_state_get(
+                state,
+                DATA_CURSOR_VIEWPORT_Y,
+                &mut cur_y as *mut u16 as *mut c_void,
+            );
+        }
+        print!("{label} cursor=({cur_x},{cur_y}) has={has}");
+        let mut row_idx = 0usize;
+        while ghostty_render_state_row_iterator_next(row_it) {
+            check(
+                ghostty_render_state_row_get(
+                    row_it,
+                    ROW_DATA_CELLS,
+                    &mut cells as *mut _ as *mut c_void,
+                ),
+                "row cells",
+            );
+            let mut col = 0usize;
+            let mut parts = Vec::new();
+            while ghostty_render_state_row_cells_next(cells) {
+                let text = cell_text(cells);
+                let wide = cell_raw_wide(cells);
+                let wname = match wide {
+                    CELL_WIDE_WIDE => "W",
+                    CELL_WIDE_SPACER_TAIL => "T",
+                    CELL_WIDE_SPACER_HEAD => "H",
+                    _ => ".",
+                };
+                if !text.is_empty() || wide == CELL_WIDE_WIDE || wide == CELL_WIDE_SPACER_TAIL {
+                    parts.push(format!(
+                        "c{col}:{wname}{}",
+                        if text.is_empty() { "" } else { &text }
+                    ));
+                }
+                col += 1;
             }
-            col += 1;
+            if !parts.is_empty() {
+                print!(" | r{row_idx} {}", parts.join(" "));
+            }
+            row_idx += 1;
         }
-        if !parts.is_empty() {
-            print!(" | r{row_idx} {}", parts.join(" "));
-        }
-        row_idx += 1;
+        println!();
+        ghostty_render_state_row_cells_free(cells);
+        ghostty_render_state_row_iterator_free(row_it);
     }
-    println!();
-    ghostty_render_state_row_cells_free(cells);
-    ghostty_render_state_row_iterator_free(row_it);
 }
 
 fn main() {
@@ -194,6 +210,8 @@ fn main() {
     force_tls_pad();
 
     for cols in [40usize, 80usize] {
+        // SAFETY: this diagnostic owns each terminal, render state, and PTY
+        // created for the scenario and releases them before the next one.
         unsafe {
             println!("\n===== 场景: cols={cols} =====");
             let mut terminal: GhosttyTerminal = ptr::null_mut();
