@@ -65,12 +65,14 @@ tag commit `cd5227bd1f61dff3bbd6c814ceaf7ffd95e947d9`，并在资产旁提供
 `docs/security/signing-material-inventory.md`；该台账不含任何秘密值。
 
 闸门还会在不读取密码的情况下尝试分类
-`fable-app/app/<上游测试签名材料>`。无法证明它不是可用私钥时，结果保持
-阻断；不得把“当前构建脚本没有引用”当成密钥安全证明。`keystore/<旧签名材料>`
-和 `release-missing-credentials.log` 即使被忽略，也始终属于发布范围外的
-敏感材料。当前两份 JKS 均已从工作树隔离，但历史用途、撤销/轮换和历史清理
-仍需人工确认。已知 JKS 即使只残留在 `fable-app` 索引、refs 或 reflog，
-总闸门也会阻断；“工作树文件已删”不构成通过条件。
+`fable-app/app/<上游测试签名材料>`。该文件已确认是 Termux 上游共享测试 key，
+不是 Fable release key。`fable-app` 的 `origin` 受 Termux upstream 保护，且整个
+App 工作树不属于三个 Rust crate 的公开输入；因此该已知 test key 和旧
+`keystore/<旧签名材料>` 的 upstream 历史不会阻断 Rust 发布闸门。
+
+当前 `<旧签名材料>` 已退役并轮换为仓库外的新 Fable release key；旧 key 保留在受限
+备份和受保护的本地 upstream 历史中。若将来创建或公开 Fable App fork，必须先以
+可恢复副本为基础审计并清理该 fork 的签名材料历史。删除工作树文件不等于历史清理。
 
 ## 尚需 Fable 自有远端的验收
 
