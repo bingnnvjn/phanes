@@ -28,9 +28,18 @@ gradle_args=(
     "-x"
     "fetchEmojiFonts"
 )
+missing_signing_args=(
+    "-PFABLE_RELEASE_KEYSTORE="
+    "-PFABLE_RELEASE_KEY_ALIAS="
+    "-PFABLE_RELEASE_STORE_PASSWORD="
+    "-PFABLE_RELEASE_KEY_PASSWORD="
+)
 
 echo "== debug 默认身份 =="
-debug_output=$(env -u FABLE_DEBUG_USE_RELEASE_SIGNING ./gradlew "${gradle_args[@]}")
+debug_output=$(
+    env -u FABLE_DEBUG_USE_RELEASE_SIGNING \
+        ./gradlew "${missing_signing_args[@]}" "${gradle_args[@]}"
+)
 echo "$debug_output"
 grep -q "debug=default-debug-keystore" <<<"$debug_output"
 grep -q "release=missing" <<<"$debug_output"
@@ -38,7 +47,7 @@ grep -q "release=missing" <<<"$debug_output"
 echo "== release 缺少凭据时明确失败 =="
 if env -u FABLE_RELEASE_KEYSTORE -u FABLE_RELEASE_KEY_ALIAS \
     -u FABLE_RELEASE_STORE_PASSWORD -u FABLE_RELEASE_KEY_PASSWORD \
-    ./gradlew ":app:assembleRelease" --no-daemon -x fetchEmojiFonts \
+    ./gradlew "${missing_signing_args[@]}" ":app:verifyReleaseSigning" --no-daemon -x fetchEmojiFonts \
     >"$temp_dir/fable-release-signing-missing.log" 2>&1; then
     echo "ERROR: assembleRelease unexpectedly succeeded without signing credentials" >&2
     exit 1

@@ -257,6 +257,27 @@ tasks.register("printSigningConfiguration") {
     }
 }
 
+tasks.register("printReleaseSigningCertificateSha256") {
+    group = "verification"
+    description = "Prints the configured release certificate SHA-256 digest without exposing secrets."
+    dependsOn "verifyReleaseSigning"
+    doLast {
+        def signingKeyStore = java.security.KeyStore.getInstance(java.security.KeyStore.getDefaultType())
+        file(releaseSigningInputs.keystore).withInputStream { input ->
+            signingKeyStore.load(input, releaseSigningInputs.storePassword.toCharArray())
+        }
+        def certificate = signingKeyStore.getCertificate(releaseSigningInputs.keyAlias)
+        if (certificate == null) {
+            throw new GradleException(
+                "Release signing alias is absent from configured keystore: " +
+                releaseSigningInputs.keyAlias
+            )
+        }
+        def digest = java.security.MessageDigest.getInstance("SHA-256").digest(certificate.encoded)
+        println(digest.collect { String.format("%02X", it & 0xff) }.join())
+    }
+}
+
 androidComponents {
     onVariants(selector().all()) { variant ->
         variant.outputs.forEach { output ->

@@ -497,7 +497,7 @@ public final class TermuxConstants {
     public static final String APK_RELEASE_TERMUX_DEVS = "Fable"; // Default: "Termux Devs"
 
     /** Termux Devs APK release signing certificate SHA-256 digest */
-    public static final String APK_RELEASE_TERMUX_DEVS_SIGNING_CERTIFICATE_SHA256_DIGEST = "<证书指纹>"; // Fable 个人 keystore（工单 01）
+    public static final String APK_RELEASE_TERMUX_DEVS_SIGNING_CERTIFICATE_SHA256_DIGEST = "169237B67890D3B71682B8FCBB3108AFCED98AEEE8AA870AACA4661C6B20CE78"; // Fable release key（2026-08-19 轮换）
 
 
 
