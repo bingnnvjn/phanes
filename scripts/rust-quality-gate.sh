@@ -83,8 +83,16 @@ for crate in "${CRATES[@]}"; do
         cargo fmt --manifest-path "$manifest" --all -- --check
     run_step "$crate" "check" \
         cargo check --manifest-path "$manifest" --all-targets --all-features --locked
-    run_step "$crate" "clippy" \
-        cargo clippy --manifest-path "$manifest" --all-targets --all-features --locked -- -D warnings
+    if [[ "$crate" == "spike-render" ]]; then
+        run_step "$crate" "clippy" \
+            cargo clippy --manifest-path "$manifest" --all-targets --all-features --locked -- \
+                -D warnings \
+                -D unsafe_op_in_unsafe_fn \
+                -D clippy::undocumented_unsafe_blocks
+    else
+        run_step "$crate" "clippy" \
+            cargo clippy --manifest-path "$manifest" --all-targets --all-features --locked -- -D warnings
+    fi
     run_step "$crate" "test" \
         cargo test --manifest-path "$manifest" --all-targets --all-features --locked
     run_step "$crate" "rustdoc" \
