@@ -1,9 +1,11 @@
-#!/data/data/com.termux/files/usr/bin/bash
+#!/usr/bin/env bash
 # 工单 41：签名配置程序化验收。
 set -euo pipefail
 
 cd "$(dirname "$0")"
-export JAVA_HOME="${JAVA_HOME:-/data/data/com.termux/files/usr/lib/jvm/java-17-openjdk}"
+if [ -z "${JAVA_HOME:-}" ]; then
+    echo "warning: JAVA_HOME 未设置，Gradle 将使用 PATH 上的 java" >&2
+fi
 temp_dir=$(mktemp -d)
 trap 'rm -rf "$temp_dir"' EXIT
 

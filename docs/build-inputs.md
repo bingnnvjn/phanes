@@ -87,8 +87,14 @@
 以下两项属于**设备配置**，不进仓库，需要在新设备上自行设置：
 
 - **工具链**：JDK、Android SDK、Gradle、NDK。版本与路径以构建文件为准；`android/local.properties`
-  里的 `sdk.dir` 由每台设备自己写。
-- **aapt2 覆盖**：`android/gradle.properties` 里当前有一行
-  `android.aapt2FromMavenOverride=/data/data/com.termux/files/usr/bin/aapt2`，这是 Termux 专用
-  （SDK 自带的 aapt2 是 x86_64，不能在 aarch64 上运行）。在 x86_64 电脑上必须删掉或改写，
-  否则构建直接失败。
+  里的 `sdk.dir` 由每台设备自己写（示例路径见 `README.md`）。
+- **aapt2 覆盖**：只有 aarch64 宿主需要。SDK 自带的 aapt2 是 x86_64，不能在 aarch64 上运行，
+  要指向系统原生 aapt2。仓库内已不再保留这一行（工单 64 移出），改为写进设备自己的
+  用户级 Gradle 属性：
+
+  ```properties
+  # ~/.gradle/gradle.properties，仅 aarch64 宿主
+  android.aapt2FromMavenOverride=/data/data/com.termux/files/usr/bin/aapt2
+  ```
+
+  x86_64 电脑不写这一行，SDK 自带的 aapt2 直接可用。

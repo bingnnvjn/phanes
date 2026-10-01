@@ -2,7 +2,7 @@
 
 <!DOCTYPE resources [
     <!ENTITY TERMUX_PACKAGE_NAME "com.gph.fable">
-    <!ENTITY TERMUX_APP_NAME "Fable">
+    <!ENTITY TERMUX_APP_NAME "Phanes">
     ]>
 
 <resources>
@@ -91,7 +91,7 @@
 
     <string name="action_report_issue">Report Issue</string>
     <string name="msg_generating_report">Generating Report</string>
-    <string name="msg_add_fable_debug_info">Add Fable debug info to report?</string>
+    <string name="msg_add_fable_debug_info">Add Phanes debug info to report?</string>
 
     <string name="error_styling_not_installed">The Styling Plugin App is not installed.</string>
     <string name="action_styling_install">Install</string>
@@ -120,8 +120,8 @@
     <string name="notification_wake_lock_held"> (wake lock held)</string>
 
     <!-- 工单 05：通知渠道名（用户可见，随 locale 翻译） -->
-    <string name="fable_app_notification_channel_name">Fable foreground service</string>
-    <string name="fable_run_command_notification_channel_name">Fable command execution</string>
+    <string name="fable_app_notification_channel_name">Phanes foreground service</string>
+    <string name="fable_run_command_notification_channel_name">Phanes command execution</string>
 
 
 
@@ -238,7 +238,7 @@
 
     <!-- About Preference -->
     <string name="about_preference_title">About</string>
-    <string name="about_fable_header">## Fable（寓言）</string>
+    <string name="about_fable_header">## Phanes（原名 Fable／寓言）</string>
     <string name="about_fable_description">A private Android terminal with its own rendering core.</string>
 
     <!-- Donate Preference -->

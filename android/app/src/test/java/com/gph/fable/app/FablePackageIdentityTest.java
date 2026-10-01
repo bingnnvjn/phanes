@@ -7,11 +7,11 @@ import org.junit.Assert;
 import org.junit.Test;
 
 /**
- * Fable 永久身份测试（工单 01）。
+ * 应用身份测试（工单 01，工单 64 按 ADR-0013 更新）。
  *
- * 包名、App 名称、数据目录、权限名与 provider authority 全部由
- * {@link TermuxConstants#TERMUX_PACKAGE_NAME} 派生，这里把它们锁死为
- * com.gph.fable / Fable，防止回归。
+ * 包名、数据目录、权限名与 provider authority 全部由
+ * {@link TermuxConstants#TERMUX_PACKAGE_NAME} 派生，锁死为 com.gph.fable。
+ * App 显示名自 ADR-0013 起是 Phanes，它属对外可见层，不是应用身份。
  */
 public class FablePackageIdentityTest {
 
@@ -26,8 +26,8 @@ public class FablePackageIdentityTest {
     }
 
     @Test
-    public void appName_is_fable() {
-        Assert.assertEquals("Fable", TermuxConstants.TERMUX_APP_NAME);
+    public void appName_is_phanes() {
+        Assert.assertEquals("Phanes", TermuxConstants.TERMUX_APP_NAME);
     }
 
     @Test

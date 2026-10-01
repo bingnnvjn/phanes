@@ -347,7 +347,7 @@ public final class TermuxConstants {
      */
 
     /** Termux app name */
-    public static final String TERMUX_APP_NAME = "Fable"; // Default: "Termux"
+    public static final String TERMUX_APP_NAME = "Phanes"; // App 显示名（ADR-0013 改名）；应用身份仍为 com.gph.fable
     /** Termux package name */
     public static final String TERMUX_PACKAGE_NAME = "com.gph.fable"; // Default: "com.gph.fable"
     /** Termux GitHub repo name */

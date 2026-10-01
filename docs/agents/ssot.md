@@ -5,9 +5,12 @@
 | 事实 | 唯一来源 |
 | --- | --- |
 | 架构决策 | `docs/adr/NNN-*.md` |
+| 项目介绍与从零装配流程 | `README.md` |
 | 工单状态 / 验收 / 进展 | `.scratch/fable-v1/issues/NN-*.md` |
 | 工单实施提示（增量） | `.scratch/fable-v1/实施提示词-工单NN.md` |
 | 项目速览 / 工具链 / 红线 | `项目总览与交接.md`（带核实日期） |
+| 构建输入来源与 sha256 | `docs/build-inputs.md` |
+| 改名清单（各层标识符与冻结点） | `docs/rename-inventory.md` |
 | v1 规格 | `.scratch/fable-v1/spec.md` |
 | 领域词汇 | `CONTEXT.md` |
 | 工单体系规则 | `docs/agents/issue-tracker.md` |

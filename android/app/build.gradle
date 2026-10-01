@@ -101,7 +101,8 @@ android {
         buildConfigField "String", "TERMUX_PACKAGE_VARIANT", "\"" + project.ext.packageVariant + "\"" // Used by FableApplication class
 
         manifestPlaceholders.TERMUX_PACKAGE_NAME = "com.gph.fable"
-        manifestPlaceholders.TERMUX_APP_NAME = "Fable"
+        // App 显示名随 ADR-0013 改为 Phanes；应用身份 com.gph.fable 冻结不动。
+        manifestPlaceholders.TERMUX_APP_NAME = "Phanes"
         manifestPlaceholders.TERMUX_API_APP_NAME = "Termux:API"
         manifestPlaceholders.TERMUX_BOOT_APP_NAME = "Termux:Boot"
         manifestPlaceholders.TERMUX_FLOAT_APP_NAME = "Termux:Float"
