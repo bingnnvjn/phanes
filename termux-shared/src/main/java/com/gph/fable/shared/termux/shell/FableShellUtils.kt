@@ -32,6 +32,10 @@ object FableShellUtils {
                             .substringBefore('\n')
                         if (shebang.startsWith("/usr") || shebang.startsWith("/bin")) {
                             interpreter = "${TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH}/${shebang.substringAfterLast('/')}"
+                        } else if (shebang.startsWith("${TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH}/")) {
+                            // Android blocks direct execution of scripts from app data on recent
+                            // releases. Run a Termux-prefix interpreter explicitly instead.
+                            interpreter = shebang
                         }
                     } else {
                         interpreter = "${TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH}/sh"
