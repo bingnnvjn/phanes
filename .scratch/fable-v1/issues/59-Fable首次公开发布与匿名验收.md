@@ -1,8 +1,8 @@
 # 59 — Fable 首次公开发布与匿名验收
 
 **What to build:** 在工单 58、60、61 完成后，将三份已审计 Rust crate 公开到用户确认的 GitHub public 目标，完成首次公开内容检查、匿名访问检查、fork/PR 行为检查和泄露响应记录；不发布 Android App。
-**Blocked by:** fable-v1/58、fable-v1/60、fable-v1/61
-Status: 挂起（等待 fable-v1/60、fable-v1/61）
+**Blocked by:** fable-v1/58、fable-v1/60、fable-v1/61、fable-v1/62
+Status: 挂起（ADR-0011 废止三仓独立公开拓扑；等 fable-v1/62–65 与新的公开确认）
 
 ## 验收清单
 
@@ -28,3 +28,16 @@ Status: 挂起（等待 fable-v1/60、fable-v1/61）
 3. 执行前仍必须由用户确认目标仓库名称、是否转换现有 private 仓库、保留哪些 refs
    以及可见性切换时间。完成公开后立即启动工单 51，不在无保护的 public `master`
    上合并现有 CI PR。
+
+2026-10-01 拓扑前提变更（工单 62 收尾写回）：
+
+1. ADR-0011 作废 ADR-0010 第 1 条与第 3 条。本单的公开对象"三份已审计 Rust
+   crate"已不存在独立身份：工单 62 把它们合并进单仓库的角色目录
+   `renderer/`、`session/`、`boo/`，根仓库与该合并结果都没有 remote。
+2. 工单 58 的预演结论（三仓各自 private 远端、精确 `master` ref 推送）保留为
+   历史记录，但那三个远端现在只是异地副本，不再是公开发布的候选目标。
+3. 本单的验收动作（首次 public refs、匿名访问检查、artifact/fork 行为检查、
+   泄露响应记录）仍然适用，但要针对合并后的单仓库重写：对象变成一次 clone、
+   一棵树、一条默认分支。
+4. Status 改为挂起并写明原因。恢复条件：新的公开决策窗口确认目标仓库名与
+   可见性，工单 62–65 收口后重写本单的验收清单，再执行不可逆的公开动作。

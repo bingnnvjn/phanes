@@ -2,8 +2,8 @@
 
 **What to build:** 将已经清零的 Rust 质量门禁变为不可绕过的 CI required checks，并建立“实施 Agent + 独立审查 Agent”的 Rust 合并协议、例外台账和失败反馈；不得向非 Fable 所有的远端仓库写入工作流。
 
-**Blocked by:** fable-v1/59、fable-v1/60、fable-v1/61
-Status: 挂起（等待公开 Rust 仓库和严格 unsafe 基线）
+**Blocked by:** fable-v1/59、fable-v1/60、fable-v1/61、fable-v1/62
+Status: 挂起（ADR-0011 改单仓库拓扑；等 fable-v1/62–65 收口后在新仓库配置门禁）
 
 ## 验收清单
 
@@ -120,3 +120,18 @@ public 发布。
    故意失败/成功验收。
 3. 现有 private CI PR 不得在无规则的 private `master` 上合并。工单 59 完成 public
    切换后，本单负责在受规则保护的 public `master` 上验收并合并它们。
+
+2026-10-01 拓扑前提变更（工单 62 收尾写回）：
+
+1. ADR-0011 作废 ADR-0010 第 1 条与第 3 条，本单的"每个 Rust crate 一个远端、
+   逐仓配置 required checks"不再成立。工单 62 已把五段历史合并到根仓库，
+   目录改为 `android/`、`renderer/`、`session/`、`boo/`、`libghostty/`，
+   合并后仓库没有任何 remote，也没有向任何远端推送。
+2. 三个既有私有远端（`<私有远端1>`、`<私有远端2>`、`<私有远端3>`）
+   降级为历史副本，其去留由后续单独决定；它们上面的 CI PR（#1、#4、#1）失去目标
+   `master` 的对应关系，不能按原计划合并。
+3. 本单的验收内容（fmt、严格 Clippy、测试、rustdoc、锁文件与供应链门禁、独立
+   Agent 审查、例外台账）仍然有效，但作用对象要改成合并后的单一仓库，
+   workflow 与 required check 的挂载点需要重写。
+4. Status 改为挂起并写明原因。恢复条件：fable-v1/62–65 收口、新仓库命名与
+   可见性确认之后，重写 workflow 与分支保护目标，再按新的单仓库结构验收。
