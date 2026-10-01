@@ -59,7 +59,7 @@ afterEvaluate {
             release(MavenPublication) {
                 from components.release
                 groupId = 'com.gph.fable'
-                artifactId = 'fable-core'
+                artifactId = 'core'
                 version = '0.118.0'
                 artifact(sourceJar)
             }

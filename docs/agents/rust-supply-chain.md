@@ -1,6 +1,6 @@
 # Fable Rust 供应链门禁
 
-工单 52 为 `fable-boo`、`spike-session`、`spike-render` 建立一个供应链策略入口：
+工单 52 为 `boo`、`session`、`renderer` 建立一个供应链策略入口（包名自工单 63 起用角色名）：
 
 ```bash
 CARGO_DENY=/absolute/path/to/cargo-deny scripts/rust-supply-chain-gate.sh
@@ -39,7 +39,7 @@ CARGO_DENY=/absolute/path/to/cargo-deny scripts/rust-supply-chain-gate.sh
 
 | 来源 | 用途与上游 | 所有者 | 最近复核 | 下次复核 |
 | --- | --- | --- | --- | --- |
-| `spike-session/vendor/portable-pty` | crates.io `portable-pty 0.9.0`（WezTerm revision `f8921727…`）的 MIT 本地副本；只为精确保留登录 shell 的 `argv[0]` 语义而补 `CommandBuilder::argv0`。完整树 SHA-256 与路径由 `supply-chain-exceptions.toml` 和门禁校验。 | Fable Rust maintainers | 2026-08-15 | 2026-11-15 |
+| `session/vendor/portable-pty` | crates.io `portable-pty 0.9.0`（WezTerm revision `f8921727…`）的 MIT 本地副本；只为精确保留登录 shell 的 `argv[0]` 语义而补 `CommandBuilder::argv0`。完整树 SHA-256 与路径由 `supply-chain-exceptions.toml` 和门禁校验。 | Fable Rust maintainers | 2026-08-15 | 2026-11-15 |
 
 `portable-pty` 不是“自动放行”的第三方代码：更改副本、来源、许可、哈希、所有者或
 复核日期必须同时更新台账，并重新运行完整供应链门禁。当前没有 git 来源或许可证例外
@@ -48,8 +48,8 @@ CARGO_DENY=/absolute/path/to/cargo-deny scripts/rust-supply-chain-gate.sh
 ## 依赖更新
 
 每个 crate 根目录的 `.github/dependabot.yml` 指定每周 Cargo 更新提醒。它们只在
-对应 crate 已推送到 **Fable 自有远端** 后生效；不得复制到当前指向
-`termux/termux-app` 的 `fable-app` 上游。
+对应 crate 已推送到 **Fable 自有远端** 后生效；ADR-0011 单仓库形态后，`android/`
+不再是独立仓库，crate 级 `.github/` 的位置是否保留由工单 64 决定。
 
 依赖更新 PR 必须保留并审查 `Cargo.lock` diff，然后按下列顺序验证：
 
@@ -57,7 +57,7 @@ CARGO_DENY=/absolute/path/to/cargo-deny scripts/rust-supply-chain-gate.sh
 CARGO_DENY=/absolute/path/to/cargo-deny scripts/rust-supply-chain-gate.sh
 scripts/rust-quality-gate.sh
 bash scripts/build-session-lib.sh
-(cd fable-app && ./build-and-verify.sh debug)
+(cd android && ./build-and-verify.sh debug)
 ```
 
 当工单 51 的恢复条件满足（Fable 自有远端、分支保护与管理员权限）后，CI 必须把前两项

@@ -14,9 +14,9 @@ SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
 
 CRATES=(
-    "fable-boo"
-    "spike-session"
-    "spike-render"
+    "boo"
+    "session"
+    "renderer"
 )
 
 failed=0
@@ -83,7 +83,7 @@ for crate in "${CRATES[@]}"; do
         cargo fmt --manifest-path "$manifest" --all -- --check
     run_step "$crate" "check" \
         cargo check --manifest-path "$manifest" --all-targets --all-features --locked
-    if [[ "$crate" == "spike-render" ]]; then
+    if [[ "$crate" == "renderer" ]]; then
         run_step "$crate" "clippy" \
             cargo clippy --manifest-path "$manifest" --all-targets --all-features --locked -- \
                 -D warnings \

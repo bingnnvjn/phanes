@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Fable public-release gate (工单 55).
+# Fable public-release gate (工单 55; 工单 63 改为 ADR-0011 的单仓库形态).
 #
 # This is a read-only, fail-closed audit. It never creates remotes, pushes
 # refs, rewrites history, changes GitHub settings, or enables a workflow.
@@ -13,9 +13,9 @@ set -uo pipefail
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
 
-CRATES=(fable-boo spike-render spike-session)
+CRATES=(boo session renderer)
 EXPECTED_GITLEAKS_VERSION="v8.29.0"
-GITLEAKS_CONFIG="$REPO_ROOT/docs/security/gitleaks-public-release.toml"
+GITLEAKS_CONFIG="$REPO_ROOT/docs/release/gitleaks-public-release.toml"
 FAILED=0
 CHECKS=0
 FAILURES=0
@@ -40,8 +40,8 @@ usage() {
     cat <<'EOF'
 Usage: scripts/public-release-gate.sh
 
-Read-only audit of the three proposed public Rust repositories and the
-fable-app signing boundary. A dedicated secret scanner is required; set
+Read-only audit of the single merged repository (ADR-0011) and its Rust
+role directories. A dedicated secret scanner is required; set
 SECRET_SCANNER_BIN to a gitleaks-compatible executable before publication.
 EOF
 }
@@ -55,13 +55,6 @@ if [[ $# -ne 0 ]]; then
     exit 2
 fi
 
-git_repo() {
-    local expected="$1"
-    local actual
-    actual="$(git -C "$expected" rev-parse --show-toplevel 2>/dev/null || true)"
-    [[ "$actual" == "$expected" ]]
-}
-
 required_file() {
     local repo="$1"
     local path="$2"
@@ -73,7 +66,7 @@ required_file() {
 }
 
 has_forbidden_tracked_path() {
-    local repo="$1"
+    local crate="$1"
     local relative
 
     while IFS= read -r -d '' relative; do
@@ -83,58 +76,43 @@ has_forbidden_tracked_path() {
                 return 0
                 ;;
         esac
-    done < <(git -C "$repo" ls-files -z)
+    done < <(git -C "$REPO_ROOT" ls-files -z -- "$crate")
     return 1
 }
 
-if "$REPO_ROOT/scripts/rust-public-boundary-gate.sh" >/dev/null 2>&1; then
-    pass "canonical Rust public-boundary gate passed (allow-list and fresh clones)"
-else
-    fail "canonical Rust public-boundary gate failed"
-fi
-
 for crate in "${CRATES[@]}"; do
     repo="$REPO_ROOT/$crate"
-    if git_repo "$repo"; then
-        pass "$crate is an independent Git repository"
+    if [[ -d "$repo" ]]; then
+        pass "$crate role directory exists"
     else
-        fail "$crate does not have an independent Git repository root"
+        fail "$crate role directory is missing"
         continue
     fi
 
     for path in Cargo.toml Cargo.lock README.md LICENSE SECURITY.md CONTRIBUTING.md \
-        THIRD_PARTY.md \
-        .github/CODEOWNERS .github/dependabot.yml; do
+        THIRD_PARTY.md; do
         required_file "$repo" "$path"
     done
-    workflow_files=""
+    # ADR-0011 单仓库形态：crate 级 workflow 目录不再承载 required checks。
     if [[ -d "$repo/.github/workflows" ]]; then
-        workflow_files="$(
-            find "$repo/.github/workflows" -maxdepth 1 -type f \
-                \( -name '*.yml' -o -name '*.yaml' \) -print 2>/dev/null
-        )"
+        note "$crate still carries a crate-level workflow directory; 工单 64 must keep or remove it explicitly"
     fi
-    if [[ -n "$workflow_files" ]]; then
-        pass "$crate has a CI workflow candidate for remote review"
-    else
-        fail "$crate has no CI workflow; add it only after confirming a Fable-owned remote (工单 51)"
-    fi
-    if [[ "$crate" == "spike-render" ]]; then
+    if [[ "$crate" == "renderer" ]]; then
         if grep -q 'still require verification' "$repo/THIRD_PARTY.md" 2>/dev/null; then
-            fail "spike-render JetBrains Mono provenance/license is unresolved"
+            fail "renderer JetBrains Mono provenance/license is unresolved"
         elif [[ ! -f "$repo/assets/JETBRAINS-MONO-LICENSE.txt" ]]; then
-            fail "spike-render JetBrains Mono license notice is missing"
+            fail "renderer JetBrains Mono license notice is missing"
         else
-            pass "spike-render JetBrains Mono provenance and license notice are present"
+            pass "renderer JetBrains Mono provenance and license notice are present"
         fi
     fi
-    if has_forbidden_tracked_path "$repo"; then
+    if has_forbidden_tracked_path "$crate"; then
         fail "$crate contains a signing, credential, build, or environment artifact"
     else
         pass "$crate has no known signing or environment artifact in its publish tree"
     fi
 
-    if git -C "$repo" diff --check; then
+    if git -C "$REPO_ROOT" diff --check -- "$crate"; then
         pass "$crate diff --check"
     else
         fail "$crate diff --check"
@@ -148,7 +126,7 @@ else
     fail "Fable root repository is not readable"
 fi
 
-if [[ -f "$REPO_ROOT/docs/security/third-party-sources.md" ]]; then
+if [[ -f "$REPO_ROOT/docs/release/third-party-sources.md" ]]; then
     pass "third-party source and license ledger exists"
 else
     fail "third-party source and license ledger is missing"
@@ -159,39 +137,41 @@ else
     fail "gitleaks public-release path policy is missing"
 fi
 
-fable_app="$REPO_ROOT/fable-app"
-upstream_url="$(git -C "$fable_app" config --get remote.origin.url 2>/dev/null || true)"
-if [[ "$upstream_url" == "https://github.com/termux/termux-app.git" ]]; then
-    pass "fable-app still points to the protected Termux upstream"
+android_dir="$REPO_ROOT/android"
+if [[ -d "$android_dir" ]]; then
+    pass "android role directory exists"
 else
-    fail "fable-app origin is not the protected Termux upstream"
+    fail "android role directory is missing"
 fi
 
-for sensitive in "$fable_app/keystore/<旧签名材料>" \
-    "$fable_app/release-missing-credentials.log"; do
+if [[ -z "$(git -C "$REPO_ROOT" remote)" ]]; then
+    pass "the merged repository has no remote yet; 工单 65 creates the private phanes remote"
+else
+    fail "the merged repository already has a remote; publication is a separate confirmed step (ADR-0012 决定 1)"
+fi
+
+for sensitive in "$android_dir/keystore/<旧签名材料>" \
+    "$android_dir/release-missing-credentials.log"; do
     if [[ -e "$sensitive" ]]; then
-        fail "sensitive fable-app material exists locally and is outside publication scope"
+        fail "sensitive app material exists locally and is outside publication scope"
     else
-        pass "sensitive fable-app material is absent from this workspace"
+        pass "sensitive app material is absent from this workspace"
     fi
 done
 
-testkey="$fable_app/app/<上游测试签名材料>"
-if [[ ! -f "$testkey" ]] &&
-    git -C "$fable_app" ls-files --error-unmatch -- app/<上游测试签名材料> >/dev/null 2>&1; then
-    pass "fable-app tracks only the documented shared upstream test key; fable-app is outside the Rust publish input"
-elif [[ ! -f "$testkey" ]]; then
-    pass "fable-app <上游测试签名材料> is absent from the working tree and index"
+testkey="$android_dir/app/<上游测试签名材料>"
+if [[ ! -f "$testkey" ]]; then
+    pass "android <上游测试签名材料> is absent from the working tree"
 else
-    pass "fable-app shared upstream test key is present only outside the Rust publish input"
+    fail "android <上游测试签名材料> is present in the merged working tree"
 fi
 
-for historical_path in app/<上游测试签名材料> keystore/<旧签名材料>; do
-    if git -C "$fable_app" log --all --reflog --format=%H -- "$historical_path" |
+for historical_path in android/app/<上游测试签名材料> android/keystore/<旧签名材料>; do
+    if git -C "$REPO_ROOT" log --all --reflog --format=%H -- "$historical_path" |
         grep -q .; then
-        note "fable-app protected upstream history retains $historical_path; it is outside the Rust publish input and must be sanitized before any Fable App fork is published"
+        fail "merged history or reflog retains $historical_path"
     else
-        pass "fable-app history and reflog contain no $historical_path path"
+        pass "merged history and reflog contain no $historical_path path"
     fi
 done
 
@@ -279,11 +259,8 @@ scan_gitleaks_unreachable_blobs() {
     fi
 }
 
-for repo_label in . fable-boo spike-render spike-session fable-app; do
-    repo="$REPO_ROOT/$repo_label"
-    scan_worktree "$repo" "$repo_label"
-    scan_git_objects "$repo" "$repo_label"
-done
+scan_worktree "$REPO_ROOT" "."
+scan_git_objects "$REPO_ROOT" "."
 
 scanner="${SECRET_SCANNER_BIN:-}"
 if [[ -z "$scanner" ]] && command -v gitleaks >/dev/null 2>&1; then
@@ -304,22 +281,20 @@ else
             if [[ ! -f "$GITLEAKS_CONFIG" ]]; then
                 scanner_failed=1
             fi
-            for repo_label in . fable-boo spike-render spike-session fable-app; do
-                if ! "$scanner" dir --no-banner --redact --exit-code 1 \
-                    --config "$GITLEAKS_CONFIG" \
-                    "$REPO_ROOT/$repo_label" >/dev/null 2>&1; then
-                    scanner_failed=1
-                fi
-                if ! "$scanner" git --no-banner --redact --exit-code 1 \
-                    --config "$GITLEAKS_CONFIG" \
-                    --log-opts='--all --reflog' "$REPO_ROOT/$repo_label" >/dev/null 2>&1; then
-                    scanner_failed=1
-                fi
-                if ! scan_gitleaks_unreachable_blobs \
-                    "$scanner" "$REPO_ROOT/$repo_label" "$repo_label"; then
-                    scanner_failed=1
-                fi
-            done
+            if ! "$scanner" dir --no-banner --redact --exit-code 1 \
+                --config "$GITLEAKS_CONFIG" \
+                "$REPO_ROOT" >/dev/null 2>&1; then
+                scanner_failed=1
+            fi
+            if ! "$scanner" git --no-banner --redact --exit-code 1 \
+                --config "$GITLEAKS_CONFIG" \
+                --log-opts='--all --reflog' "$REPO_ROOT" >/dev/null 2>&1; then
+                scanner_failed=1
+            fi
+            if ! scan_gitleaks_unreachable_blobs \
+                "$scanner" "$REPO_ROOT" "."; then
+                scanner_failed=1
+            fi
             if [[ "$scanner_failed" -eq 0 ]]; then
                 pass "gitleaks scanned all publication inputs without findings"
             else
@@ -333,7 +308,7 @@ else
 fi
 
 if "$REPO_ROOT/scripts/rust-quality-gate.sh" >/dev/null 2>&1; then
-    pass "Rust quality gate (fmt/check/clippy/test/rustdoc) passed for all three crates"
+    pass "Rust quality gate (fmt/check/clippy/test/rustdoc) passed for boo, session, renderer"
 else
     fail "Rust quality gate failed for at least one crate"
 fi

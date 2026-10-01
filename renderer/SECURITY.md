@@ -1,6 +1,6 @@
 # Security policy
 
-`spike-render` crosses Rust, JNI, FreeType, wgpu, native code, and embedded
+`renderer` crosses Rust, JNI, FreeType, wgpu, native code, and embedded
 font assets. Treat memory-safety, FFI, dependency, and asset-provenance
 reports as security-sensitive.
 

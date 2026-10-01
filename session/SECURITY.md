@@ -1,6 +1,6 @@
 # Security policy
 
-`spike-session` crosses Rust, JNI, PTY, process, and concurrent shutdown
+`session` crosses Rust, JNI, PTY, process, and concurrent shutdown
 boundaries. Treat unsafe, process-launch, descriptor, JNI-lifetime, and
 dependency reports as security-sensitive.
 

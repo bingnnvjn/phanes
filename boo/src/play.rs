@@ -29,7 +29,7 @@ pub fn run() -> i32 {
     let frames = match frames::decompress_frames() {
         Ok(frames) => frames,
         Err(err) => {
-            eprintln!("fable-boo: {err}");
+            eprintln!("boo: {err}");
             return 1;
         }
     };
@@ -47,7 +47,7 @@ pub fn run() -> i32 {
     let mut frame_index: u64 = 0;
 
     if let Err(err) = play_loop(&mut out, &rendered, offset, start, &mut frame_index) {
-        eprintln!("fable-boo: {err}");
+        eprintln!("boo: {err}");
         let _ = restore(&mut out);
         return 1;
     }

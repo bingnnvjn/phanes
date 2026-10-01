@@ -11,9 +11,9 @@ SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
 
 CRATES=(
-    "fable-boo"
-    "spike-session"
-    "spike-render"
+    "boo"
+    "session"
+    "renderer"
 )
 
 EXPECTED_CARGO_DENY_VERSION="0.20.2"

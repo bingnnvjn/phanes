@@ -1,6 +1,6 @@
-# spike-session
+# session
 
-`spike-session` is an independent Rust session-layer slice for Fable. It
+`session` is the Rust session layer for Fable. It
 provides PTY-backed sessions, event delivery, lifecycle management, logging,
 and JNI handles for the Android shell.
 

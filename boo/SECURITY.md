@@ -1,6 +1,6 @@
 # Security policy
 
-`fable-boo` is a small Rust animation and stress-test crate. It is not a
+`boo` is a small Rust animation and stress-test crate. It is not a
 signing, credential, network-service, or release-artifact repository.
 
 Please report a suspected vulnerability privately to the repository

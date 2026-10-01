@@ -19,7 +19,6 @@ paths = [
   '''(^|/)out\.png$''',
 ]
 
-# This is a path boundary, not a finding suppression. The canonical
-# Rust-public allow-list and forbidden-artifact checks still reject a tracked
-# credential/build path inside a crate. Any new excluded path requires a
-# corresponding public-boundary review.
+# This is a path boundary, not a finding suppression. The gate's forbidden-path
+# check still rejects a tracked credential/build artifact anywhere in the tree.
+# Any new excluded path requires a corresponding ADR-0012 review.

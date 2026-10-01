@@ -1,8 +1,8 @@
-# spike-render FFI 与 unsafe 合约
+# renderer FFI 与 unsafe 合约
 
 （工单 50，2026-08-14）
 
-本文件是 `spike-render` JNI、libghostty-vt、FreeType、字体 mmap、wgpu/native
+本文件是 `renderer` JNI、libghostty-vt、FreeType、字体 mmap、wgpu/native
 window 和跨线程 renderer 边界的实现合约。代码中的 `SAFETY:` 注释只引用本文件
 定义的不变量，不以“应该安全”作为证明。
 

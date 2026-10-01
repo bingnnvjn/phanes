@@ -1,17 +1,59 @@
-# 第三方预编译资产（.a/头文件/字体，校验和见 libghostty/README.md 与 docs/build-inputs.md）
+# Fable 单一仓库忽略规则（工单 63 按 ADR-0011 合并四个旧仓库的规则为一套）
+#
+# 覆盖：构建缓存、Gradle/NDK 产物、APK/AAB、字体与工具链下载物、
+# 设备配置、受限目录。构建输入的来源与 sha256 见 docs/build-inputs.md。
+
+# ---- 构建缓存与 Gradle/NDK 产物 ----
+target/
+.gradle/
+.cxx/
+.externalNativeBuild/
+/android/**/build/
+/android/**/release/
+/android/**/captures/
+out.png
+coverage_report.txt
+
+# ---- APK/AAB 与压缩下载物 ----
+*.apk
+*.aab
+*.zip
+
+# ---- 原生库产物（源码可重建） ----
+*.so
+
+# ---- 字体与工具链下载物（构建输入，不入库） ----
 /libghostty/*
 !/libghostty/README.md
-
-# 下载的工具链压缩包
-/build-tools_r30.0.3-linux.zip
-
-# 日志
-*.log
-
-# 调查下载物（字体/PTY 捕获，不进 git）
+/android/app/src/main/assets/fonts/
 .font-check/
 
-# 本机 agent 工具（pi-crew）运行时目录，非 Fable 内容
+# ---- 设备配置（每台设备自己写） ----
+local.properties
+
+# ---- 受限目录：签名材料永不入库 ----
+signing.properties
+.signing/
+keystore/
+
+# ---- 日志 ----
+*.log
+.ndk-build.log
+
+# ---- 基线采集的原始真机数据（结论报告保留在仓库内） ----
+.scratch/fable-v1/baseline/results-*/
+
+# ---- 编辑器/系统噪音 ----
+.idea/
+*.iml
+*.swo
+*.swp
+.DS_Store
+._*
+Thumbs.db
+ehthumbs.db
+
+# ---- 本机 agent 工具（pi-crew）运行时目录，非 Fable 内容 ----
 # 保留忽略规则以免 .crew/ 运行时状态污染 git status
 /.crew/
 /.crew

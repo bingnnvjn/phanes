@@ -92,7 +92,7 @@ public final class TerminalSession {
     /**
      * 工单 26：可注入会话层工厂（Java/Rust 切换点）。
      * Java 会话层已下线（工单 27）：RustFableSessionFactory 是唯一实现，
-     * 由 FableService 显式注入（fable-core 模块无 app 依赖）。
+     * 由 FableService 显式注入（core 模块无 app 依赖）。
      */
     public TerminalSession(String shellPath, String cwd, String[] args, String[] env,
                            TerminalSessionClient client,

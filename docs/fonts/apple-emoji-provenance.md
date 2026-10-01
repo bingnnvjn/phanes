@@ -23,11 +23,11 @@
 
 | 项 | 值 |
 | --- | --- |
-| 文件名 | `AppleColorEmoji.ttf`（fable-app `app/src/main/assets/fonts/`） |
+| 文件名 | `AppleColorEmoji.ttf`（android `app/src/main/assets/fonts/`） |
 | 大小 | 30,770,720 B |
 | sha256 | `6f6ad8b9751356c5707ab9e2645cddc3521d116a6b387d7b4b1437456d3784a3` |
 | 剥离规则 | face 0；sbix 仅保留 160px strike（40/64/96 删除）；图样零删减（3761 PNG） |
-| 剥离工具 | `spike-render/examples/strip_apple_emoji.rs`（Rust 自解析，确定性输出） |
+| 剥离工具 | `renderer/examples/strip_apple_emoji.rs`（Rust 自解析，确定性输出） |
 | 校验 | 版本串 `21.4d3e1`、strike ppem=160、PNG 数 3761、sha256 全量比对 |
 
 > 注：决策窗口的手工剥离产物（`e7605cad…`）与脚本剥离产物

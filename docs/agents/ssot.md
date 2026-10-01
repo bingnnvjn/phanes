@@ -11,7 +11,7 @@
 | v1 规格 | `.scratch/fable-v1/spec.md` |
 | 领域词汇 | `CONTEXT.md` |
 | 工单体系规则 | `docs/agents/issue-tracker.md` |
-| 核心库资产（.a / 校验和 / 字体） | `spike-libghostty/README.md` |
+| 核心库资产（.a / 校验和 / 字体） | `libghostty/README.md` |
 | 渲染器调研细节 | `docs/adr/0004` + `shellow vs ghostty.html` |
 
 ## 同步规则

@@ -42,7 +42,7 @@ Phanes（原名 Fable／寓言）= 私人 Android 终端 App：**Kotlin 壳 + Ru
 - ADR-0006：彩色字形通路 = FreeType + 内嵌 NotoColorEmoji COLRv1（ZWJ 经 rustybuzz 整形一并解决；灰度正文保持 fontdue）
 - ADR-0007：emoji 字体 = Apple Color Emoji 21.4d3e1（sbix 160px 单档）+ Rust 自解析 sbix + Noto 兜底（2026-08-10 定案）
 - ADR-0008：会话层 = Rust（portable-pty 主选 + 事件流六事件最小集）；Java 会话层已下线（2026-08-11 工单 27，过渡期结束）
-- ADR-0009：Kotlin 壳重构（终态收口）——全仓 Java→Kotlin、删旧模拟器/旧渲染器、XML/经典 View 不变、AGP 9 内置 Kotlin、terminal-emulator 改名 fable-core（2026-08-12 决策窗口 9 定案）
+- ADR-0009：Kotlin 壳重构（终态收口）——全仓 Java→Kotlin、删旧模拟器/旧渲染器、XML/经典 View 不变、AGP 9 内置 Kotlin、terminal-emulator 改名 fable-core（2026-08-12 决策窗口 9 定案；该模块的目录与 Gradle 模块名自工单 63 起按 ADR-0011 用角色名 `core`）
 - ADR-0010：公开三个独立 Rust crate，以 GitHub Free 的 public 仓库规则保护合并；Fable App、libghostty-vt 集成输入和工程内部资料继续私有（2026-08-19）
 - ADR-0011：单一仓库形态——五段历史合并、目录改用角色名（`android/`、`renderer/`、`session/`、`boo/`）、先清理后合并；ADR-0010 中"三个 crate 独立公开"的条款作废（2026-10-01 决策窗口 10）
 - ADR-0012：公开边界——目标是一个完整公开仓库；入库 = 产品 + 设计 + 可复现的结论；操作记录与构建输入不入库（2026-10-01）

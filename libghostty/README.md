@@ -1,6 +1,6 @@
-# spike-libghostty —— libghostty-vt 安卓资产（当前唯一来源）
+# libghostty —— libghostty-vt 安卓资产（当前唯一来源）
 
-> 历史：本目录诞生于工单 08 的验证切片，现承载**生产资产**（.a / 头文件 / 字体）。目录名暂不迁移；本 README 是资产清单的权威文件（SSOT，见 `docs/agents/ssot.md`）。
+> 历史：本目录诞生于工单 08 的验证切片，现承载**生产资产**（.a / 头文件 / 字体）。目录名自工单 62/63 起按 ADR-0011 改用角色名 `libghostty/`；索引只跟踪本 README，`.a`、头文件、字体、JNI 探针与 `.so` 属构建输入或切片产物，不入库（ADR-0012）。本 README 是资产清单的权威文件（SSOT，见 `docs/agents/ssot.md`）。
 
 ## 资产清单
 
@@ -13,7 +13,7 @@
 
 ## 关键坑（跨会话记忆，别重新踩）
 
-- **TLS 对齐**：NDK/Zig 产物 `.tbss` 仅 8 对齐，ARM64 bionic（API 29+）拒绝加载。解法：`-fno-emulated-tls` + 64 对齐 `__thread` 占位（C 探针）；Rust 侧见 `spike-render/build.rs`（`-Wl,--undefined=fable_render_tls_pad`）。
+- **TLS 对齐**：NDK/Zig 产物 `.tbss` 仅 8 对齐，ARM64 bionic（API 29+）拒绝加载。解法：`-fno-emulated-tls` + 64 对齐 `__thread` 占位（C 探针）；Rust 侧见 `renderer/build.rs`（`-Wl,--undefined=fable_render_tls_pad`）。
 - 外部依赖仅 libm / libc / compiler-rt；Termux clang 可直接链接。
 - JNI 桥与探针：`jni/ghostty_spike_jni.c`、`probe/spike_probe.c`（工单 08 产物）。
 

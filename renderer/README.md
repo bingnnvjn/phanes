@@ -1,6 +1,6 @@
-# spike-render
+# renderer
 
-`spike-render` is an independent Rust renderer slice for Fable. It exposes a
+`renderer` is the Rust renderer for Fable. It exposes a
 `cdylib`/`rlib` with JNI and native-FFI boundaries, software/GPU rendering
 paths, FreeType-backed font handling, and color-emoji support.
 

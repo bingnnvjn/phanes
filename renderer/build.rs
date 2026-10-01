@@ -46,7 +46,7 @@ fn main() {
     println!("cargo:rerun-if-changed=src/mmap_shim.c");
     println!("cargo:rerun-if-changed=src/sha256_shim.c");
     let Ok(manifest) = env::var("CARGO_MANIFEST_DIR") else {
-        eprintln!("CARGO_MANIFEST_DIR is required by spike-render build script");
+        eprintln!("CARGO_MANIFEST_DIR is required by renderer build script");
         std::process::exit(1);
     };
     let root = PathBuf::from(&manifest);

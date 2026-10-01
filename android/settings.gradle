@@ -1,1 +1,1 @@
-include ':app', ':termux-shared', ':fable-core', ':terminal-view'
+include ':app', ':termux-shared', ':core', ':terminal-view'

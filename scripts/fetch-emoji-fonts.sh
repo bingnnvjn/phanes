@@ -5,12 +5,12 @@
 # （APK 构建挂 preBuild，拉不到即构建失败）。
 #
 # 用法：scripts/fetch-emoji-fonts.sh [输出目录]
-# 默认输出 fable-app/app/src/main/assets/fonts/。
+# 默认输出 android/app/src/main/assets/fonts/。
 
 set -euo pipefail
 
 FABLE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ASSETS_DIR="${1:-$FABLE_ROOT/fable-app/app/src/main/assets/fonts}"
+ASSETS_DIR="${1:-$FABLE_ROOT/android/app/src/main/assets/fonts}"
 mkdir -p "$ASSETS_DIR"
 
 APPLE_URL="https://ghfast.top/https://github.com/PoomSmart/EmojiFonts/releases/download/17.0.0-apple/AppleColorEmoji-160px.ttc"
@@ -48,7 +48,7 @@ step_apple() {
     fi
     echo "fetch-emoji-fonts: 剥离（face 0 + 仅 160 档）..."
     local out="$TMP_DIR/AppleColorEmoji.ttf"
-    (cd "$FABLE_ROOT/spike-render" && cargo run --release --quiet --example strip_apple_emoji -- "$ttc" "$out")
+    (cd "$FABLE_ROOT/renderer" && cargo run --release --quiet --example strip_apple_emoji -- "$ttc" "$out")
     if ! sha256_ok "$out" "$APPLE_TTF_SHA256"; then
         echo "fetch-emoji-fonts: ERROR 剥离产物 sha256 不匹配" >&2
         exit 1
@@ -62,12 +62,12 @@ step_noto() {
         echo "fetch-emoji-fonts: NotoColorEmoji.ttf 已就绪（sha256 校验通过）"
         return
     fi
-    local src="$FABLE_ROOT/spike-render/assets/NotoColorEmoji.ttf"
+    local src="$FABLE_ROOT/renderer/assets/NotoColorEmoji.ttf"
     local out="$TMP_DIR/NotoColorEmoji.ttf"
     if sha256_ok "$src" "$NOTO_SHA256"; then
         cp "$src" "$out"
     else
-        echo "fetch-emoji-fonts: spike-render 内 Noto 缺失/不匹配，尝试下载..."
+        echo "fetch-emoji-fonts: renderer 内 Noto 缺失/不匹配，尝试下载..."
         curl -fL --retry 3 -m 300 -o "$out" \
             "https://ghfast.top/https://github.com/googlefonts/noto-emoji/raw/main/fonts/Noto-COLRv1.ttf"
     fi

@@ -8,9 +8,9 @@
 
 门禁逐一运行以下独立 crate，不把它们隐式合并为 Cargo workspace：
 
-- `fable-boo`
-- `spike-session`
-- `spike-render`
+- `boo`
+- `session`
+- `renderer`
 
 根目录 `rust-toolchain.toml` 固定 stable `1.97.1`，并要求 `rustfmt` 与 `clippy`
 组件。升级必须单独提交：更新版本、在干净环境安装同一 profile、运行完整门禁、

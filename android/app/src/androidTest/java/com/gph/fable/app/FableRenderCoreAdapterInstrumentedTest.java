@@ -28,7 +28,7 @@ import static org.junit.Assert.assertTrue;
  *
  * JVM 单测无法加载 libfable-render.so（aarch64 Android ELF），因此
  * 字节→状态 / resize 重排 / 滚动 / 选择文本这一组缝行为在真机/模拟器上
- * 以本测试覆盖；同一组契约的 JVM 断言见 fable-core CoreAdapterTest。
+ * 以本测试覆盖；同一组契约的 JVM 断言见 core CoreAdapterTest。
  */
 @RunWith(AndroidJUnit4.class)
 public class FableRenderCoreAdapterInstrumentedTest {

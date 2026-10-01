@@ -1,4 +1,4 @@
-# fable-boo
+# boo
 
 独立 Rust 单二进制：Ghostty 官网动画观赏（`play`）+ 终端渲染压力基准（`bench`），
 供 Fable 主终端链路做观赏对比与渲染压力测试。
@@ -9,14 +9,14 @@
 cargo build --target aarch64-linux-android --release
 ```
 
-产物：`target/aarch64-linux-android/release/fable-boo`。
+产物：`target/aarch64-linux-android/release/boo`。
 零运行时依赖（仅动态链接系统 bionic）；拷入 Fable 环境即用。
 
 ## 用法
 
 ```bash
-./fable-boo play                  # 观赏模式：235 帧、100x41、30fps，一轮约 7.83 秒，循环
-./fable-boo bench                  # 基准模式：全屏每帧必变，无节流顶满；Ctrl-C 后打印统计
+./boo play                  # 观赏模式：235 帧、100x41、30fps，一轮约 7.83 秒，循环
+./boo bench                 # 基准模式：全屏每帧必变，无节流顶满；Ctrl-C 后打印统计
 ```
 
 - `play`：播前清屏、居中显示；终端不足 100x41 时提示 "Screen must be at least 100w x 41h" 且不画；

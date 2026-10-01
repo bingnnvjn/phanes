@@ -1,5 +1,5 @@
 [package]
-name = "fable-boo"
+name = "boo"
 version = "0.1.0"
 edition = "2021"
 description = "Ghostty website animation (play) + terminal render stress (bench) for Fable"

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# JNI 库由已跟踪的 spike-session Rust 源生成；jniLibs 目录只存 Gradle 打包输入。
+# JNI 库由已跟踪的 session Rust 源生成；jniLibs 目录只存 Gradle 打包输入。
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-session_dir="$repo_root/spike-session"
-output="$repo_root/fable-app/app/src/main/jniLibs/arm64-v8a/libfable-session.so"
+session_dir="$repo_root/session"
+output="$repo_root/android/app/src/main/jniLibs/arm64-v8a/libfable-session.so"
 
 (
     cd "$session_dir"
