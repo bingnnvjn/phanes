@@ -6,6 +6,10 @@
 CARGO_DENY=/absolute/path/to/cargo-deny scripts/rust-supply-chain-gate.sh
 ```
 
+`cargo-deny` 会从 `github.com` 刷新 RustSec advisory DB。直连 GitHub 不可达时设
+`FABLE_GITHUB_MIRROR`（例如 `https://ghfast.top/`）把该 git 传输换成只读镜像；
+默认不设，判据不变。
+
 门禁固定 `cargo-deny 0.20.2`，逐 crate 以 `--locked --all-features` 运行 RustSec
 公告、许可证、来源与重复版本检查。三个 crate 不是 Cargo workspace，故绝不把它们
 合并解析，也不允许门禁改写任一 `Cargo.lock`。入口会在每次 `cargo metadata` 与

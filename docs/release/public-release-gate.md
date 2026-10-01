@@ -45,6 +45,17 @@ gitleaks `v8.29.0`、cargo-deny `0.20.2`。闸门会校验 gitleaks 版本，并
 gitleaks 使用 `docs/release/gitleaks-public-release.toml`，只排除明确不属于公开
 输入的内部资料和构建缓存；crate 的禁止路径检查与 Git 对象 marker 扫描仍独立执行。
 
+`cargo-deny` 每次运行都要从 `github.com` 刷新 RustSec advisory DB，本机到 GitHub 的
+直连不稳定。设 `FABLE_GITHUB_MIRROR`（例如 `https://ghfast.top/`）可把这一步的 git
+传输换成只读镜像；变量默认不设，判据与内容校验不变：
+
+```bash
+SECRET_SCANNER_BIN=/path/to/gitleaks \
+CARGO_DENY=/path/to/cargo-deny \
+FABLE_GITHUB_MIRROR=https://ghfast.top/ \
+scripts/public-release-gate.sh
+```
+
 `renderer/` 携带的 JetBrains Mono 资产来源固定为 JetBrains Mono `v2.304` tag
 commit `cd5227bd1f61dff3bbd6c814ceaf7ffd95e947d9`，并在资产旁提供
 `JETBRAINS-MONO-LICENSE.txt` 和 SHA-256。闸门仍会检查该 notice 与

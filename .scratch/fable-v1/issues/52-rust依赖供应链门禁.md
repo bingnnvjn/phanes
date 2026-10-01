@@ -73,3 +73,25 @@ Status: 待验收
    迁移完成前，本例外继续按 2026-11-30 到期。
 5. **复跑**：`CARGO_DENY=… scripts/rust-supply-chain-gate.sh` → **7 steps, 0 failed**；
    `SECRET_SCANNER_BIN=… scripts/public-release-gate.sh` → **48 checks, 0 failures**。
+
+2026-10-02 补充（RustSec 取库依赖 GitHub 直连）：
+
+- 同一天晚些时候复跑又失败 1 次，发生在 `cargo-deny` 刷新 RustSec advisory DB 的三步上：
+  `fatal: unable to access 'https://github.com/RustSec/advisory-db/': Failed to connect to
+  github.com:443 after 31488 ms: Could not connect to server`。这是本机到 `github.com`
+  直连不可达，属工单 57 已记录的同一类网络问题，不是策略或依赖失败。
+- 取证：`git -C ~/.cargo/advisory-dbs/advisory-db-3157b0e258782691 -c http.version=HTTP/1.1
+  fetch --depth=1 -u origin +main:main` 直连失败；同一命令加
+  `-c url.https://ghfast.top/https://github.com/.insteadOf=https://github.com/` 后成功
+  （DB HEAD 前进到 `3461c0d`）。
+- 处置：`scripts/rust-supply-chain-gate.sh` 新增**可选**环境变量 `FABLE_GITHUB_MIRROR`
+  （默认不设，原行为不变）。设值时只把 `github.com` 的传输通道换成只读镜像，RustSec
+  内容与全部判据不变。用法写进 `docs/agents/rust-supply-chain.md` 与
+  `docs/release/public-release-gate.md`。
+- 复跑（直连仍不可达时）：
+  `CARGO_DENY=… FABLE_GITHUB_MIRROR=https://ghfast.top/ scripts/rust-supply-chain-gate.sh`
+  → **7 steps, 0 failed**；
+  `SECRET_SCANNER_BIN=… CARGO_DENY=… FABLE_GITHUB_MIRROR=https://ghfast.top/
+  scripts/public-release-gate.sh` → **48 checks, 0 failures**。
+- 结论：上面第 5 条的 `48 checks, 0 failures` 是 github.com 可达时的实测；不可达时带上
+  镜像变量即可。工单 65 推送前按当天网络择一执行，两者判据相同。
