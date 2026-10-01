@@ -1,5 +1,5 @@
 //! 手写最小 FFI：只覆盖渲染切片需要的 libghostty-vt C API 子集。
-//! 签名以 spike-libghostty/lib/include/ghostty/vt/*.h（ghostty b0947378）为准。
+//! 签名以 libghostty/lib/include/ghostty/vt/*.h（ghostty b0947378）为准。
 #![allow(non_camel_case_types, dead_code)]
 
 use std::os::raw::c_void;

@@ -80,7 +80,7 @@ fn main() {
     // 链接已验证的 expo 预编译 libghostty-vt（ghostty b0947378）。
     println!(
         "cargo:rustc-link-search=native={}",
-        root.join("../spike-libghostty/lib/arm64-v8a").display()
+        root.join("../libghostty/lib/arm64-v8a").display()
     );
     println!("cargo:rustc-link-lib=static=ghostty-vt");
     println!("cargo:rustc-link-lib=m");

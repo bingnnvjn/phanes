@@ -69,7 +69,7 @@ fn hmtx_advance(data: &[u8], gid: u32) -> Option<i32> {
 fn main() {
     let path = std::env::args()
         .nth(1)
-        .unwrap_or_else(|| "fable-app/app/src/main/assets/fonts/AppleColorEmoji.ttf".to_string());
+        .unwrap_or_else(|| "android/app/src/main/assets/fonts/AppleColorEmoji.ttf".to_string());
     let path = Path::new(&path);
     let mut font = AppleSbixFont::open(path, "").expect("open font");
     let data = font.data().to_vec();

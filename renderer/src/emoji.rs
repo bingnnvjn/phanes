@@ -93,11 +93,11 @@ pub const POPULAR_EMOJI_50: &[&str] = &[
     "💀", "❤️",
 ];
 
-/// 宿主/自检默认字体路径：优先环境变量，否则 spike-render 相对 fable-app
+/// 宿主/自检默认字体路径：优先环境变量，否则 renderer 相对 android
 /// assets 目录（与 APK 内同一份文件）。
 pub fn default_font_paths() -> (String, String) {
     let manifest = env!("CARGO_MANIFEST_DIR");
-    let dir = std::path::Path::new(manifest).join("../fable-app/app/src/main/assets/fonts");
+    let dir = std::path::Path::new(manifest).join("../android/app/src/main/assets/fonts");
     let apple = std::env::var("FABLE_APPLE_EMOJI")
         .unwrap_or_else(|_| dir.join("AppleColorEmoji.ttf").display().to_string());
     let noto = std::env::var("FABLE_NOTO_EMOJI")
