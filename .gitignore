@@ -16,3 +16,12 @@
 
 # 调查下载物（字体/PTY 捕获，不进 git）
 .font-check/
+
+# 本机 agent 工具（pi-crew）运行时目录，非 Fable 内容
+# 保留忽略规则以免 .crew/ 运行时状态污染 git status
+/.crew/
+/.crew
+!.crew/artifacts/
+!.crew/graphs/
+!.crew/artifacts/.gitkeep
+!.crew/graphs/.gitkeep

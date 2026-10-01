@@ -2,7 +2,7 @@
 
 > Status: 待开工
 > 功能目录：fable-v1
-> 更新：2026-08-09
+> 更新：2026-08-12
 > 来源：项目总览与交接 + 本仓库现状探索（to-spec）
 
 > 架构约束（2026-08-07 补，见 `docs/adr/0003`、`docs/adr/0004`）：v1 交付范围不变（纯终端、打开即终端）；UI 只对着 **CoreAdapter** 缝写，保证后续换核不动 UI；终态方向 = Kotlin 壳 + Rust 底层（渲染/会话/事件流）+ libghostty-vt 核心，渲染器定案 Rust + wgpu（安卓 Vulkan）。
@@ -57,6 +57,17 @@ Fable v1 是一个纯终端 Android App：包名 `com.gph.fable`、正式签名�
 12. **彩色字形通路（2026-08-09 决策窗口 6 / 工单 13，ADR-0006）**：彩色 emoji 字形 = FreeType 光栅 COLRv1 + 内嵌 NotoColorEmoji（COLRv1 完整版，Unicode 17.0，替换 2017 CBDT）；ZWJ 家庭/肤色/旗帜经 rustybuzz 整形一并解决；✅ 接受原生彩色绿勾；灰度正文保持 fontdue（FreeType 只接彩色字形）；下划线专项并入工单 13；图集增量上传与灰度统一为独立 backlog。
 13. **emoji 字体（2026-08-10 决策窗口 7 / 工单 22，ADR-0007）**：彩色 emoji 主字体切换为 Apple Color Emoji `21.4d3e1`（sbix，只保留 160px 档，恒 160 超采样缩放，Rust 自解析 sbix + png crate，不加 C 依赖）；Noto COLRv1 保留为兜底（回退以完整 cluster 为单位）；Apple 与 Noto 均改为 fable-app APK assets（noCompress）运行时加载（sha256 校验、失败自动降级）；布局保持原生比例（2 格、垂直居中、非透明包围盒视觉居中、行高稳定）；性能指标（新 emoji 首现 ≤50ms、加载 ≤200ms、预热 50 个热门、缓存 512 张 LRU）；更新机制含溯源文件 + 上游自动检查（每周比对，Emoji 18.0 发布后按流程换字体）。
 14. **会话层搬 Rust（2026-08-10 决策窗口 8，ADR-0008）**：终态会话层（PTY 生命周期 spawn/close/resize、进程管理、环境注入、字节 I/O）全进 Rust；Java 壳只保留 UI、设置、系统集成（通知/前台服务/Intent）。驱动优先级 = 多 Agent 并行（2–4 个 Agent 同时跑）的并发安全与稳定性第一，语言统一（壳内单一 Kotlin↔Rust 边界、去 Java 第三套 JNI）与事件流为综合收益一并覆盖。零件选型 = **portable-pty 0.9.0（MIT）主选 + nix 自拼（posix_openpt 序列）兜底**——事实依据：portable-pty Unix 实现依赖 `libc::openpty()`，Bionic 自 API 23 起提供该符号（本项目 minSdk 24），Termux clang 实测编译链接运行通过；仅 NDK/GitHub Actions 备用构建线需显式 min API ≥ 23（见 `.scratch/fable-v1/research-会话层Rust零件.md`）。排期 = 独立先行、验证切片先行（工单 24 试编 + 真机探针），不并入 Kotlin 壳重构；过渡 = 双实现并行 + 切换开关，Java 会话层原样保留至验收对比后再评估去留。并发指标 = 2–4 会话硬指标、8 并发设计余量；先采 Java 会话层并发基线（工单 23）作验收对比。事件流（头脑风暴 §3.3 转正）第一版 = 最小集六事件：`command_started` / `output_chunk` / `command_finished` / `exit_code` / `session_created` / `session_closed`，schema 含 session_id、时间戳并留扩展 metadata；Rust 侧产出、经 JNI 事件回调暴露 Kotlin，Kotlin 第一版只接诊断/日志订阅。
+15. **Kotlin 壳重构（2026-08-12 决策窗口 9，ADR-0009）**：终态收口——全仓自有 Java→Kotlin（app / termux-shared / terminal-view / fable-core）；UI 框架保持 XML/经典 View（ADR-0001 不用 Compose 部分继续有效），工具链 = AGP 9 内置 Kotlin（默认启用，不引 KGP）；旧模拟器/旧渲染器先扩 CoreAdapter UI 状态 API（title/bell/mode，libghostty-vt 原生已具备）再删除；模块保留四个，terminal-emulator 改名 fable-core；顺序 = Kotlin pilot → 补缝/切缝 → 删旧 → 清理探针与死代码 → 品牌化（Termux*→Fable*，`termux.properties`/`~/.termux` 兼容）→ 分模块迁移 → 选择浮条 + 更多入口 → 全量回归真机验收。外部入口（RUN_COMMAND/文件分享/查看/DocumentsProvider/OpenReceiver）本次暂保留，稳定后原生化再删（用户 2026-08-12 拍板）。范围外：浅色专项 fable-v1/16、内存优化窗口、渲染器新功能。
+
+## Rust 严格安全编码门禁（2026-08-14 决策窗口）
+
+Rust 底层的质量目标是“默认不信任，除非通过可重复的自动门禁与独立审查”。适用范围为渲染器、会话层和宿主工具三个 crate；不以“能编译、能运行”作为合并条件。
+
+1. **分层门禁**：每个 Rust 改动必须经过固定工具链、格式、`cargo check`、严格 Clippy、全目标测试、rustdoc、锁文件与依赖策略检查；JNI/FFI/`unsafe` 改动还必须经独立 Agent 按有效性、ABI、所有权、线程、panic/unwind、失败语义和测试逐项审查；Miri、fuzz、突变测试、Loom/Kani、Android HWASan 为定期或专项验证。
+2. **严格但不反惯用**：默认 warning 必须为零；逐条启用高价值 lint（`unsafe_op_in_unsafe_fn`、文档化 unsafe、FFI ABI、rustdoc、生产路径 panic/unwrap 等）。不整体启用 `clippy::restriction`、`clippy::nursery` 或全 crate `forbid(unsafe_code)`；受控索引、转换、算术与必要 FFI 只能在局部不变量、测试和审查理由充分时保留。
+3. **例外与安全合约**：禁止无理由 `#[allow]`；例外必须可追踪、写清删除条件。每个 `unsafe` block 紧邻 `SAFETY:` 前提，公共 unsafe API 有 `# Safety`；JNI、FreeType、wgpu/native window、PTY、mailbox 和 renderer registry 的所有权/线程/销毁契约必须可审查。
+4. **Agent 流程**：每个 Rust 工单先由实施 Agent 使自动门禁全绿，再由独立审查 Agent 对照严格规则、`CONTEXT.md` 与 ADR 阻断式复核；发现存在更简单、更惯用且兼容的 Rust 写法而没有书面理由时，不得合并。
+5. **落地顺序**：先固定工具链、建立规则和基线（工单 48）；分别清零会话层与渲染器基线（49、50）；再启用 CI/Agent 门禁（51）和供应链策略（52）；最后加入专项动态验证（53、54）。完整来源与规则草案见 `.scratch/fable-v1/research-Rust严格安全编码规则.md`。
 
 ## Testing Decisions
 
@@ -95,3 +106,5 @@ Fable v1 是一个纯终端 Android App：包名 `com.gph.fable`、正式签名�
 - 2026-08-06 决策（ADR-0003）：引擎与语言架构终态 = **Kotlin 壳 + Rust 底层（渲染/会话/事件流）+ libghostty-vt 核心**。核心选 libghostty-vt（Zig/C API，安卓官方支持；xterm.js 挂起为未来分支）；渲染器必须自研但借代码起步（expo-libghostty / Termux 绘制代码 / Ghostling）；会话层阶段一保留 Termux Java、终态搬 Rust（借 portable-pty / alacritty tty 零件拼装）；B（C/C++ 底层）淘汰。**工单 04 新增约束：UI 只对着 CoreAdapter 缝写**（喂字节、拉网格、脏行事件），今天 TerminalView 实现该缝、终态 libghostty-vt 实现，UI 代码不依赖具体核心。**验证切片（工单 08）先行**：零渲染文本 dump 验证 libghostty-vt + Termux 环境 + 字节管道真机可行，再定正式渲染方案。
 - 2026-08-07 方向定案（to-spec）：**正式集成主终端**——fable-render（工单 08–12 已验证）切入主终端：CoreAdapter 缝定案 + 会话层字节管道 + 每会话 SurfaceView 渲染；渲染器集成 API（选中文本/字号/配色板）先补齐（工单 14），主终端切换（工单 15）后，工单 04 最小集在其上实施。TerminalView 旧路径保留不删，作为回退参考；集成稳定后另行评估去留。
 - 2026-08-10 决策窗口 8（to-spec）：**会话层搬 Rust**——ADR-0003 决策 4 的空白（搬移时机）已填：独立先行、验证切片先行；范围 = PTY/进程/环境/生命周期全搬，Java 壳保留 UI/设置/系统集成；驱动 = 多 Agent 并发安全第一，语言统一 + 事件流为综合收益；零件 = portable-pty 0.9.0 + nix 兜底（调研文件 `.scratch/fable-v1/research-会话层Rust零件.md`）；过渡 = 双实现并行 + 切换开关；先采 Java 基线；事件流最小集定案。ADR-0008 记录，工单 23–27。
+- 2026-08-12 决策窗口 9（to-spec）：**Kotlin 壳重构**——ADR-0003"Kotlin 壳"落地路径定案（ADR-0009）：终态收口、XML/View 不变、AGP 9 内置 Kotlin、先扩缝后删旧模拟器、四模块（terminal-emulator→fable-core）、先删旧再迁、测试策略（旧 152 测试随删，Rust 测试 + 真机回归 + 缝契约测试兜底）。
+- 2026-08-19 决策：**公开 Rust crate，以免费规则保护合并**——只公开 `fable-boo`、`spike-render`、`spike-session`；根仓库、`fable-app`、`spike-libghostty`、签名材料和内部资料保持私有。执行顺序为工单 `60 → 61 → 59 → 51 → 55`：先补 renderer 的 unsafe 合约，再审计公开 CI/ref，随后执行公开切换，最后在 public `master` 配置 required checks、CODEOWNERS 与独立 Agent 审查。见 ADR-0010。
