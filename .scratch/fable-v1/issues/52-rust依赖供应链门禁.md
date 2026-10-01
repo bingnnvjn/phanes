@@ -45,3 +45,31 @@ Status: 待验收
   `fable-boo` 格式与 session PTY 环境测试基线解决前，该更新流不能宣称“完整 Rust
   门禁全绿”。本门禁只报告已知公告/依赖策略，JNI/FFI 安全仍由
   `docs/agents/rust-quality.md` 的独立审查负责。
+
+2026-10-02 复核并续期两项公告例外（工单 63 移交）：
+
+1. **触发**：工单 63 复跑公开发布闸门得到 `48 checks, 1 failure`，唯一失败是本单
+   2026-08-15 设定的 `review-by = 2026-09-15` 已过期（1 个月窗口到点）。
+2. **复核数据（2026-10-02）**：
+   - 本地 RustSec advisory DB（`~/.cargo/advisory-dbs/advisory-db-3157b0e258782691`）：
+     `RUSTSEC-2026-0206`（rustybuzz，2026-07-11 登记，`informational = "unmaintained"`）
+     与 `RUSTSEC-2026-0192`（ttf-parser，2026-06-28 登记，同为 `unmaintained`）。
+     **两条都记 `patched = []`**，即不存在修复版本。
+   - crates.io 现状：`rustybuzz` 最新 = `0.20.1`（就是当前锁定值）；`fontdue` 最新 =
+     `0.9.4`（当前值）；`ttf-parser` 最新 = `0.25.1`（当前值）。**不存在可升级路径。**
+   - `cargo tree -i ttf-parser`：由 `fontdue 0.9.4` 与 `rustybuzz 0.20.1` 各引入一次，
+     两者都只在 `renderer` 图里。
+   - 公告给出的替代：rustybuzz → `harfrust`（现 `0.13.3`，Harfbuzz 项目维护）；
+     ttf-parser → `skrifa`（Google fontations）。
+3. **处置**：续期到 **2026-11-30**（`reviewed-on = 2026-10-02`），理由字段写入本次复核
+   事实与退出条件。台账（`supply-chain-exceptions.toml`）与
+   `docs/agents/rust-supply-chain.md` 在本单同一变更中同步——本单对“新增或延长公告
+   例外”的要求。
+4. **退出条件（真正修法，不在本单范围）**：
+   - `rustybuzz` → `harfrust`：同源 fork，改动面小，但必须重跑渲染器的整形与
+     emoji/ZWJ 回归（工单 13/22 的断言集）。
+   - `fontdue` → 脱离 `ttf-parser`：渲染器已经链接 FreeType（彩色字形 + 光栅），灰度
+     正文可评估改走 FreeType 或 `swash`；这是字体栈迁移，需要独立工单 + 真机回归。
+   迁移完成前，本例外继续按 2026-11-30 到期。
+5. **复跑**：`CARGO_DENY=… scripts/rust-supply-chain-gate.sh` → **7 steps, 0 failed**；
+   `SECRET_SCANNER_BIN=… scripts/public-release-gate.sh` → **48 checks, 0 failures**。

@@ -14,11 +14,15 @@ CARGO_DENY=/absolute/path/to/cargo-deny scripts/rust-supply-chain-gate.sh
 ## 策略
 
 - RustSec：拒绝已知漏洞、无维护、unsound 与 yanked 依赖。当前仅有两项无维护例外
-  （2026-08-15 核实）：
+  （2026-10-02 复核）：
   `RUSTSEC-2026-0192`（`ttf-parser 0.25.1`）与 `RUSTSEC-2026-0206`
-  （`rustybuzz 0.20.1`）；两者的公告说明均为“无安全升级路径”，不是安全通过。
-  它们在 `supply-chain-exceptions.toml` 记录影响、所有者、理由及 **2026-09-15**
-  到期复核日。因为三个 crate 独立检查，入口只在受影响的 render 图上把“例外不再命中”
+  （`rustybuzz 0.20.1`）。两条公告都记 `patched = []`，且 crates.io 上
+  `ttf-parser 0.25.1`、`fontdue 0.9.4`、`rustybuzz 0.20.1` 仍是各自最新版，
+  所以**没有任何依赖升级能清掉它们**；这是有意识的例外，不是安全通过。
+  它们在 `supply-chain-exceptions.toml` 记录影响、所有者、理由及 **2026-11-30**
+  到期复核日。退出条件写在理由里：`rustybuzz` → `harfrust 0.13.3`；
+  `ttf-parser` → 让渲染器字体栈不再经 `fontdue` 解析（FreeType 已在链接图里）。
+  因为三个 crate 独立检查，入口只在受影响的 render 图上把“例外不再命中”
   升格为失败；新增或延长公告例外必须在同一变更中更新台账与工单。
 - 许可证：允许 `0BSD`、`Apache-2.0`、`BSD-2-Clause`、`ISC`、`MIT`、
   `Unicode-3.0` 与 `Zlib`。这些是当前三份锁文件解析出的许可表达式所需的最小集合
