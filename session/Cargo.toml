@@ -1,0 +1,25 @@
+[package]
+name = "spike-session"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[lib]
+name = "fable_session"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+anyhow = "1"
+crossbeam-channel = "0.5"
+jni = "0.22.4"
+libc = "0.2"
+portable-pty = "0.9.0"
+
+[profile.dev]
+opt-level = 1
+
+# 本地补丁：portable-pty 0.9.0 增加 argv0 覆盖（登录 shell "-bash" 语义，
+# 与 Java createSubprocess 完全一致；上游无此 API）。仅改 cmdbuilder.rs。
+[patch.crates-io]
+portable-pty = { path = "vendor/portable-pty" }
