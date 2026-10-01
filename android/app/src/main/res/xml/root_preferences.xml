@@ -1,0 +1,14 @@
+<PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <Preference
+        app:key="termux"
+        app:title="@string/fable_preferences_title"
+        app:summary="@string/fable_preferences_summary"
+        app:fragment="com.gph.fable.app.fragments.settings.FablePreferencesFragment"/>
+
+    <Preference
+        app:key="about"
+        app:title="@string/about_preference_title"
+        app:persistent="false"/>
+
+</PreferenceScreen>

@@ -1,0 +1,416 @@
+plugins {
+    id "com.android.application"
+}
+
+import org.gradle.api.tasks.compile.JavaCompile
+
+def localSigningProperties = new Properties()
+def localSigningPropertiesFile = rootProject.file("signing.properties")
+if (localSigningPropertiesFile.isFile()) {
+    localSigningPropertiesFile.withInputStream { input ->
+        localSigningProperties.load(input)
+    }
+}
+
+def readSigningInput = { String name ->
+    def value = providers.environmentVariable(name).orNull ?:
+            providers.gradleProperty(name).orNull ?:
+            localSigningProperties.getProperty(name)
+    value?.trim() ?: null
+}
+
+def releaseSigningInputs = [
+    keystore: readSigningInput("FABLE_RELEASE_KEYSTORE"),
+    keyAlias: readSigningInput("FABLE_RELEASE_KEY_ALIAS"),
+    storePassword: readSigningInput("FABLE_RELEASE_STORE_PASSWORD"),
+    keyPassword: readSigningInput("FABLE_RELEASE_KEY_PASSWORD"),
+]
+def missingReleaseSigningInputs = releaseSigningInputs.findAll { !it.value }.keySet()
+def debugUsesReleaseSigning = readSigningInput("FABLE_DEBUG_USE_RELEASE_SIGNING") == "1"
+
+ext {
+    // The packageVariant defines the bootstrap variant that will be included in the app APK.
+    // This must be supported by com.gph.fable.shared.termux.FableBootstrap.PackageVariant or app will
+    // crash at startup.
+    // Bootstrap of a different variant must not be manually installed by the user after app installation
+    // by replacing $PREFIX since app code is dependant on the variant used to build the APK.
+    // Currently supported values are: [ "apt-android-7" "apt-android-5" ]
+    packageVariant = System.getenv("TERMUX_PACKAGE_VARIANT") ?: "apt-android-7" // Default: "apt-android-7"
+    apkVersionTag = System.getenv("TERMUX_APK_VERSION_TAG") ?: ""
+    bootstrapMinSdk = packageVariant == "apt-android-5" ? 21 : 24
+    bootstrapMinRelease = packageVariant == "apt-android-5" ? "5.0" : "7.0"
+    bootstrapMaxSdk = packageVariant == "apt-android-5" ? 23 : null
+    bootstrapMaxRelease = packageVariant == "apt-android-5" ? "6.0" : null
+
+    buildMinSdk = bootstrapMinSdk
+    // 工单 05：28 -> 35（Android 15 行为生效面）。compileSdk 36 / minSdk 24 不变。
+    buildTargetSdk = 35
+}
+
+android {
+    namespace = "com.gph.fable"
+    compileSdk = 36
+    // 工单 28：AGP 9 内置 Kotlin（不引 KGP）。AGP 9.3 默认 true，这里显式声明试点模块启用。
+    enableKotlin = true
+    ndkVersion = System.getenv("JITPACK_NDK_VERSION") ?: "22.1.7171670"
+    buildFeatures {
+        buildConfig = true
+    }
+    // 工单 22：字体 assets 不压缩（noCompress），运行时 mmap 直接读。
+    aaptOptions {
+        noCompress += "ttf"
+    }
+    def appVersionName = System.getenv("TERMUX_APP_VERSION_NAME") ?: ""
+    def splitAPKsForDebugBuilds = System.getenv("TERMUX_SPLIT_APKS_FOR_DEBUG_BUILDS") ?: "1"
+    def splitAPKsForReleaseBuilds = System.getenv("TERMUX_SPLIT_APKS_FOR_RELEASE_BUILDS") ?: "0" // F-Droid does not support split APKs #1904
+
+    dependencies {
+        implementation "androidx.annotation:annotation:1.10.0"
+        implementation "androidx.core:core:1.18.0"
+        implementation "androidx.drawerlayout:drawerlayout:1.2.0"
+        implementation "androidx.preference:preference:1.2.1"
+        implementation "androidx.viewpager:viewpager:1.1.0"
+        implementation "com.google.android.material:material:1.14.0"
+        implementation "com.google.guava:guava:33.6.0-jre"
+        implementation "io.noties.markwon:core:$markwonVersion"
+        implementation "io.noties.markwon:ext-strikethrough:$markwonVersion"
+        implementation "io.noties.markwon:linkify:$markwonVersion"
+        implementation "io.noties.markwon:recycler:$markwonVersion"
+
+        implementation project(":terminal-view")
+        implementation project(":termux-shared")
+    }
+
+    defaultConfig {
+        applicationId "com.gph.fable"
+        minSdk buildMinSdk
+        targetSdk buildTargetSdk
+        versionCode 1022
+        versionName "0.119.0-beta.3"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        if (appVersionName) versionName = appVersionName
+        validateVersionName(versionName)
+
+        buildConfigField "Integer", "TERMUX_APP__BOOTSTRAP_MIN_SDK", project.ext.bootstrapMinSdk.toString()
+        buildConfigField "String", "TERMUX_APP__BOOTSTRAP_MIN_RELEASE",
+                project.ext.bootstrapMinRelease ? "\"" + project.ext.bootstrapMinRelease + "\"" : "null"
+        buildConfigField "Integer", "TERMUX_APP__BOOTSTRAP_MAX_SDK", project.ext.bootstrapMaxSdk.toString()
+        buildConfigField "String", "TERMUX_APP__BOOTSTRAP_MAX_RELEASE",
+                project.ext.bootstrapMaxRelease ? "\"" + project.ext.bootstrapMaxRelease + "\"" : "null"
+        buildConfigField "String", "TERMUX_PACKAGE_VARIANT", "\"" + project.ext.packageVariant + "\"" // Used by FableApplication class
+
+        manifestPlaceholders.TERMUX_PACKAGE_NAME = "com.gph.fable"
+        manifestPlaceholders.TERMUX_APP_NAME = "Fable"
+        manifestPlaceholders.TERMUX_API_APP_NAME = "Termux:API"
+        manifestPlaceholders.TERMUX_BOOT_APP_NAME = "Termux:Boot"
+        manifestPlaceholders.TERMUX_FLOAT_APP_NAME = "Termux:Float"
+        manifestPlaceholders.TERMUX_STYLING_APP_NAME = "Termux:Styling"
+        manifestPlaceholders.TERMUX_TASKER_APP_NAME = "Termux:Tasker"
+        manifestPlaceholders.TERMUX_WIDGET_APP_NAME = "Termux:Widget"
+
+        externalNativeBuild {
+            ndkBuild {
+                cFlags "-std=c11", "-Wall", "-Wextra", "-Werror", "-Os", "-fno-stack-protector", "-Wl,--gc-sections"
+            }
+        }
+
+        splits {
+            abi {
+                enable ((gradle.startParameter.taskNames.any { it.contains("Debug") } && splitAPKsForDebugBuilds == "1") ||
+                    (gradle.startParameter.taskNames.any { it.contains("Release") } && splitAPKsForReleaseBuilds == "1"))
+                reset ()
+                include 'x86', 'x86_64', 'armeabi-v7a', 'arm64-v8a'
+                universalApk true
+            }
+        }
+    }
+
+    signingConfigs {
+        release {
+            if (missingReleaseSigningInputs.empty) {
+                storeFile file(releaseSigningInputs.keystore)
+                keyAlias releaseSigningInputs.keyAlias
+                storePassword releaseSigningInputs.storePassword
+                keyPassword releaseSigningInputs.keyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled true
+            shrinkResources false // Reproducible builds
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+
+        debug {
+            // 默认使用 AGP 的独立 debug keystore。需要覆盖安装正式包时，才显式复用
+            // release 身份：FABLE_DEBUG_USE_RELEASE_SIGNING=1。
+            if (debugUsesReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    compileOptions {
+        // Flag to enable support for the new language APIs
+        coreLibraryDesugaringEnabled true
+
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    externalNativeBuild {
+        ndkBuild {
+            path "src/main/cpp/Android.mk"
+        }
+    }
+
+    lint {
+        disable 'ProtectedPermissions'
+    }
+
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+            all {
+                // Robolectric 4.10 在 JDK 17 下需要模块 opens；测试 worker 不继承 daemon 的
+                // org.gradle.jvmargs，必须在这里显式补上。
+                jvmArgs '--add-opens=java.base/java.lang=ALL-UNNAMED',
+                        '--add-opens=java.base/java.lang.reflect=ALL-UNNAMED',
+                        '--add-opens=java.base/java.io=ALL-UNNAMED',
+                        '--add-opens=java.base/java.util=ALL-UNNAMED',
+                        '--add-opens=java.base/java.net=ALL-UNNAMED',
+                        '--add-opens=java.base/java.text=ALL-UNNAMED',
+                        '--add-opens=java.base/java.lang.invoke=ALL-UNNAMED',
+                        '--add-opens=java.base/java.time=ALL-UNNAMED',
+                        '--add-opens=java.base/java.util.concurrent=ALL-UNNAMED',
+                        '--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED'
+            }
+        }
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
+}
+
+tasks.register("verifyReleaseSigning") {
+    group = "verification"
+    description = "Fails clearly unless all release signing inputs are supplied."
+    doLast {
+        if (!missingReleaseSigningInputs.empty) {
+            throw new GradleException(
+                "Release signing requires FABLE_RELEASE_KEYSTORE, FABLE_RELEASE_KEY_ALIAS, " +
+                "FABLE_RELEASE_STORE_PASSWORD, and FABLE_RELEASE_KEY_PASSWORD. Supply them " +
+                "as environment variables (CI) or Gradle properties (local ~/.gradle/gradle.properties)."
+            )
+        }
+        if (!file(releaseSigningInputs.keystore).isFile()) {
+            throw new GradleException(
+                "Release signing keystore does not exist: " + releaseSigningInputs.keystore
+            )
+        }
+    }
+}
+
+tasks.register("verifyDebugSigning") {
+    group = "verification"
+    description = "Validates the explicit debug-to-release signing override."
+    doLast {
+        if (debugUsesReleaseSigning && !missingReleaseSigningInputs.empty) {
+            throw new GradleException(
+                "FABLE_DEBUG_USE_RELEASE_SIGNING=1 requires complete release signing inputs. " +
+                "Unset it to use the default debug keystore."
+            )
+        }
+    }
+}
+
+tasks.matching { task ->
+    task.name == "assembleRelease" || task.name == "bundleRelease"
+}.configureEach {
+    dependsOn "verifyReleaseSigning"
+}
+tasks.matching { task ->
+    task.name == "validateSigningRelease"
+}.configureEach {
+    dependsOn "verifyReleaseSigning"
+}
+tasks.matching { task ->
+    task.name == "assembleDebug"
+}.configureEach {
+    dependsOn "verifyDebugSigning"
+}
+
+tasks.register("printSigningConfiguration") {
+    group = "verification"
+    description = "Prints signing identities without exposing signing secrets."
+    doLast {
+        println("debug=" + (debugUsesReleaseSigning ? "release-override" : "default-debug-keystore"))
+        println("release=" + (missingReleaseSigningInputs.empty ? "configured" : "missing"))
+    }
+}
+
+tasks.register("printReleaseSigningCertificateSha256") {
+    group = "verification"
+    description = "Prints the configured release certificate SHA-256 digest without exposing secrets."
+    dependsOn "verifyReleaseSigning"
+    doLast {
+        def signingKeyStore = java.security.KeyStore.getInstance(java.security.KeyStore.getDefaultType())
+        file(releaseSigningInputs.keystore).withInputStream { input ->
+            signingKeyStore.load(input, releaseSigningInputs.storePassword.toCharArray())
+        }
+        def certificate = signingKeyStore.getCertificate(releaseSigningInputs.keyAlias)
+        if (certificate == null) {
+            throw new GradleException(
+                "Release signing alias is absent from configured keystore: " +
+                releaseSigningInputs.keyAlias
+            )
+        }
+        def digest = java.security.MessageDigest.getInstance("SHA-256").digest(certificate.encoded)
+        println(digest.collect { String.format("%02X", it & 0xff) }.join())
+    }
+}
+
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        variant.outputs.forEach { output ->
+            def abi = output.filters.find {
+                it.filterType == com.android.build.api.variant.FilterConfiguration.FilterType.ABI
+            }?.identifier ?: "universal"
+            def buildType = variant.buildType
+            output.outputFileName.set("fable-app_" + (project.ext.apkVersionTag ? project.ext.apkVersionTag : project.ext.packageVariant + "-" + buildType) + "_" + abi + ".apk")
+        }
+    }
+}
+
+// 工单 22：preBuild 前确保字体 assets 就绪（脚本幂等：sha256 匹配即跳过；
+// 下载/剥离失败即构建失败，见 scripts/fetch-emoji-fonts.sh）。
+tasks.register("fetchEmojiFonts", Exec) {
+    def fableRoot = rootProject.rootDir.parentFile
+    workingDir fableRoot
+    commandLine "bash", new File(fableRoot, "scripts/fetch-emoji-fonts.sh").absolutePath
+}
+tasks.register("buildFableSession", Exec) {
+    def fableRoot = rootProject.rootDir.parentFile
+    workingDir fableRoot
+    commandLine "bash", new File(fableRoot, "scripts/build-session-lib.sh").absolutePath
+}
+tasks.named("preBuild") {
+    dependsOn "fetchEmojiFonts"
+    dependsOn "buildFableSession"
+}
+
+dependencies {
+    testImplementation "junit:junit:4.13.2"
+    androidTestImplementation "androidx.test.ext:junit:1.1.3"
+    androidTestImplementation "androidx.test.espresso:espresso-core:3.4.0"
+    // Robolectric 4.8.1 bundles an ASM version that cannot read Java 21
+    // class files (major version 65), which breaks tests on the project JDK.
+    testImplementation "org.robolectric:robolectric:4.16.1"
+    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.5"
+}
+
+task versionName {
+    doLast {
+        print android.defaultConfig.versionName
+    }
+}
+
+def validateVersionName(String versionName) {
+    // https://semver.org/spec/v2.0.0.html#is-there-a-suggested-regular-expression-regex-to-check-a-semver-string
+    // ^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$
+    if (!java.util.regex.Pattern.matches("^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?\$", versionName))
+        throw new GradleException("The versionName '"  + versionName + "' is not a valid version as per semantic version '2.0.0' spec in the format 'major.minor.patch(-prerelease)(+buildmetadata)'. https://semver.org/spec/v2.0.0.html.")
+}
+
+def downloadBootstrap(String arch, String expectedChecksum, String version, String remoteUrlOverride = null) {
+    def digest = java.security.MessageDigest.getInstance("SHA-256")
+
+    def localUrl = "src/main/cpp/bootstrap-" + arch + ".zip"
+    def file = new File(projectDir, localUrl)
+    if (file.exists()) {
+        def buffer = new byte[8192]
+        def input = new FileInputStream(file)
+        while (true) {
+            def readBytes = input.read(buffer)
+            if (readBytes < 0) break
+            digest.update(buffer, 0, readBytes)
+        }
+        def checksum = new BigInteger(1, digest.digest()).toString(16)
+        while (checksum.length() < 64) { checksum = "0" + checksum }
+        if (checksum == expectedChecksum) {
+            return
+        } else {
+            logger.quiet("Deleting old local file with wrong hash: " + localUrl + ": expected: " + expectedChecksum + ", actual: " + checksum)
+            file.delete()
+        }
+    }
+
+    def remoteUrl = remoteUrlOverride != null ? remoteUrlOverride :
+        "https://github.com/termux/termux-packages/releases/download/bootstrap-" + version + "/bootstrap-" + arch + ".zip"
+    logger.quiet("Downloading " + remoteUrl + " ...")
+
+    file.parentFile.mkdirs()
+    def out = new BufferedOutputStream(new FileOutputStream(file))
+
+    def connection = new URL(remoteUrl).openConnection()
+    connection.setInstanceFollowRedirects(true)
+    def digestStream = new java.security.DigestInputStream(connection.inputStream, digest)
+    out << digestStream
+    out.close()
+
+    def checksum = new BigInteger(1, digest.digest()).toString(16)
+    while (checksum.length() < 64) { checksum = "0" + checksum }
+    if (checksum != expectedChecksum) {
+        file.delete()
+        throw new GradleException("Wrong checksum for " + remoteUrl + ": expected: " + expectedChecksum + ", actual: " + checksum)
+    }
+}
+
+clean {
+    doLast {
+        def tree = fileTree(new File(projectDir, 'src/main/cpp'))
+        tree.include 'bootstrap-*.zip'
+        tree.each { it.delete() }
+    }
+}
+
+task downloadBootstraps() {
+    doLast {
+        def packageVariant = project.ext.packageVariant
+        if (packageVariant == "apt-android-7") {
+            def version =  "2025.03.28-r1" + "+" + packageVariant
+            // Fable fork: aarch64 bootstrap comes from the fable-bootstrap Release (com.gph.fable prefix),
+            // not from the official termux-packages Release (com.termux prefix).
+            downloadBootstrap("aarch64", "d9fc5f96691afdeb83ecffc0e9571a7e88cf127d775beefc53d9a0e353e0a601", version,
+                "https://github.com/bingnnvjn/fable-bootstrap/releases/download/bootstrap-2026.08.06-r2%2Bapt-android-7/bootstrap-aarch64.zip")
+            downloadBootstrap("arm",     "f3bb9d1b32552b34fff41861dbf193ec5ba2848d67d779ac1c7256da6640f85d", version)
+            downloadBootstrap("i686",    "36db3e1ac3547f9a174fd763bd9a484fa1a3449cdd81e1cf2408ff0454f839c6", version)
+            downloadBootstrap("x86_64",  "1c124ec2396ee70a51b0b0a574f29aa659526aa2b9f558f993b2fb05d1e51855", version)
+        } else if (packageVariant == "apt-android-5") {
+            def version = "2025.03.28-r3" + "+" + packageVariant
+            downloadBootstrap("aarch64", "147c98e610a30588665a89776314833c293006b12c70e65dcde6eb54c2344113", version)
+            downloadBootstrap("arm", "363c28dd4b70c995302498beae79fb5917af7d3b0ca9fbd9da7de96ab64c6122", version)
+            downloadBootstrap("i686", "a2e742381ab24cf8c9a78ae4e2425ee44d8fb9625a2b0ef63e4cd32e292f7186", version)
+            downloadBootstrap("x86_64", "4f6866c222b0f1ae1b180220ffc6e8e1afbc10b9cbb7a462c062c490eda90044", version)
+        } else {
+            throw new GradleException("Unsupported TERMUX_PACKAGE_VARIANT \"" + packageVariant + "\"")
+        }
+    }
+}
+
+afterEvaluate {
+    tasks.matching {
+        it.name.startsWith("compile") && it.name.endsWith("JavaWithJavac") &&
+            !it.name.contains("UnitTest") && !it.name.contains("AndroidTest")
+    }.configureEach {
+        dependsOn downloadBootstraps
+    }
+}

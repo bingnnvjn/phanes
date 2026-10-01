@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <string name="application_name">Fable</string>
+    <string name="shared_user_label">Fable 用户</string>
+
+    <!-- Fable RUN_COMMAND 权限 -->
+    <string name="permission_run_command_label">在 Fable 环境中运行命令</string>
+    <string name="permission_run_command_description">在 Fable 环境中执行任意命令并访问文件</string>
+
+    <!-- 引导包安装 -->
+    <string name="bootstrap_installer_body">正在安装引导包…</string>
+    <string name="bootstrap_error_title">Fable 引导包错误</string>
+    <string name="bootstrap_error_body">Fable 无法安装引导包。</string>
+    <string name="bootstrap_error_abort">中止</string>
+    <string name="bootstrap_error_try_again">重试</string>
+    <string name="bootstrap_error_apk_bootstrap_variant_min_sdk_incompatible">当前安装的 Fable APK 引导变体 %1$s 与设备的 Android 版本 %2$s（sdk `%3$d`）不兼容，它要求最低 Android 版本 %4$s（sdk `%5$d`）。\n\n请卸载 Fable 后重新安装正确的 APK 构建变体。</string>
+    <string name="bootstrap_error_apk_bootstrap_variant_max_sdk_incompatible">当前安装的 Fable APK 引导变体 %1$s 与设备的 Android 版本 %2$s（sdk `%3$d`）不兼容，它要求最高 Android 版本 %4$s（sdk `%5$d`）。\n\n请卸载 Fable 后重新安装正确的 APK 构建变体。</string>
+    <string name="bootstrap_error_not_primary_user_message">Fable 只能以主用户身份运行。\n为 Fable 编译的引导二进制硬编码了 $PREFIX 路径，只能安装在以下路径：\n%1$s。</string>
+    <string name="bootstrap_error_installed_on_portable_sd">Fable 不能安装在设备的便携/外部/可移除 SD 卡上。\n为 Fable 编译的引导二进制硬编码了 $PREFIX 路径，只能安装在以下路径：\n%1$s。</string>
+
+    <!-- 终端侧栏与快捷操作 -->
+    <string name="action_new_session">新会话</string>
+    <string name="action_new_session_failsafe">安全模式</string>
+    <string name="title_max_terminals_reached">已达最大终端数</string>
+    <string name="msg_max_terminals_reached">创建新会话前请先关闭已有会话。</string>
+
+    <string name="title_rename_session">设置会话名称</string>
+    <string name="action_rename_session_confirm">设置</string>
+    <string name="title_create_named_session">新建命名会话</string>
+    <string name="action_create_named_session_confirm">创建</string>
+
+    <string name="action_toggle_soft_keyboard">键盘</string>
+
+    <string name="msg_enabling_terminal_toolbar">正在启用终端工具栏</string>
+    <string name="msg_disabling_terminal_toolbar">正在禁用终端工具栏</string>
+
+    <!-- 终端弹窗 -->
+    <string name="action_select_url">选择 URL</string>
+    <string name="title_select_url_dialog">点击 URL 复制，或长按打开</string>
+    <string name="title_select_url_none_found">终端中没有找到 URL。</string>
+    <string name="msg_select_url_copied_to_clipboard">URL 已复制到剪贴板</string>
+
+    <string name="action_share_transcript">分享记录</string>
+    <string name="title_share_transcript">终端记录</string>
+    <string name="title_share_transcript_with">发送记录到：</string>
+
+    <string name="action_share_selected_text">分享选中文本</string>
+    <string name="title_share_selected_text">终端文本</string>
+    <string name="title_share_selected_text_with">发送选中文本到：</string>
+
+    <string name="action_autofill_username">自动填充用户名</string>
+    <string name="action_autofill_password">自动填充密码</string>
+
+    <string name="action_reset_terminal">重置</string>
+    <string name="msg_terminal_reset">终端已重置</string>
+
+    <string name="action_kill_process">结束进程（%d）</string>
+    <string name="title_confirm_kill_process">确定结束该会话？</string>
+
+    <string name="action_style_terminal">样式</string>
+    <string name="action_toggle_keep_screen_on">保持屏幕常亮</string>
+    <string name="action_open_help">帮助</string>
+    <string name="action_open_settings">设置</string>
+
+    <string name="action_report_issue">报告问题</string>
+    <string name="msg_generating_report">正在生成报告</string>
+    <string name="msg_add_fable_debug_info">在报告中附加 Fable 调试信息？</string>
+
+    <string name="error_styling_not_installed">未安装样式插件应用。</string>
+    <string name="action_styling_install">安装</string>
+
+    <!-- Fable 通知 -->
+    <string name="notification_action_exit">退出</string>
+    <string name="notification_action_wake_lock">获取唤醒锁</string>
+    <string name="notification_action_wake_unlock">释放唤醒锁</string>
+    <string name="msg_notification_permission_denied">通知权限未授予：会话仍会在后台继续运行，但状态栏通知被系统隐藏。可在系统设置中重新开启通知。</string>
+
+    <!-- 工单 05：前台服务通知正文（汉化） -->
+    <plurals name="notification_sessions_count">
+        <item quantity="one">%d 个会话</item>
+        <item quantity="other">%d 个会话</item>
+    </plurals>
+    <plurals name="notification_tasks_count">
+        <item quantity="one">%d 个任务</item>
+        <item quantity="other">%d 个任务</item>
+    </plurals>
+    <string name="notification_wake_lock_held">（已持有唤醒锁）</string>
+
+    <!-- 工单 05：通知渠道名（用户可见，随 locale 翻译） -->
+    <string name="fable_app_notification_channel_name">Fable 前台服务</string>
+    <string name="fable_run_command_notification_channel_name">Fable 命令执行</string>
+
+    <!-- FableService -->
+    <string name="error_display_over_other_apps_permission_not_granted_to_start_terminal">Fable 需要“显示在其他应用上层”权限才能在 Android 10 及以上从后台启动终端会话。请在 设置 → 应用 → Fable → 高级 中授予。</string>
+    <string name="error_fable_service_invalid_execution_command_runner">传给 FableService 的执行命令运行器无效：`%1$s`</string>
+    <string name="error_fable_service_unsupported_execution_command_runner">不支持的 FableService 执行命令运行器：`%1$s`</string>
+    <string name="error_fable_service_unsupported_execution_command_shell_create_mode">不支持的执行命令 shell 创建模式：`%1$s`</string>
+    <string name="error_fable_service_execution_command_shell_name_unset">未设置 shell 名称，但传入了 `%1$s` shell 创建模式</string>
+
+    <!-- RunCommandService -->
+    <string name="error_run_command_service_invalid_intent_action">传给 RunCommandService 的 Intent 动作无效：`%1$s`</string>
+    <string name="error_run_command_service_invalid_execution_command_runner">传给 RunCommandService 的执行命令运行器无效：`%1$s`</string>
+    <string name="error_run_command_service_mandatory_extra_missing">缺少必填的 extra：\"%1$s\"</string>
+    <string name="error_run_command_service_api_help">访问 %1$s 了解 RUN_COMMAND Intent 的更多用法。</string>
+
+    <!-- 文件接收 -->
+    <string name="title_file_received">保存文件到 ~/downloads/</string>
+    <string name="action_file_received_edit">编辑</string>
+    <string name="action_file_received_open_directory">打开目录</string>
+
+    <!-- 其他 -->
+    <string name="error_fable_service_start_failed_general">启动 FableService 失败。请查看 logcat 中的异常信息。</string>
+    <string name="error_fable_service_start_failed_bg">应用在后台时因 Android 后台限制无法启动 FableService。</string>
+
+    <!-- 设置 -->
+    <string name="title_activity_fable_settings">Fable 设置</string>
+
+    <!-- Fable 应用偏好 -->
+    <string name="fable_preferences_title">Fable</string>
+    <string name="fable_preferences_summary">Fable 应用偏好</string>
+
+        <!-- 调试偏好 -->
+        <string name="fable_debugging_preferences_title">调试</string>
+        <string name="fable_debugging_preferences_summary">调试偏好</string>
+
+            <!-- 日志分类 -->
+            <string name="fable_logging_header">日志</string>
+
+                <!-- 日志级别 -->
+                <string name="fable_log_level_title">日志级别</string>
+
+                <!-- 终端视图按键日志 -->
+                <string name="fable_terminal_view_key_logging_enabled_title">终端视图按键日志</string>
+                <string name="fable_terminal_view_key_logging_enabled_off">日志中不包含终端视图按键条目。（默认）</string>
+                <string name="fable_terminal_view_key_logging_enabled_on">Logcat 日志将包含终端视图按键条目。这些日志非常冗长，正常使用时应关闭，否则会造成性能问题。</string>
+
+                <!-- 插件错误通知 -->
+                <string name="fable_plugin_error_notifications_enabled_title">插件错误通知</string>
+                <string name="fable_plugin_error_notifications_enabled_off">不显示插件错误的提示与通知。</string>
+                <string name="fable_plugin_error_notifications_enabled_on">显示插件错误的提示与通知。（默认）</string>
+
+                <!-- 崩溃报告通知 -->
+                <string name="fable_crash_report_notifications_enabled_title">崩溃报告通知</string>
+                <string name="fable_crash_report_notifications_enabled_off">不显示崩溃报告通知。</string>
+                <string name="fable_crash_report_notifications_enabled_on">显示崩溃报告通知。（默认）</string>
+
+
+        <!-- 终端 I/O 偏好 -->
+        <string name="fable_terminal_io_preferences_title">终端 I/O</string>
+        <string name="fable_terminal_io_preferences_summary">终端 I/O 偏好</string>
+
+            <!-- 键盘分类 -->
+            <string name="fable_keyboard_header">键盘</string>
+
+                <!-- 软键盘 -->
+                <string name="fable_soft_keyboard_enabled_title">启用软键盘</string>
+                <string name="fable_soft_keyboard_enabled_off">软键盘将被禁用。</string>
+                <string name="fable_soft_keyboard_enabled_on">软键盘将被启用。（默认）</string>
+
+                <!-- 仅无硬件键盘时启用软键盘 -->
+                <string name="fable_soft_keyboard_enabled_only_if_no_hardware_title">仅无硬件键盘时启用软键盘</string>
+                <string name="fable_soft_keyboard_enabled_only_if_no_hardware_off">即使连接了硬件键盘也启用软键盘。（默认）</string>
+                <string name="fable_soft_keyboard_enabled_only_if_no_hardware_on">仅在没有连接硬件键盘时启用软键盘。</string>
+
+
+        <!-- 终端视图偏好 -->
+        <string name="fable_terminal_view_preferences_title">终端视图</string>
+        <string name="fable_terminal_view_preferences_summary">终端视图偏好</string>
+
+            <!-- 外观 -->
+            <string name="fable_appearance_header">外观</string>
+            <string name="fable_theme_mode_title">主题</string>
+            <string name="fable_theme_mode_summary">应用外壳主题（设置、抽屉与工具栏）</string>
+
+            <!-- 视图分类 -->
+            <string name="fable_terminal_view_view_header">视图</string>
+
+                <!-- 字号 -->
+                <string name="fable_terminal_view_font_size_title">字号</string>
+                <string name="fable_terminal_view_font_size_summary">终端字号（8–24）</string>
+
+                <!-- 终端边距调整 -->
+                <string name="fable_terminal_view_terminal_margin_adjustment_title">终端边距调整</string>
+                <string name="fable_terminal_view_terminal_margin_adjustment_off">终端边距调整将被禁用。</string>
+                <string name="fable_terminal_view_terminal_margin_adjustment_on">终端边距调整将被启用。建议启用，以修复软键盘遮挡部分扩展键/终端视图的问题。如果导致屏幕闪烁，请关闭。（默认）</string>
+
+    <!-- 关于 -->
+    <string name="about_preference_title">关于</string>
+    <string name="about_fable_header">## Fable（寓言）</string>
+    <string name="about_fable_description">一款拥有自研渲染核心的私人 Android 终端。</string>
+
+    <!-- 捐赠 -->
+    <string name="donate_preference_title">捐赠</string>
+
+    <!-- 最近会话 -->
+    <string name="recent_sessions_title">最近会话</string>
+    <string name="msg_recent_session_removed">已删除最近会话记录</string>
+    <string name="msg_session_exited">已退出</string>
+    <string name="msg_session_null">空会话</string>
+
+    <!-- 扩展键错误 -->
+    <string name="error_load_extra_keys_property">无法加载并设置属性文件中的 "%1$s" 属性：%2$s</string>
+    <string name="error_create_default_extra_keys">无法创建默认扩展键</string>
+
+    <!-- 文件接收错误 -->
+    <string name="error_send_action_without_content">发送动作没有内容，没有可保存的文件。</string>
+    <string name="error_data_uri_not_passed">未传入数据 URI。</string>
+    <string name="error_file_path_invalid">数据 URI 的文件路径为空、缺失或无效。</string>
+    <string name="error_cannot_open_file">无法打开文件：%1$s。</string>
+    <string name="error_unable_to_receive_file_or_url">无法接收任何文件或 URL。</string>
+    <string name="error_unable_to_handle_shared_content">无法处理共享内容：\n\n%1$s</string>
+    <string name="error_file_editor_missing">以下文件不存在：\n$HOME/bin/termux-file-editor\n\n请将它创建为脚本或符号链接，接收到的文件会作为唯一参数调用它。</string>
+    <string name="error_file_name_null">文件名不能为空</string>
+    <string name="error_file_name_invalid">文件名不能包含路径</string>
+    <string name="error_file_already_exists">同名文件已存在</string>
+    <string name="error_cannot_create_directory">无法创建目录：%1$s</string>
+    <string name="error_saving_file">保存文件出错：\n\n%1$s</string>
+    <string name="error_url_opener_missing">以下文件不存在：\n$HOME/bin/termux-url-opener\n\n请将它创建为脚本或符号链接，共享的 URL 会作为第一个参数调用它。</string>
+
+</resources>

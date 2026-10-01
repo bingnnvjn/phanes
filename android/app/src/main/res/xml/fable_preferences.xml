@@ -1,0 +1,33 @@
+<PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory
+        app:key="appearance"
+        app:title="@string/fable_appearance_header">
+
+        <ListPreference
+            app:defaultValue="system"
+            app:entries="@array/theme_mode_entries"
+            app:entryValues="@array/theme_mode_values"
+            app:key="fable_theme_mode"
+            app:summary="@string/fable_theme_mode_summary"
+            app:title="@string/fable_theme_mode_title"
+            app:useSimpleSummaryProvider="true" />
+
+    </PreferenceCategory>
+
+    <Preference
+        app:title="@string/fable_debugging_preferences_title"
+        app:summary="@string/fable_debugging_preferences_summary"
+        app:fragment="com.gph.fable.app.fragments.settings.termux.DebuggingPreferencesFragment"/>
+
+    <Preference
+        app:title="@string/fable_terminal_io_preferences_title"
+        app:summary="@string/fable_terminal_io_preferences_summary"
+        app:fragment="com.gph.fable.app.fragments.settings.termux.TerminalIOPreferencesFragment"/>
+
+    <Preference
+        app:title="@string/fable_terminal_view_preferences_title"
+        app:summary="@string/fable_terminal_view_preferences_summary"
+        app:fragment="com.gph.fable.app.fragments.settings.termux.TerminalViewPreferencesFragment"/>
+
+</PreferenceScreen>
