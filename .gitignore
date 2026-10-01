@@ -1,12 +1,6 @@
-# 独立仓库（各自维护历史）
-/fable-boo/
-/fable-app/
-/spike-render/
-/spike-session/
-
-# 第三方预编译资产（.a/头文件/字体，校验和见其 README）
-/spike-libghostty/*
-!/spike-libghostty/README.md
+# 第三方预编译资产（.a/头文件/字体，校验和见 libghostty/README.md 与 docs/build-inputs.md）
+/libghostty/*
+!/libghostty/README.md
 
 # 下载的工具链压缩包
 /build-tools_r30.0.3-linux.zip
