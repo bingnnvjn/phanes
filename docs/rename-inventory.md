@@ -29,6 +29,8 @@ ADR-0013 明确排除的动作。
 
 ## 二、App 显示名（本单已改）
 
+2026-10-02 用户确认：保留新名字 Phanes。
+
 | 项 | 改前 | 改后 |
 | --- | --- | --- |
 | Gradle manifest 占位符 | `manifestPlaceholders.TERMUX_APP_NAME = "Fable"` | `"Phanes"`（`android/app/build.gradle`） |
