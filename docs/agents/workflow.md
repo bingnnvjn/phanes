@@ -1,6 +1,6 @@
-# Fable 工程主流程（MATT + Caveman 整合 · 启动协议文件）
+# Phanes 工程主流程（MATT + Caveman 整合 · 启动协议文件）
 
-本文件是 Fable 工程的**唯一启动依赖**：新会话只读本文件 + 一个方向/工单名，即可自行找素材、按流程执行。词汇与分层见 `CONTEXT.md`；事实源映射见 `docs/agents/ssot.md`。
+本文件是 Phanes 工程的**唯一启动依赖**：新会话只读本文件 + 一个方向/工单名，即可自行找素材、按流程执行。词汇与分层见 `CONTEXT.md`；事实源映射见 `docs/agents/ssot.md`。
 
 ## 启动协议（一键式）
 

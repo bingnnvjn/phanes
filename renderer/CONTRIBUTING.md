@@ -1,7 +1,8 @@
 # Contributing
 
-Before a Fable-owned public remote is established, changes are reviewed in
-the private engineering repository.
+Changes are reviewed in the private engineering repository. The five parts live
+in one repository (ADR-0011); publication is a separate decision that has not
+been taken (ADR-0012).
 
 For each change:
 
@@ -15,5 +16,5 @@ For each change:
 5. Do not add credentials, signing files, generated artifacts, or internal
    `.scratch`/device material.
 
-Public pull-request and security-contact details will be added when the
-Fable-owned remote and branch rules are approved.
+Public pull-request and security-contact details will be added if the repository
+is ever made public and branch rules are approved.

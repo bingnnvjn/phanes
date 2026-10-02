@@ -1,4 +1,4 @@
-# Fable Rust 严格质量规则
+# Phanes Rust 严格质量规则
 
 本文件是三个 Rust crate 的可执行规则摘要；完整安全边界和工具选择依据见
 `.scratch/fable-v1/research-Rust严格安全编码规则.md`。工单 48 只建立本地基线和门禁，

@@ -1,7 +1,7 @@
 # boo
 
 独立 Rust 单二进制：Ghostty 官网动画观赏（`play`）+ 终端渲染压力基准（`bench`），
-供 Fable 主终端链路做观赏对比与渲染压力测试。
+供 Phanes 主终端链路做观赏对比与渲染压力测试。
 
 ## 构建
 
@@ -10,7 +10,7 @@ cargo build --target aarch64-linux-android --release
 ```
 
 产物：`target/aarch64-linux-android/release/boo`。
-零运行时依赖（仅动态链接系统 bionic）；拷入 Fable 环境即用。
+零运行时依赖（仅动态链接系统 bionic）；拷入 Phanes 环境即用。
 
 ## 用法
 

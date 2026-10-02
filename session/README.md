@@ -1,6 +1,6 @@
 # session
 
-`session` is the Rust session layer for Fable. It
+`session` is the Rust session layer for Phanes. It
 provides PTY-backed sessions, event delivery, lifecycle management, logging,
 and JNI handles for the Android shell.
 
@@ -19,5 +19,5 @@ changing that vendor tree.
 
 JNI, PTY, process, `unsafe`, and cross-thread shutdown changes require the
 ownership and lifetime review described in [`CONTRIBUTING.md`](CONTRIBUTING.md).
-A Fable-owned public remote, CI, and release policy are still required before
-publication.
+All five parts live in one repository (ADR-0011); publication is a separate
+decision that has not been taken (ADR-0012).

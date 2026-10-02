@@ -1,4 +1,4 @@
-title = "Fable public-release secret scan"
+title = "Phanes public-release secret scan"
 
 [extend]
 useDefault = true

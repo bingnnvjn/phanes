@@ -19,7 +19,7 @@
 | 落地 | `android/app/src/main/cpp/bootstrap-aarch64.zip` |
 | 机制 | `android/app/build.gradle` 的 `downloadBootstraps` 任务，构建前自动下载并校验，无需手工 |
 
-注意：只有 aarch64 指向 Fable 自己的 Release（`com.gph.fable` 前缀）。arm / i686 / x86_64
+注意：只有 aarch64 指向本项目自己的 Release（`bingnnvjn/fable-bootstrap`，`com.gph.fable` 前缀）。arm / i686 / x86_64
 三份仍指向官方 termux-packages Release（`com.termux` 前缀）。本项目的目标设备是 aarch64。
 
 `libtermux-bootstrap.so` **不是**构建输入：它是这个 zip 经 `android/app/src/main/cpp/`

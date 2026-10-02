@@ -1,4 +1,4 @@
-# Fable 公开发布闸门
+# Phanes 公开发布闸门
 
 本文档和 `scripts/public-release-gate.sh` 是工单 55 建立的可重复本地闸门；
 工单 63 按 ADR-0011 把它改写成**单一仓库**形态。闸门是 fail-closed：任何未完成
@@ -63,12 +63,12 @@ commit `cd5227bd1f61dff3bbd6c814ceaf7ffd95e947d9`，并在资产旁提供
 `docs/release/third-party-sources.md`。
 
 签名材料按 ADR-0013 冻结在应用身份上，不得进入仓库或构建输入。旧
-`<旧签名材料>` 已退役并轮换为仓库外的新 Fable release key；若将来需要重新审计签名
+`<旧签名材料>` 已退役并轮换为仓库外的新 release key；若将来需要重新审计签名
 边界，必须先恢复仓库外的可恢复副本，再在副本上评估，不得直接改写本仓库历史。
 
-## 尚需 Fable 自有远端的验收
+## 尚需自有远端的验收
 
-工单 58 曾在三仓拓扑下完成 Fable-owned private remote 的创建、精确 `master`
+工单 58 曾在三仓拓扑下完成自有 private remote 的创建、精确 `master`
 refs 推送和私有预演；单仓库形态下这些远端降级为历史副本，其去留另行决定
 （ADR-0011 决定 4）。以下 public/CI 动作仍故意不在本地完成：
 

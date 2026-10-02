@@ -1,20 +1,21 @@
-#!/bin/sh
+#!/usr/bin/env bash
+# 从 ic_launcher.svg / ic_launcher_round.svg 生成各密度启动器位图。
+# 位图供 API < 26 使用；API 26+ 用 mipmap-anydpi-v26 的自适应图标（颜色取 drawable/ic_launcher_background.xml）。
+# 依赖：python3 + cairosvg。
+set -euo pipefail
 
-for DENSITY in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
-	case $DENSITY in
-		mdpi) SIZE=48;;
-		hdpi) SIZE=72;;
-		xhdpi) SIZE=96;;
-		xxhdpi) SIZE=144;;
-		xxxhdpi) SIZE=192;;
-	esac
+cd "$(dirname "$0")"
 
-	FOLDER=../app/src/main/res/mipmap-$DENSITY
-	mkdir -p $FOLDER
+for density in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
+    bucket="${density%%:*}"
+    size="${density##*:}"
+    folder="../app/src/main/res/mipmap-${bucket}"
+    mkdir -p "$folder"
 
-	for FILE in ic_launcher ic_launcher_round; do
-		PNG=$FOLDER/$FILE.png
-		rsvg-convert -w $SIZE -h $SIZE $FILE.svg > $PNG
-		zopflipng -y $PNG $PNG
-	done
+    for file in ic_launcher ic_launcher_round; do
+        python3 -c "import cairosvg, sys; cairosvg.svg2png(url=sys.argv[1], write_to=sys.argv[2], output_width=int(sys.argv[3]), output_height=int(sys.argv[3]))" \
+            "${file}.svg" "${folder}/${file}.png" "${size}"
+    done
 done
+
+echo "launcher bitmaps written under ../app/src/main/res/mipmap-*"

@@ -1,12 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="0 0 108 108">
-  <!-- Phanes 图标源文件（方形，供 API < 26 的启动器位图）。背景色与 drawable/ic_launcher_background.xml 一致。 -->
+  <!-- Phanes 图标源文件（圆形，供 API < 26 的启动器位图）。 -->
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#4C3A9E"/>
       <stop offset="100%" stop-color="#141034"/>
     </linearGradient>
   </defs>
-  <rect x="0" y="0" width="108" height="108" rx="24" ry="24" fill="url(#bg)"/>
+  <circle cx="54" cy="54" r="54" fill="url(#bg)"/>
   <rect x="51.5" y="25" width="5" height="54" fill="#FFC46B"/>
   <path fill="#FFC46B" fill-rule="evenodd" d="M36,52 a18,24 0 1,0 36,0 a18,24 0 1,0 -36,0 z M40.5,52 a13.5,19.5 0 1,0 27,0 a13.5,19.5 0 1,0 -27,0 z"/>
 </svg>
