@@ -52,7 +52,6 @@ android {
     compileSdk = 36
     // 工单 28：AGP 9 内置 Kotlin（不引 KGP）。AGP 9.3 默认 true，这里显式声明试点模块启用。
     enableKotlin = true
-    ndkVersion = System.getenv("JITPACK_NDK_VERSION") ?: "22.1.7171670"
     buildFeatures {
         buildConfig = true
     }
@@ -110,18 +109,14 @@ android {
         manifestPlaceholders.TERMUX_TASKER_APP_NAME = "Termux:Tasker"
         manifestPlaceholders.TERMUX_WIDGET_APP_NAME = "Termux:Widget"
 
-        externalNativeBuild {
-            ndkBuild {
-                cFlags "-std=c11", "-Wall", "-Wextra", "-Werror", "-Os", "-fno-stack-protector", "-Wl,--gc-sections"
-            }
-        }
-
         splits {
             abi {
                 enable ((gradle.startParameter.taskNames.any { it.contains("Debug") } && splitAPKsForDebugBuilds == "1") ||
                     (gradle.startParameter.taskNames.any { it.contains("Release") } && splitAPKsForReleaseBuilds == "1"))
                 reset ()
-                include 'x86', 'x86_64', 'armeabi-v7a', 'arm64-v8a'
+                // 工单 66：产物 ABI 收窄到项目目标设备（aarch64）。四个原生库只生成 arm64-v8a，
+                // 不再产出没有原生库的空 ABI 变体（ADR-0015）。
+                include 'arm64-v8a'
                 universalApk true
             }
         }
@@ -161,12 +156,6 @@ android {
 
         sourceCompatibility JavaVersion.VERSION_11
         targetCompatibility JavaVersion.VERSION_11
-    }
-
-    externalNativeBuild {
-        ndkBuild {
-            path "src/main/cpp/Android.mk"
-        }
     }
 
     lint {
@@ -298,14 +287,8 @@ tasks.register("fetchEmojiFonts", Exec) {
     workingDir fableRoot
     commandLine "bash", new File(fableRoot, "scripts/fetch-emoji-fonts.sh").absolutePath
 }
-tasks.register("buildFableSession", Exec) {
-    def fableRoot = rootProject.rootDir.parentFile
-    workingDir fableRoot
-    commandLine "bash", new File(fableRoot, "scripts/build-session-lib.sh").absolutePath
-}
 tasks.named("preBuild") {
     dependsOn "fetchEmojiFonts"
-    dependsOn "buildFableSession"
 }
 
 dependencies {
@@ -390,17 +373,13 @@ task downloadBootstraps() {
             def version =  "2025.03.28-r1" + "+" + packageVariant
             // Fable fork: aarch64 bootstrap comes from the fable-bootstrap Release (com.gph.fable prefix),
             // not from the official termux-packages Release (com.termux prefix).
+            // 工单 66：产物 ABI 收窄到 arm64-v8a，只取 aarch64 归档（ADR-0015）。
             downloadBootstrap("aarch64", "d9fc5f96691afdeb83ecffc0e9571a7e88cf127d775beefc53d9a0e353e0a601", version,
                 "https://github.com/bingnnvjn/fable-bootstrap/releases/download/bootstrap-2026.08.06-r2%2Bapt-android-7/bootstrap-aarch64.zip")
-            downloadBootstrap("arm",     "f3bb9d1b32552b34fff41861dbf193ec5ba2848d67d779ac1c7256da6640f85d", version)
-            downloadBootstrap("i686",    "36db3e1ac3547f9a174fd763bd9a484fa1a3449cdd81e1cf2408ff0454f839c6", version)
-            downloadBootstrap("x86_64",  "1c124ec2396ee70a51b0b0a574f29aa659526aa2b9f558f993b2fb05d1e51855", version)
         } else if (packageVariant == "apt-android-5") {
             def version = "2025.03.28-r3" + "+" + packageVariant
+            // 遗留变体：同样只保留 aarch64 归档（工单 66，ADR-0015）。
             downloadBootstrap("aarch64", "147c98e610a30588665a89776314833c293006b12c70e65dcde6eb54c2344113", version)
-            downloadBootstrap("arm", "363c28dd4b70c995302498beae79fb5917af7d3b0ca9fbd9da7de96ab64c6122", version)
-            downloadBootstrap("i686", "a2e742381ab24cf8c9a78ae4e2425ee44d8fb9625a2b0ef63e4cd32e292f7186", version)
-            downloadBootstrap("x86_64", "4f6866c222b0f1ae1b180220ffc6e8e1afbc10b9cbb7a462c062c490eda90044", version)
         } else {
             throw new GradleException("Unsupported TERMUX_PACKAGE_VARIANT \"" + packageVariant + "\"")
         }

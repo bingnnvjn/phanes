@@ -51,7 +51,7 @@ Phanes；SharedPreferences 文件名、权限名、数据目录都由包名派�
 | --- | --- | --- |
 | `renderer/Cargo.toml` `[lib] name = "fable_render"` | `phanes_render` | `renderer/examples/*`、测试与库内 47 处 `fable_render::` 引用；产物名 `libfable_render.so` |
 | `session/Cargo.toml` `[lib] name = "fable_session"` | `phanes_session` | `session/` 内 9 处引用 |
-| `android/.../jniLibs/arm64-v8a/libfable-render.so`、`libfable-session.so` | `libphanes-render.so`、`libphanes-session.so` | `RenderCore.kt` 的 `System.loadLibrary("fable-render")`、`SessionHandle.kt` 的 `System.loadLibrary("fable-session")`、`scripts/build-session-lib.sh` 的 install 源/目标名 |
+| `android/.../jniLibs/arm64-v8a/libfable-render.so`、`libfable-session.so` | `libphanes-render.so`、`libphanes-session.so` | `RenderCore.kt` 的 `System.loadLibrary("fable-render")`、`SessionHandle.kt` 的 `System.loadLibrary("fable-session")`、`scripts/build-native-libs.sh` 的 install 源/目标名、`android/build-and-verify.sh` 的库清单 |
 | `renderer/build.rs` 的 `-Wl,--undefined=fable_render_tls_pad` | 可留可改 | 同名 C 符号在 `renderer/` 的 TLS 占位里定义；改就两边一起 |
 
 不绑 applicationId，可以单独改。注意 Cargo 产物名会把下划线转成连字符才能给
@@ -137,7 +137,7 @@ applicationId，可单独改。
 | 环境变量 `TERMUX_PACKAGE_VARIANT`、`TERMUX_APK_VERSION_TAG`、`TERMUX_SPLIT_APKS_*`、`JITPACK_NDK_VERSION`、Gradle 属性 `markwonVersion` | 能改；要同改 `build.gradle`、文档、脚本 |
 | 签名输入变量 `FABLE_RELEASE_*`、`FABLE_DEBUG_USE_RELEASE_SIGNING` | 能改；要同改 `build.gradle`、`android/docs/signing.md`、本机 `~/.gradle/gradle.properties` |
 | 日志文件名 `fable-render-debug.log.txt` | 能改；要同改 `FableDiagnostics.kt`（含文件名常量与分享用 MIME 匹配） |
-| `libtermux-bootstrap.so`、`liblocal-socket.so` | 上游名；改了要同改 `Android.mk`/`CMakeLists`、jniLibs 与加载点 |
+| `libtermux-bootstrap.so`、`liblocal-socket.so` | 上游名；改了要同改 `scripts/build-native-libs.sh` 的产物名、jniLibs 与加载点（原 `Android.mk`/`Application.mk` 已随工单 66 删除） |
 | bootstrap 变体 `apt-android-7` | 不能单独改（绑归档内容与 `$PREFIX`） |
 | 自有链接 `PHANES_GITHUB_REPO_URL`、`PHANES_GITHUB_ISSUES_URL`（工单 64 新增，供 App 内"报告问题"与关于页使用） | 能改；换账号或仓库名时只改 `TermuxConstants` 里这两行 |
 | 冻结的产物/仓库名：apt 仓库 `fable-repo`（托管于 `bingnnvjn/fable-bootstrap` 的 Release）、`android/app/<上游测试签名材料>`、旧 `<旧签名材料>` | 不建议单独改：`.deb` / bootstrap 按 `$PREFIX` 与 Release URL 构建，改名等于重建包仓库与改 `sources.list`，属独立决策 |

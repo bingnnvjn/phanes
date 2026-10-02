@@ -1,0 +1,8 @@
+# 打包输入目录（android/app/src/main/jniLibs/<abi>/）必须齐全的原生库清单。
+# 生成方：scripts/build-native-libs.sh；校验方：android/build-and-verify.sh。
+# 前四个是项目的四个原生库，最后一个 liblocal-socket.so 的 STL 运行库（ADR-0015）。
+libfable-render.so
+libfable-session.so
+libtermux-bootstrap.so
+liblocal-socket.so
+libc++_shared.so

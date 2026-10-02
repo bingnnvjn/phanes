@@ -64,7 +64,7 @@ dependabot 属公开或独立工程决策。
 ```bash
 CARGO_DENY=/absolute/path/to/cargo-deny scripts/rust-supply-chain-gate.sh
 scripts/rust-quality-gate.sh
-bash scripts/build-session-lib.sh
+bash scripts/build-native-libs.sh
 (cd android && ./build-and-verify.sh debug)
 ```
 

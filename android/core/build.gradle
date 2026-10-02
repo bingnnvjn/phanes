@@ -4,15 +4,10 @@ apply plugin: 'maven-publish'
 android {
     namespace = "com.gph.fable.core"
     compileSdk = 36
-    ndkVersion = System.getenv("JITPACK_NDK_VERSION") ?: "22.1.7171670"
 
     defaultConfig {
         minSdkVersion 21
         targetSdkVersion 28
-
-        ndk {
-            abiFilters 'x86', 'x86_64', 'armeabi-v7a', 'arm64-v8a'
-        }
     }
 
     buildTypes {

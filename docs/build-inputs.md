@@ -20,10 +20,30 @@
 | 机制 | `android/app/build.gradle` 的 `downloadBootstraps` 任务，构建前自动下载并校验，无需手工 |
 
 注意：只有 aarch64 指向本项目自己的 Release（`bingnnvjn/fable-bootstrap`，`com.gph.fable` 前缀）。arm / i686 / x86_64
-三份仍指向官方 termux-packages Release（`com.termux` 前缀）。本项目的目标设备是 aarch64。
+三份仍指向官方 termux-packages Release（`com.termux` 前缀），自工单 66 起不再下载
+——产物 ABI 收窄到 `arm64-v8a`，只需要 aarch64 归档。`scripts/build-native-libs.sh`
+在编译前会再校验一次本文件的 sha256，缺失或哈希不符即带获取指引失败。
 
 `libtermux-bootstrap.so` **不是**构建输入：它是这个 zip 经 `android/app/src/main/cpp/`
 的 ELF 桩在构建时嵌入生成的产物，不要提交，也不要手工替换。
+
+### 四个原生库（脚本生成，不入库）
+
+四个原生库由 `scripts/build-native-libs.sh` 用同一组步骤生成到
+`android/app/src/main/jniLibs/arm64-v8a/`（ADR-0015）。它们不是"外部获取的构建输入"，
+而是源码 + 上述输入的可复现产物；`*.so` 在忽略规则内，不入库。
+
+| 库 | 源码 | 备注 |
+| --- | --- | --- |
+| `libfable-render.so` | `renderer/` | 静态链接 `libghostty/lib/arm64-v8a/libghostty-vt.a` 与 vendored FreeType |
+| `libfable-session.so` | `session/` | `cargo build --locked --release --target aarch64-linux-android` |
+| `libtermux-bootstrap.so` | `android/app/src/main/cpp/` | `.incbin` 嵌入 bootstrap 归档；编译必须在 cpp 目录内进行 |
+| `liblocal-socket.so` | `android/termux-shared/src/main/cpp/` | 运行时依赖下一条的 `libc++_shared.so` |
+| `libc++_shared.so` | 宿主工具链提供 | aarch64 宿主取 Termux `libc++` 包的 `$PREFIX/lib/libc++_shared.so`；非 aarch64 宿主取 NDK 22.1.7171670 sysroot 的同名库。它是工具链的一部分（与 NDK 本身同类），因此不固定 sha256；脚本每次运行会把实际用的库路径与整个打包目录的 sha256 打印出来 |
+
+四个库与 `libc++_shared.so` 的 2026-10-02 aarch64 实测尺寸/sha256 是构建结果记录，
+不在本表（ADR-0012 规则 2：操作记录不入库），写在
+`.scratch/fable-v1/issues/66-构建链宿主矩阵与单一原生库通路.md` 的 Comments 里。
 
 ### 彩色 emoji 字体
 
@@ -86,8 +106,14 @@
 
 以下两项属于**设备配置**，不进仓库，需要在新设备上自行设置：
 
-- **工具链**：JDK、Android SDK、Gradle、NDK。版本与路径以构建文件为准；`android/local.properties`
-  里的 `sdk.dir` 由每台设备自己写（示例路径见 `README.md`）。
+- **工具链**：JDK 25、Android SDK（`platforms;android-36`、`build-tools;36.0.0`）、
+  Gradle 9.7.0（wrapper）、Rust 1.97.1。原生库编译器按宿主矩阵取（ADR-0015）：
+  Linux aarch64 用 Termux `clang` / `clang++` + `ndk-sysroot` + `libc++`
+  （`pkg install clang ndk-sysroot libc++`），不需要官方 NDK；Linux x86_64 / macOS /
+  Windows 用官方 NDK `22.1.7171670`（macOS arm64 用其 darwin-x86_64 工具链，Rosetta），
+  用 `ANDROID_NDK_HOME` 或 `ANDROID_HOME` / `ANDROID_SDK_ROOT` + `ndk;<版本>` 让脚本找到它。
+  `android/local.properties` 里的 `sdk.dir` 由每台设备自己写（示例路径见 `README.md`）。
+  设备上如果留着 2026-08 的假 NDK 目录，自工单 66 起不再是构建依赖，可以删除。
 - **aapt2 覆盖**：只有 aarch64 宿主需要。SDK 自带的 aapt2 是 x86_64，不能在 aarch64 上运行，
   要指向系统原生 aapt2。仓库内已不再保留这一行（工单 64 移出），改为写进设备自己的
   用户级 Gradle 属性：

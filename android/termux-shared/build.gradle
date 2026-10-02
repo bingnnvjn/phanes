@@ -6,7 +6,6 @@ android {
     compileSdk = 36
     // 工单 34：AGP 9 内置 Kotlin（不引 KGP），termux-shared 迁移 Kotlin。
     enableKotlin = true
-    ndkVersion = System.getenv("JITPACK_NDK_VERSION") ?: "22.1.7171670"
 
     dependencies {
         implementation "androidx.appcompat:appcompat:1.7.1"
@@ -39,11 +38,6 @@ android {
         minSdkVersion 21
         targetSdkVersion 28
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-        externalNativeBuild {
-            ndkBuild {
-                cppFlags ''
-            }
-        }
     }
 
     buildTypes {
@@ -63,11 +57,6 @@ android {
 
         sourceCompatibility JavaVersion.VERSION_11
         targetCompatibility JavaVersion.VERSION_11
-    }
-    externalNativeBuild {
-        ndkBuild {
-            path file('src/main/cpp/Android.mk')
-        }
     }
 }
 

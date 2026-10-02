@@ -40,12 +40,27 @@
 | 组件 | 版本 | 说明 |
 | --- | --- | --- |
 | JDK | 25（本机实测） | 构建用 AGP 9.3 + Gradle 9.7.0，要求 JDK 17 以上 |
-| Android SDK | `platforms;android-36`、`build-tools;36.0.0`、`ndk;22.1.7171670` | NDK 版本取自 `android/app/build.gradle` 的 `ndkVersion` |
+| Android SDK | `platforms;android-36`、`build-tools;36.0.0` | 所有宿主都需要 |
+| 原生库工具链 | Linux aarch64：Termux `clang`、`clang++`、`ndk-sysroot`、`libc++`；Linux x86_64 / macOS / Windows：NDK `22.1.7171670` | 完整宿主矩阵与理由见 [ADR-0015](docs/adr/0015-native-lib-host-matrix.md) |
 | Rust | 1.97.1 | `rust-toolchain.toml` 固定；交叉编译目标 `aarch64-linux-android` |
 | Gradle | 9.7.0 | 用 `android/gradlew`（wrapper），不要用系统 gradle |
 
-Termux 宿主本身就是 aarch64，`cargo build --target aarch64-linux-android` 直接可用；
-其他宿主用 cargo-ndk 或 NDK 自带 clang。
+四个原生库由 `scripts/build-native-libs.sh` 一条通路生成（ADR-0015）。aarch64 宿主
+用 Termux 自带的 clang 加 `ndk-sysroot` 头文件，不需要官方 NDK（官方也没有
+Linux aarch64 的 NDK，2026-10-02 核实）。Termux 宿主上：
+
+```bash
+pkg install clang ndk-sysroot libc++
+```
+
+Linux x86_64 / macOS / Windows 宿主用官方 NDK 22.1.7171670 的 clang，按下面任一种
+方式让脚本找到它（macOS arm64 上 NDK 22.1 没有原生预编译，脚本会回落到
+darwin-x86_64 + Rosetta）：
+
+```bash
+export ANDROID_NDK_HOME=$HOME/Android/Sdk/ndk/22.1.7171670   # 示例路径
+# 或者只设 SDK：export ANDROID_HOME=$HOME/Android/Sdk（脚本按版本在其中找 ndk）
+```
 
 ### 2. 设备配置（每台机器自己写，全部不入库）
 
@@ -68,19 +83,21 @@ x86_64 电脑不需要上面这条覆盖，SDK 自带的 aapt2 直接可用。re
 构建输入（bootstrap 归档、预编译 `.a`、字体、预编译 `.so`、工具链）不入库
 （ADR-0012），来源、sha256 与落地路径见 [docs/build-inputs.md](docs/build-inputs.md)。
 
-- bootstrap 归档：Gradle 的 `downloadBootstraps` 任务自动下载并校验，不用手工
+- bootstrap 归档：`cd android && ./gradlew :app:downloadBootstraps`（或首次 Gradle
+  构建时自动）下载并校验；`scripts/build-native-libs.sh` 还会在编译前再校验一次 sha256，
+  缺失或哈希不符就带着获取指引失败
 - Apple 彩色 emoji 字体：`scripts/fetch-emoji-fonts.sh` 下载原始 ttc、剥离到 160px、校验 sha256
 - libghostty-vt 的 `.a` 与头文件、Nerd Font：按来源表手工下载解包到 `libghostty/lib/` 下
-- Rust JNI 库：`session/` 用 `scripts/build-session-lib.sh` 生成 `libfable-session.so`；
-  `renderer/` 用 `cargo build --locked --release --target aarch64-linux-android`，把
-  `target/aarch64-linux-android/release/libfable_render.so` 复制成
-  `android/app/src/main/jniLibs/arm64-v8a/libfable-render.so`（JNI 名带连字符）
+- 四个原生库：`scripts/build-native-libs.sh` 一次生成到
+  `android/app/src/main/jniLibs/arm64-v8a/`，即渲染器、会话层、bootstrap、local-socket，
+  外加 local-socket 的 STL 运行库 `libc++_shared.so`
 
 `.so` 与 assets 都在忽略规则里，不会误提交。
 
 ### 4. 构建与校验
 
 ```bash
+bash scripts/build-native-libs.sh          # 四个原生库 + libc++_shared.so
 cd android
 export JAVA_HOME=/path/to/jdk-25        # 示例路径，用本机的 JDK
 ./gradlew :app:assembleDebug
@@ -90,8 +107,9 @@ export JAVA_HOME=/path/to/jdk-25        # 示例路径，用本机的 JDK
 签名校验）。
 
 产物预期（2026-10-02 实测）：包名 `com.gph.fable`，`lib/arm64-v8a/` 下有
-`libfable-render.so`、`libfable-session.so`、`liblocal-socket.so`、
-`libtermux-bootstrap.so`；debug 包由 AGP 的 debug keystore 签名。
+`libfable-render.so`、`libfable-session.so`、`libtermux-bootstrap.so`、
+`liblocal-socket.so` 与它依赖的 `libc++_shared.so`；APK 只含 arm64-v8a 一个 ABI；
+debug 包由 AGP 的 debug keystore 签名。`./build-and-verify.sh` 会逐库断言，缺任一即失败。
 
 ## 什么在仓库里，什么要现取
 
