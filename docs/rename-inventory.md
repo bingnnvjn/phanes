@@ -139,6 +139,7 @@ applicationId，可单独改。
 | 日志文件名 `fable-render-debug.log.txt` | 能改；要同改 `FableDiagnostics.kt`（含文件名常量与分享用 MIME 匹配） |
 | `libtermux-bootstrap.so`、`liblocal-socket.so` | 上游名；改了要同改 `Android.mk`/`CMakeLists`、jniLibs 与加载点 |
 | bootstrap 变体 `apt-android-7` | 不能单独改（绑归档内容与 `$PREFIX`） |
+| 自有链接 `PHANES_GITHUB_REPO_URL`、`PHANES_GITHUB_ISSUES_URL`（工单 64 新增，供 App 内"报告问题"与关于页使用） | 能改；换账号或仓库名时只改 `TermuxConstants` 里这两行 |
 
 ## 十、已用角色名的项
 

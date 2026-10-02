@@ -36,8 +36,8 @@
     <string name="msg_file_saved_successfully">%1$s 文件已成功保存到 \"%2$s\"</string>
     <!-- 工单 05：Toast 审计——属性文件加载错误改为资源文案（Fable 风格） -->
     <string name="error_could_not_open_properties_file">无法打开属性文件 \"%1$s\"：%2$s</string>
-    <string name="fable_crash_reports_notification_channel_name">Fable 崩溃报告</string>
-    <string name="fable_plugin_command_errors_notification_channel_name">Fable 插件命令错误</string>
+    <string name="fable_crash_reports_notification_channel_name">Phanes 崩溃报告</string>
+    <string name="fable_plugin_command_errors_notification_channel_name">Phanes 插件命令错误</string>
 
     <!-- Shell -->
     <string name="error_sending_sigkill_to_process">应请求向进程发送 SIGKILL，或因为 Android 正在结束执行服务</string>
@@ -50,14 +50,14 @@
 
     <!-- FableUtils -->
     <string name="msg_report_issue">
-        如果你想报告这个问题，请从选项菜单（右上角三个点）复制其文本，并发布到以下链接之一。
-        \n\n如果发布 Fable 应用崩溃报告，请提供当时正在做什么、如何复现，如果可能的话。
-        \n\n如果在 GitHub 上发布问题，请发布到报告所属的仓库。使用**（部分）截图**而不是复制文本或文件的问题或邮件**很可能会被自动关闭/删除**。你可以删除任何认为隐私、不想分享或与问题无关的设备信息。
-        \n\n我们不支持任何与黑客相关的工具/脚本。通过邮件、GitHub 或其他官方论坛提出相关问题**很可能会被自动关闭/删除**，甚至可能导致**临时或永久**封禁。请查看 %1$s/wiki/Hacking 了解详情。</string>
+        如果你想报告这个问题，请从选项菜单（右上角三个点）复制其文本，并发布到项目仓库。
+        \n\n请写明出问题时所做的事，以及可以复现的步骤（如果可能）。
+        \n\n请贴复制文本或保存的报告文件。只贴**（部分）截图**的问题**很可能会被关闭**。设备信息里你认为隐私或无关的部分可以删掉。
+        \n\n提交位置：%1$s</string>
 
-    <string name="msg_fable_app_required_by_app">%1$s 应用需要 Fable 来运行 Fable 命令。</string>
-    <string name="error_fable_app_package_context_not_accessible">无法访问 Fable 应用（包上下文）。</string>
-    <string name="error_fable_prefix_dir_path_not_accessible">%1$s 应用无法访问 Fable 的 $PREFIX 目录。这可能是因为你没有安装或设置 Fable，或 Fable 与 %1$s 应用 APK 签名不同（从不同来源安装）。也可能是因为 Fable 的 $PREFIX 目录 \"/data/data/com.gph.fable/files/usr\" 不存在，或没有读、写、执行权限。</string>
+    <string name="msg_fable_app_required_by_app">%1$s 应用需要 Phanes 来运行 Phanes 命令。</string>
+    <string name="error_fable_app_package_context_not_accessible">无法访问 Phanes 应用（包上下文）。</string>
+    <string name="error_fable_prefix_dir_path_not_accessible">%1$s 应用无法访问 Phanes 的 $PREFIX 目录。这可能是因为你没有安装或设置 Phanes，或 Phanes 与 %1$s 应用 APK 签名不同（从不同来源安装）。也可能是因为 Phanes 的 $PREFIX 目录 \"/data/data/com.gph.fable/files/usr\" 不存在，或没有读、写、执行权限。</string>
 
     <!-- 其他 -->
     <string name="action_yes">是</string>

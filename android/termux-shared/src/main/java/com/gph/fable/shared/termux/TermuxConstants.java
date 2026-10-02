@@ -346,6 +346,11 @@ public final class TermuxConstants {
      * Termux and its plugin app and package names and urls.
      */
 
+    /** Phanes 自有仓库 url（工单 65 建立的私有远端；换账号或改名时同步改这里） */
+    public static final String PHANES_GITHUB_REPO_URL = "https://github.com/bingnnvjn/phanes";
+    /** Phanes 自有仓库 issues url，App 内"报告问题"的唯一出口 */
+    public static final String PHANES_GITHUB_ISSUES_URL = PHANES_GITHUB_REPO_URL + "/issues";
+
     /** Termux app name */
     public static final String TERMUX_APP_NAME = "Phanes"; // App 显示名（ADR-0013 改名）；应用身份仍为 com.gph.fable
     /** Termux package name */

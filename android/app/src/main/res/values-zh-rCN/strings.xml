@@ -1,23 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <string name="application_name">Fable</string>
-    <string name="shared_user_label">Fable 用户</string>
+    <string name="application_name">Phanes</string>
+    <string name="shared_user_label">Phanes 用户</string>
 
-    <!-- Fable RUN_COMMAND 权限 -->
-    <string name="permission_run_command_label">在 Fable 环境中运行命令</string>
-    <string name="permission_run_command_description">在 Fable 环境中执行任意命令并访问文件</string>
+    <!-- Phanes RUN_COMMAND 权限 -->
+    <string name="permission_run_command_label">在 Phanes 环境中运行命令</string>
+    <string name="permission_run_command_description">在 Phanes 环境中执行任意命令并访问文件</string>
 
     <!-- 引导包安装 -->
     <string name="bootstrap_installer_body">正在安装引导包…</string>
-    <string name="bootstrap_error_title">Fable 引导包错误</string>
-    <string name="bootstrap_error_body">Fable 无法安装引导包。</string>
+    <string name="bootstrap_error_title">Phanes 引导包错误</string>
+    <string name="bootstrap_error_body">Phanes 无法安装引导包。</string>
     <string name="bootstrap_error_abort">中止</string>
     <string name="bootstrap_error_try_again">重试</string>
-    <string name="bootstrap_error_apk_bootstrap_variant_min_sdk_incompatible">当前安装的 Fable APK 引导变体 %1$s 与设备的 Android 版本 %2$s（sdk `%3$d`）不兼容，它要求最低 Android 版本 %4$s（sdk `%5$d`）。\n\n请卸载 Fable 后重新安装正确的 APK 构建变体。</string>
-    <string name="bootstrap_error_apk_bootstrap_variant_max_sdk_incompatible">当前安装的 Fable APK 引导变体 %1$s 与设备的 Android 版本 %2$s（sdk `%3$d`）不兼容，它要求最高 Android 版本 %4$s（sdk `%5$d`）。\n\n请卸载 Fable 后重新安装正确的 APK 构建变体。</string>
-    <string name="bootstrap_error_not_primary_user_message">Fable 只能以主用户身份运行。\n为 Fable 编译的引导二进制硬编码了 $PREFIX 路径，只能安装在以下路径：\n%1$s。</string>
-    <string name="bootstrap_error_installed_on_portable_sd">Fable 不能安装在设备的便携/外部/可移除 SD 卡上。\n为 Fable 编译的引导二进制硬编码了 $PREFIX 路径，只能安装在以下路径：\n%1$s。</string>
+    <string name="bootstrap_error_apk_bootstrap_variant_min_sdk_incompatible">当前安装的 Phanes APK 引导变体 %1$s 与设备的 Android 版本 %2$s（sdk `%3$d`）不兼容，它要求最低 Android 版本 %4$s（sdk `%5$d`）。\n\n请卸载 Phanes 后重新安装正确的 APK 构建变体。</string>
+    <string name="bootstrap_error_apk_bootstrap_variant_max_sdk_incompatible">当前安装的 Phanes APK 引导变体 %1$s 与设备的 Android 版本 %2$s（sdk `%3$d`）不兼容，它要求最高 Android 版本 %4$s（sdk `%5$d`）。\n\n请卸载 Phanes 后重新安装正确的 APK 构建变体。</string>
+    <string name="bootstrap_error_not_primary_user_message">Phanes 只能以主用户身份运行。\n为 Phanes 编译的引导二进制硬编码了 $PREFIX 路径，只能安装在以下路径：\n%1$s。</string>
+    <string name="bootstrap_error_installed_on_portable_sd">Phanes 不能安装在设备的便携/外部/可移除 SD 卡上。\n为 Phanes 编译的引导二进制硬编码了 $PREFIX 路径，只能安装在以下路径：\n%1$s。</string>
 
     <!-- 终端侧栏与快捷操作 -->
     <string name="action_new_session">新会话</string>
@@ -60,17 +60,17 @@
 
     <string name="action_style_terminal">样式</string>
     <string name="action_toggle_keep_screen_on">保持屏幕常亮</string>
-    <string name="action_open_help">帮助</string>
+    <string name="action_open_help">Termux 文档</string>
     <string name="action_open_settings">设置</string>
 
     <string name="action_report_issue">报告问题</string>
     <string name="msg_generating_report">正在生成报告</string>
-    <string name="msg_add_fable_debug_info">在报告中附加 Fable 调试信息？</string>
+    <string name="msg_add_fable_debug_info">在报告中附加 Phanes 调试信息？</string>
 
     <string name="error_styling_not_installed">未安装样式插件应用。</string>
     <string name="action_styling_install">安装</string>
 
-    <!-- Fable 通知 -->
+    <!-- Phanes 通知 -->
     <string name="notification_action_exit">退出</string>
     <string name="notification_action_wake_lock">获取唤醒锁</string>
     <string name="notification_action_wake_unlock">释放唤醒锁</string>
@@ -88,11 +88,11 @@
     <string name="notification_wake_lock_held">（已持有唤醒锁）</string>
 
     <!-- 工单 05：通知渠道名（用户可见，随 locale 翻译） -->
-    <string name="fable_app_notification_channel_name">Fable 前台服务</string>
-    <string name="fable_run_command_notification_channel_name">Fable 命令执行</string>
+    <string name="fable_app_notification_channel_name">Phanes 前台服务</string>
+    <string name="fable_run_command_notification_channel_name">Phanes 命令执行</string>
 
     <!-- FableService -->
-    <string name="error_display_over_other_apps_permission_not_granted_to_start_terminal">Fable 需要“显示在其他应用上层”权限才能在 Android 10 及以上从后台启动终端会话。请在 设置 → 应用 → Fable → 高级 中授予。</string>
+    <string name="error_display_over_other_apps_permission_not_granted_to_start_terminal">Phanes 需要“显示在其他应用上层”权限才能在 Android 10 及以上从后台启动终端会话。请在 设置 → 应用 → Phanes → 高级 中授予。</string>
     <string name="error_fable_service_invalid_execution_command_runner">传给 FableService 的执行命令运行器无效：`%1$s`</string>
     <string name="error_fable_service_unsupported_execution_command_runner">不支持的 FableService 执行命令运行器：`%1$s`</string>
     <string name="error_fable_service_unsupported_execution_command_shell_create_mode">不支持的执行命令 shell 创建模式：`%1$s`</string>
@@ -114,11 +114,11 @@
     <string name="error_fable_service_start_failed_bg">应用在后台时因 Android 后台限制无法启动 FableService。</string>
 
     <!-- 设置 -->
-    <string name="title_activity_fable_settings">Fable 设置</string>
+    <string name="title_activity_fable_settings">Phanes 设置</string>
 
-    <!-- Fable 应用偏好 -->
-    <string name="fable_preferences_title">Fable</string>
-    <string name="fable_preferences_summary">Fable 应用偏好</string>
+    <!-- Phanes 应用偏好 -->
+    <string name="fable_preferences_title">Phanes</string>
+    <string name="fable_preferences_summary">Phanes 应用偏好</string>
 
         <!-- 调试偏好 -->
         <string name="fable_debugging_preferences_title">调试</string>
@@ -187,11 +187,8 @@
 
     <!-- 关于 -->
     <string name="about_preference_title">关于</string>
-    <string name="about_fable_header">## Fable（寓言）</string>
+    <string name="about_fable_header">## Phanes（原名 Fable／寓言）</string>
     <string name="about_fable_description">一款拥有自研渲染核心的私人 Android 终端。</string>
-
-    <!-- 捐赠 -->
-    <string name="donate_preference_title">捐赠</string>
 
     <!-- 最近会话 -->
     <string name="recent_sessions_title">最近会话</string>
