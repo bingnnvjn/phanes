@@ -33,7 +33,8 @@
 ## 从零配置一台新设备
 
 下面这套流程 2026-10-02 在本机（aarch64 + Termux）实测走通；x86_64 电脑的差异单独标注。
-仓库本身目前只有本机工作树，私有远端在工单 65 建立；克隆用 `git clone <远端或本地路径>`。
+仓库当前是私有的，远端 `bingnnvjn/phanes`（工单 65 建立，默认分支 `master`）；
+克隆用 `git clone https://github.com/bingnnvjn/phanes.git`。
 
 ### 1. 工具链
 
