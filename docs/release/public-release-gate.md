@@ -96,6 +96,10 @@ push protection 生效；当前账户计划对 private 仓库的分支保护 API
 
 ## 泄露响应最小流程
 
+报告入口：根 [`SECURITY.md`](../../SECURITY.md) 指向 GitHub 的私密漏洞报告
+（`https://github.com/bingnnvjn/phanes/security/advisories/new`）。**责任人：仓库所有者**；
+这是个人项目，不承诺响应时限，也没有漏洞赏金。
+
 1. 立即撤销/轮换受影响的 token、keystore、证书或 Actions secret；
 2. 保存不含秘密值的时间线和受影响 refs；
 3. 必要时在本地可恢复副本上做历史清理，并验证 fresh clone；
