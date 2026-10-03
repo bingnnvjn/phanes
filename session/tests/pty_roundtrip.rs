@@ -1,7 +1,9 @@
 //! 工单 24 程序化验收（离屏自检，PASS/FAIL 断言）：
-//! portable-pty 0.9.0 在本机 bionic（Termux 宿主，aarch64-linux-android）上的
-//! spawn/read/write/resize/并行/长输出 行为验证。与 JNI 桥走同一套
-//! native_pty_system + CommandBuilder 路径。
+//! portable-pty 0.9.0 的 spawn/read/write/resize/并行/长输出 行为验证。
+//! 与 JNI 桥走同一套 native_pty_system + CommandBuilder 路径。
+//!
+//! 宿主无关（工单 67）：shell、HOME、PREFIX、PATH、TMPDIR 都在运行时从环境推导，
+//! Termux 上用 `$PREFIX/bin/bash`，其它 Linux/macOS 宿主回落到 PATH 上的 bash。
 
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use std::io::{Read, Write};
@@ -9,7 +11,58 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-const BASH: &str = "/data/data/com.termux/files/usr/bin/bash";
+/// 在 PATH 上查找可执行文件；找不到就返回原名，交给系统查找。
+fn which(name: &str) -> String {
+    if let Some(path) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path) {
+            let candidate = dir.join(name);
+            if candidate.is_file() {
+                return candidate.to_string_lossy().into_owned();
+            }
+        }
+    }
+    name.to_string()
+}
+
+/// 当前宿主的 shell 与环境；缺省值都保证目录真实存在。
+struct HostEnv {
+    shell: String,
+    home: String,
+    prefix: String,
+    path: String,
+    tmpdir: String,
+}
+
+impl HostEnv {
+    fn detect() -> Self {
+        let home = std::env::var("HOME")
+            .ok()
+            .filter(|h| std::path::Path::new(h).is_dir())
+            .unwrap_or_else(|| std::env::temp_dir().to_string_lossy().into_owned());
+        let prefix = std::env::var("PREFIX").unwrap_or_else(|_| home.clone());
+        let path =
+            std::env::var("PATH").unwrap_or_else(|_| "/usr/local/bin:/usr/bin:/bin".to_string());
+        let tmpdir = std::env::var("TMPDIR")
+            .ok()
+            .filter(|d| std::path::Path::new(d).is_dir())
+            .unwrap_or_else(|| std::env::temp_dir().to_string_lossy().into_owned());
+        let shell = {
+            let candidate = std::path::Path::new(&prefix).join("bin/bash");
+            if candidate.is_file() {
+                candidate.to_string_lossy().into_owned()
+            } else {
+                which("bash")
+            }
+        };
+        HostEnv {
+            shell,
+            home,
+            prefix,
+            path,
+            tmpdir,
+        }
+    }
+}
 
 struct PtyProbe {
     writer: Box<dyn Write + Send>,
@@ -22,18 +75,16 @@ struct PtyProbe {
 
 impl PtyProbe {
     fn spawn(cols: u16, rows: u16) -> anyhow::Result<Self> {
-        let mut cmd = CommandBuilder::new(BASH);
+        let host = HostEnv::detect();
+        let mut cmd = CommandBuilder::new(&host.shell);
         cmd.arg("--noprofile");
         cmd.arg("--norc");
         cmd.env("TERM", "xterm-256color");
-        cmd.env("HOME", "$HOME");
-        cmd.env("PREFIX", "/data/data/com.termux/files/usr");
-        cmd.env(
-            "PATH",
-            "/data/data/com.termux/files/usr/bin:/system/bin:/system/xbin",
-        );
-        cmd.env("TMPDIR", "/data/data/com.termux/files/usr/tmp");
-        cmd.cwd("$HOME");
+        cmd.env("HOME", &host.home);
+        cmd.env("PREFIX", &host.prefix);
+        cmd.env("PATH", &host.path);
+        cmd.env("TMPDIR", &host.tmpdir);
+        cmd.cwd(&host.home);
 
         let system = native_pty_system();
         let pair = system.openpty(PtySize {
@@ -119,6 +170,7 @@ impl PtyProbe {
 
 #[test]
 fn portable_pty_roundtrip() -> anyhow::Result<()> {
+    let host = HostEnv::detect();
     let mut p = PtyProbe::spawn(80, 24)?;
     // 关掉终端回显：后续 wait_for 标记只匹配命令输出，不匹配键入回显。
     p.send("stty -echo\n")?;
@@ -135,21 +187,19 @@ fn portable_pty_roundtrip() -> anyhow::Result<()> {
     // 2) 环境注入：PREFIX/PWD 与预期一致。
     p.send("printf 'P=%s\\n' \"$PREFIX\"\npwd\n")?;
     assert!(
-        p.wait_for("P=/data/data/com.termux/files/usr", Duration::from_secs(5)),
+        p.wait_for(&format!("P={}", host.prefix), Duration::from_secs(5)),
         "PREFIX 输出异常: {:?}",
         p.text()
     );
     p.send("printf 'PATH=[%s]\\n' \"$PATH\"\n")?;
+    let first_path_entry = host.path.split(':').next().unwrap_or("");
     assert!(
-        p.wait_for(
-            "PATH=[/data/data/com.termux/files/usr/bin",
-            Duration::from_secs(5)
-        ),
+        p.wait_for(&format!("PATH=[{first_path_entry}"), Duration::from_secs(5)),
         "PATH 注入异常: {:?}",
         p.text()
     );
     assert!(
-        p.wait_for("$HOME", Duration::from_secs(5)),
+        p.wait_for(&host.home, Duration::from_secs(5)),
         "pwd 输出异常: {:?}",
         p.text()
     );

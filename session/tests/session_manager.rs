@@ -1,32 +1,56 @@
 //! 工单 25 程序化验收（离屏自检，PASS/FAIL 断言）：
 //! 生产级会话层核心（SessionManager / Session / 事件流）行为验证。
-//! 与本机 bionic（Termux 宿主）跑 portable-pty，与 JNI 桥走同一套
-//! native_pty_system + CommandBuilder 路径。
+//! 跑 portable-pty，与 JNI 桥走同一套 native_pty_system + CommandBuilder 路径。
 //!
 //! 覆盖验收项：SessionManager API（create/close/list/get）、六事件序列断言、
 //! 8 会话并发余量（2–4 硬指标内含）、进程生命周期（退出码/回收/close/kill）。
+//!
+//! 宿主无关（工单 67）：shell、HOME、PREFIX、PATH 运行时从环境推导，Termux 上用
+//! `$PREFIX/bin/bash`，其它 Linux/macOS 宿主回落到 PATH 上的 bash。
 
 use fable_session::{EventKind, SessionConfig, SessionManager};
 use std::time::{Duration, Instant};
 
-const BASH: &str = "/data/data/com.termux/files/usr/bin/bash";
+/// 在 PATH 上查找可执行文件；找不到就返回原名，交给系统查找。
+fn which(name: &str) -> String {
+    if let Some(path) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path) {
+            let candidate = dir.join(name);
+            if candidate.is_file() {
+                return candidate.to_string_lossy().into_owned();
+            }
+        }
+    }
+    name.to_string()
+}
 
 fn base_cfg() -> SessionConfig {
+    let home = std::env::var("HOME")
+        .ok()
+        .filter(|h| std::path::Path::new(h).is_dir())
+        .unwrap_or_else(|| std::env::temp_dir().to_string_lossy().into_owned());
+    let prefix = std::env::var("PREFIX").unwrap_or_else(|_| home.clone());
+    let shell = {
+        let candidate = std::path::Path::new(&prefix).join("bin/bash");
+        if candidate.is_file() {
+            candidate.to_string_lossy().into_owned()
+        } else {
+            which("bash")
+        }
+    };
+    let path = std::env::var("PATH").unwrap_or_else(|_| "/usr/local/bin:/usr/bin:/bin".to_string());
     SessionConfig {
-        shell: BASH.to_string(),
+        shell,
         // args[0] 是 argv0 名（与 Java createSubprocess 同语义）；用非登录
         // argv0 "bash" + --noprofile/--norc，保证测试进程 hermetic（不读 profile）。
         args: vec!["bash".into(), "--noprofile".into(), "--norc".into()],
         env: vec![
             ("TERM".into(), "xterm-256color".into()),
-            ("HOME".into(), "$HOME".into()),
-            ("PREFIX".into(), "/data/data/com.termux/files/usr".into()),
-            (
-                "PATH".into(),
-                "/data/data/com.termux/files/usr/bin:/system/bin:/system/xbin".into(),
-            ),
+            ("HOME".into(), home.clone()),
+            ("PREFIX".into(), prefix),
+            ("PATH".into(), path),
         ],
-        cwd: Some("$HOME".into()),
+        cwd: Some(home),
         cols: 80,
         rows: 24,
         event_capacity: 4096,
