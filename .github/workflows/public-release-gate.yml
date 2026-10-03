@@ -1,0 +1,39 @@
+name: public-release-gate
+
+# 工单 67：公开发布闸门（fail-closed）。只读：不建远端、不推送、不改设置、
+# 不读 secret、不上传 artifact。失败是发布阻断证据，不得靠跳过命令清零。
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-release-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      # 第三方 Action 固定到完整 commit SHA（v4.2.2）。
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      # 两个审计工具都装固定版本，与 docs/release/public-release-tools.md 一致；
+      # 来源是上游 Go module / crates.io，不引入未固定的第三方 Action。
+      - name: Install pinned audit tools
+        run: |
+          go install -ldflags='-X github.com/zricethezav/gitleaks/v8/version.Version=v8.29.0' \
+            github.com/zricethezav/gitleaks/v8@v8.29.0
+          cargo install cargo-deny --version 0.20.2 --locked
+
+      - name: Public release gate (secret scan + supply chain + policy)
+        env:
+          SECRET_SCANNER_BIN: /home/runner/go/bin/gitleaks
+          CARGO_DENY: /home/runner/.cargo/bin/cargo-deny
+        run: scripts/public-release-gate.sh

@@ -33,7 +33,7 @@ Status: 已完成
 - `libghostty-spike.so`：Termux clang 链接成功（-llog 可用），PT_TLS p_align=64（-fno-emulated-tls + 64 对齐占位），导出 173 个 ghostty_* 符号；已放入 `fable-app/app/src/main/jniLibs/arm64-v8a/`
 - 探针 harness：`app/src/main/java/com/gph/fable/app/SpikeActivity.java`（Java，程序化 UI）+ manifest 注册 "Fable Spike" 独立 launcher 图标；不碰 TermuxActivity/会话层
 - 构建：`./gradlew :app:assembleDebug` BUILD SUCCESSFUL（57s，88 任务）
-- 产物校验全过：aapt2 badging（Termux 原生 aapt2）= com.gph.fable / versionCode 1022 / 0.119.0-beta.3；apksigner = <签名证书主体>（<证书指纹>…）；APK 含 lib/arm64-v8a/ 4 个 .so（libghostty-spike.so + 原有 3 个）
+- 产物校验全过：aapt2 badging（Termux 原生 aapt2）= com.gph.fable / versionCode 1022 / 0.119.0-beta.3；apksigner = <签名证书主体>（<证书指纹>）；APK 含 lib/arm64-v8a/ 4 个 .so（libghostty-spike.so + 原有 3 个）
 - 装机包：`/storage/emulated/0/Download/fable-spike-08_arm64-v8a.apk`（173MB，sha256 0eeca2b5…）
 - **待用户真机验收**（覆盖安装即可，装完有两个图标：Fable 主终端不变 / Fable Spike 探针）：
   1. 打开 Fable Spike → 点 [spawn] 建 1 个会话，应出现 bash 提示符/登录输出

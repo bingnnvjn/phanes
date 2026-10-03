@@ -38,6 +38,19 @@ RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps --locked
 `Cargo.lock` 缺失会在该 crate 开始前直接失败。`--locked` 禁止门禁改写锁文件；
 门禁不自动安装第三方工具，也不依赖 nightly、CI 或远端仓库。
 
+## 每个 crate 的提交要求
+
+本节收敛自三个 crate 原先各自的 `CONTRIBUTING.md`（工单 67 删除；单仓库后由根级
+`SECURITY.md` 与本文件统一承担）：
+
+1. 三个 crate 各自独立，**不得**隐式合并成 Cargo workspace；`Cargo.lock` 随提交保留。
+2. 改行为要说明原因并配重点测试或示例；提交前跑根级质量门禁与供应链门禁。
+3. 涉及 JNI、FreeType、wgpu、原生窗口、PTY、进程或跨线程关闭的改动，必须写出
+   安全不变量、ABI 假设、分配/释放与 Drop 顺序、描述符生命周期、线程亲和性、
+   panic 行为与确定失败路径，并给聚焦的回归覆盖（见下节清单）。
+4. 第三方来源、字体资产与它们的许可证/来源记录必须与改动同步更新。
+5. 不提交凭据、签名材料、生成产物或内部 `.scratch`/设备材料。
+
 ## Lint 与例外
 
 - 默认 rustc/Clippy warning 在 `-D warnings` 下阻断。

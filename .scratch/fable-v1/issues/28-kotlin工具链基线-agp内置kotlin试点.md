@@ -25,7 +25,7 @@ Status: 已完成
 - `:terminal-emulator:testDebugUnitTest --rerun-tasks`：152/152 PASS（基线不劣化）。
 - `:app:testDebugUnitTest --rerun-tasks`：33 测 32 绿 1 败 = 既有基线 `FileReceiverActivityTest.testIsSharedTextAnUrl`（Robolectric + JDK 25 NoClassDefFoundError，工单 15 已记录，非本次引入）。
 - `:app:assembleDebug`：BUILD SUCCESSFUL（JDK 25 / Gradle 9.7.0 / AGP 9.3.0，Termux 原生 aapt2 override）。
-- APK 校验（`fable-app_apt-android-7-debug_arm64-v8a.apk`）：包名 `com.gph.fable`、versionCode 1022、minSdk 24；5 个 arm64 .so（libghostty-spike / liblocal-socket / libtermux-bootstrap / libfable-session / libfable-render）；apksigner verify 通过（Fable 证书 SHA-256 `<证书指纹>…`）。
+- APK 校验（`fable-app_apt-android-7-debug_arm64-v8a.apk`）：包名 `com.gph.fable`、versionCode 1022、minSdk 24；5 个 arm64 .so（libghostty-spike / liblocal-socket / libtermux-bootstrap / libfable-session / libfable-render）；apksigner verify 通过（Fable 证书 SHA-256 `<证书指纹>`）。
 - Kotlin 进包证据：`:app:compileDebugKotlin` 实际执行（产物在 `build/intermediates/built_in_kotlinc/`）；`classes26.dex` 含 `Lcom/gph/fable/app/session/RecentSessionPathCodec;` 与 `RecentSessionPathCodec.kt`。
 - 全程无 `org.jetbrains.kotlin.android` / KGP 插件：全部 Gradle 文件 grep 零命中。
 

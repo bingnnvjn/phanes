@@ -48,7 +48,7 @@ Fable v1 是一个纯终端 Android App：包名 `com.gph.fable`、正式签名�
 3. **签名**：生成个人 keystore（正式签名），debug 与 release 共用该身份，建立"覆盖安装即更新"的循环；现有 debug key 不作为正式产品身份。
 4. **启动路径**：launcher 直接进入终端 Activity，无首页；复用现有"会话服务 + PTY + 进程 + 环境 + 生命周期"底盘，v1 不动会话层。
 5. **界面层**：v1 界面、键盘、手势为 Fable 自研（XML/经典 View，ADR-0001，不引入 Compose）；渲染核心经 **CoreAdapter 缝**接入——主终端使用 Fable 渲染器（fable-render：libghostty-vt 核心 + Rust wgpu 画法层，ADR-0003/0004），TerminalView/TerminalEmulator 保留为旧路径但不再承担主终端渲染。UI 代码不依赖具体核心实现。v1 最小集清单（字号/主题/键盘/会话恢复/设置精简/界面中文化）见 ADR-0002，在集成落地（工单 15）之上实施（工单 04）。
-6. **数据迁移（先搬家、不拆房）**：只复制、不搬走——旧 Termux 及其数据在迁移全程保持原样，不删除旧 App。迁移内容按用户确认清单（详见工单 02）：CODEX/ 全量、配置与身份（.bashrc 两个都留、.profile、.gitconfig、.gitignore、.ssh、.termux、AGENTS.md）、服务脚本（<个人服务脚本>、<个人服务脚本>/watchdog）、代理配置（.agents、.pi）；已装包按包清单在新环境重新安装（不拷贝二进制，避免硬编码旧路径）；第②类项目与第③类缓存/临时产物一律不迁。机制：备份到共享存储 → Fable 恢复 → 验证（shell/配置/服务）→ 旧 App 原样保留；触发形态（手动脚本 vs App 内流程）留待 ticket 定案。
+6. **数据迁移（先搬家、不拆房）**：只复制、不搬走——旧 Termux 及其数据在迁移全程保持原样，不删除旧 App。迁移内容按用户确认清单（详见工单 02）：CODEX/ 全量、配置与身份（.bashrc 两个都留、.profile、.gitconfig、.gitignore、.ssh、.termux、AGENTS.md）、服务脚本（个人服务脚本（若干））、代理配置（.agents、.pi）；已装包按包清单在新环境重新安装（不拷贝二进制，避免硬编码旧路径）；第②类项目与第③类缓存/临时产物一律不迁。机制：备份到共享存储 → Fable 恢复 → 验证（shell/配置/服务）→ 旧 App 原样保留；触发形态（手动脚本 vs App 内流程）留待 ticket 定案。
 7. **Android 15**：通知权限、前台服务类型、edge-to-edge 与 targetSdk 升级一并处理；当前 targetSdk/compileSdk 陈旧，需在此项内统一升级并重验构建。
 8. **构建约束（技术澄清）**：aarch64 手机本地构建——官方 NDK 与 AAPT2 是 x86_64-only，使用 Termux 原生 clang、假 NDK 与原生 aapt2 覆盖；原生库以 jniLibs 直供 .so；改包名后仍须保持 bootstrap 变体（apt-android-7）与代码内 PackageVariant 一致，否则启动崩溃；构建成功不等于产物正确，必须校验 APK 内容。
 9. **架构方向（非 v1 实现）**：终端三层（界面层/仿真核心/会话层）、CoreAdapter 换引擎缝、Environment 环境接口、会话事件流、HUD 交互语言——v1 只保证不阻碍这些方向（如事件流定义成本低，可在需要时补），不在 v1 实现。

@@ -53,11 +53,21 @@ CARGO_DENY=/absolute/path/to/cargo-deny scripts/rust-supply-chain-gate.sh
 复核日期必须同时更新台账，并重新运行完整供应链门禁。当前没有 git 来源或许可证例外
 （2026-08-15 核实）；两项 RustSec 无维护例外见上文与台账。
 
+## 随提交同步的资产与来源
+
+本节收敛自三个 crate 原先各自的 `CONTRIBUTING.md`（工单 67 删除）：
+
+- 改动 `renderer/` 携带的字体或其他第三方资产时，必须同步更新资产旁的
+  license/provenance 文件、SHA-256 与 `docs/release/third-party-sources.md`；
+- 改动 `session/vendor/portable-pty` 时，必须同步 `supply-chain-exceptions.toml`
+  里的来源 revision、许可与整树 SHA-256；
+- 任何来源、许可、哈希、所有者或复核日期的变化都要求重跑完整供应链门禁。
+
 ## 依赖更新
 
 原 crate 级 `.github/dependabot.yml` 指定每周 Cargo 更新提醒，已随工单 64 删除：
-单仓库形态下 `.github/` 只在仓库根目录生效（ADR-0011）。要不要在根级重建
-dependabot 属公开或独立工程决策。
+单仓库形态下 `.github/` 只在仓库根目录生效（ADR-0011）。根 `.github/workflows/`
+已由工单 67 落库三个只读检查；要不要再加根级 dependabot 仍属独立工程决策。
 
 依赖更新 PR 必须保留并审查 `Cargo.lock` diff，然后按下列顺序验证：
 

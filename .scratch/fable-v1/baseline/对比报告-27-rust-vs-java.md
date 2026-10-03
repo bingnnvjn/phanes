@@ -9,7 +9,7 @@
 
 | 项 | Java 基线（23） | Rust（27） |
 | --- | --- | --- |
-| 机型 / Android | <测试机型>（<测试机型>）/ Android 15（SDK 35）/ <厂商 ROM 版本> / RAM 11.4GB | 同左 |
+| 机型 / Android | <测试机型>/ Android 15（SDK 35）/ <厂商 ROM 版本> / RAM 11.4GB | 同左 |
 | APK | `fable-session-25` sha `968c2f77…`（会话层 Java） | fable-app-26 最终包 sha `63273cce…`（会话层 Rust，构建期默认） |
 | versionName / Code | `0.119.0-beta.3` / `1022` | 同左 |
 | 会话层 | Java（Termux TerminalSession PTY，工单 26 抽出为 JavaFableSession） | Rust（libfable-session + portable-pty，工单 25/26） |

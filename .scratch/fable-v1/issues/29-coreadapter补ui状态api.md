@@ -25,7 +25,7 @@ Status: 已完成
 - 离屏自检：`cargo run --release --bin spike-render` → **结果: ALL PASS**（新增 18 项 UI 状态断言：OSC 0/2 标题、bell、1049/1000/25/12 模式置位与清除）；`cargo run --release --example api_offscreen_check` → **结果: ALL PASS**（新增 16 项 mailbox 断言 + `info: rendererInfo 报告 title/mode 状态`）。
 - JVM 缝契约：`:terminal-emulator:testDebugUnitTest --rerun-tasks` → **155/155 PASS**（新增 3 项：`newCapabilitiesDefaultToSafeValues`、`fakeCoreTitleBellModes`、`fakeCoreSelectionAndScroll`；fake 核心覆盖 title/bell/mode/selection/scroll）。
 - `:app:testDebugUnitTest --rerun-tasks` → 34 测 33 绿 1 败 = 既有基线 `FileReceiverActivityTest.testIsSharedTextAnUrl`（Robolectric + JDK 25 NoClassDefFoundError，工单 15/28 已记录，非本次引入）。
-- `:app:assembleDebug` → **BUILD SUCCESSFUL**（JDK 25 / Gradle 9.7.0 / AGP 9.3.0）；APK `fable-app_apt-android-7-debug_arm64-v8a.apk` 校验：包名 `com.gph.fable`、versionCode 1022、5 个 arm64 .so（libfable-render.so 8,116,616B）、apksigner Fable 证书 SHA-256 `<证书指纹>…`。
+- `:app:assembleDebug` → **BUILD SUCCESSFUL**（JDK 25 / Gradle 9.7.0 / AGP 9.3.0）；APK `fable-app_apt-android-7-debug_arm64-v8a.apk` 校验：包名 `com.gph.fable`、versionCode 1022、5 个 arm64 .so（libfable-render.so 8,116,616B）、apksigner Fable 证书 SHA-256 `<证书指纹>`。
 - .so JNI 导出 33 个（新增 7 个：`rendererGetTitle` / `rendererConsumeTitleChanged` / `rendererConsumeBell` / `rendererGetModeAltScreen` / `rendererGetModeMouseTracking` / `rendererGetModeCursorVisible` / `rendererGetModeCursorBlink`）。
 - code-review 双轴：Standards 无硬违规（4 项判断类 smells，已采纳删未用 ffi 常量/类型别名）；Spec 3 项全部修复（见坑 3/4/5）。
 

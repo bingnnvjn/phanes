@@ -16,6 +16,9 @@
 | 工单体系规则 | `docs/agents/issue-tracker.md` |
 | 核心库资产（.a / 校验和 / 字体） | `libghostty/README.md` |
 | 渲染器调研细节 | `docs/adr/0004` + `shellow vs ghostty.html` |
+| 许可分区 / 安全报告入口 | `LICENSE.md`、`SECURITY.md` |
+| 公开发布闸门 | `docs/release/public-release-gate.md` + `scripts/public-release-gate.sh` |
+| CI 只读检查工作流 | `.github/workflows/` |
 
 ## 同步规则
 

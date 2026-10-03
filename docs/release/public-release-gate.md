@@ -13,12 +13,18 @@
   `scripts/rust-public-boundary-gate.sh`；它们描述的是不再存在的拓扑。
 - 公开本身是独立的、不可逆的外部动作，执行前必须再次取得用户确认
   （ADR-0012 决定 1）。工单 65 只创建**私有**仓库 `phanes` 并推送默认分支。
-- 合并后的仓库当前没有 remote；闸门把“已存在 remote”当成需要重新确认的信号，
-  而不是可直接继续的状态。
+- 仓库现在只有 `origin` = 私有 `phanes`（工单 65 建立）。闸门只接受这一个远端，
+  地址必须精确等于 `https://github.com/bingnnvjn/phanes[.git]`；出现其它远端集合
+  即判失败（“已存在未知远端”是需要重新确认的信号）。公开切换由工单 68 在用户确认后
+  执行。
 - 应用身份按 ADR-0013 冻结：`applicationId` = `com.gph.fable`、派生的 `$PREFIX`、
   JNI 符号前缀、签名身份与两个 `libfable-*.so` 文件名都不随项目改名变化。
 - 签名材料台账与私有远端台账属于操作记录，按 ADR-0012 已从索引移除；仓库内不再
   保留这两个台账。
+- 根 `.github/workflows/` 由工单 67 落库三个只读检查（`rust-quality`、
+  `rust-supply-chain`、`public-release-gate`）：`permissions: contents: read`、
+  第三方 Action 固定到完整 commit SHA、不读 secret、不上传 artifact。闸门校验这三个
+  文件存在。
 
 ## 入库内容与禁止路径
 
@@ -43,7 +49,8 @@ gitleaks `v8.29.0`、cargo-deny `0.20.2`。闸门会校验 gitleaks 版本，并
 命令来“清零”。
 
 gitleaks 使用 `docs/release/gitleaks-public-release.toml`，只排除明确不属于公开
-输入的内部资料和构建缓存；crate 的禁止路径检查与 Git 对象 marker 扫描仍独立执行。
+输入的构建缓存；**`.scratch/` 自工单 67 起不再排除**（工程 journal 已脱敏并纳入
+扫描）。crate 的禁止路径检查与 Git 对象 marker 扫描仍独立执行。
 
 `cargo-deny` 每次运行都要从 `github.com` 刷新 RustSec advisory DB，本机到 GitHub 的
 直连不稳定。设 `FABLE_GITHUB_MIRROR`（例如 `https://ghfast.top/`）可把这一步的 git
@@ -70,18 +77,21 @@ commit `cd5227bd1f61dff3bbd6c814ceaf7ffd95e947d9`，并在资产旁提供
 
 工单 58 曾在三仓拓扑下完成自有 private remote 的创建、精确 `master`
 refs 推送和私有预演；单仓库形态下这些远端降级为历史副本，其去留另行决定
-（ADR-0011 决定 4）。以下 public/CI 动作仍故意不在本地完成：
+（ADR-0011 决定 4）。以下 public 动作仍故意不在本地完成：
 
-1. 创建 public 仓库、发布 branch/tag、启用 public workflow；
+1. 把 `phanes` 切成 public（工单 68，用户确认后执行）、发布 branch/tag；
 2. 配置 required checks、分支保护、CODEOWNERS 的实际审查者和管理员绕过审计；
 3. 在 private rehearsal 之外运行故意失败 PR、匿名检查、artifact/日志检查和 fork
    行为检查；
 4. 指定安全报告入口、凭据撤销/轮换责任人和泄露公告责任人。
 
-当前账户计划对 private 仓库的分支保护 API 返回 403；工单 51 仍需解决计划/权限后
-再接入 CI。CI 应使用 `pull_request`、`contents: read`、GitHub-hosted runner、
-无 PR 发布 secret，并将第三方 Action 固定到完整 commit SHA；质量、rustdoc、锁文件
-和供应链门禁必须成为 required checks。
+CI 工作流已按 `pull_request`/`push`、`contents: read`、GitHub-hosted runner、
+无发布 secret、第三方 Action 固定 commit SHA 落库（工单 67）。工单 68 在切成
+public 后把质量、供应链与发布闸门配成 required checks，并让 GitHub 自带秘密扫描与
+push protection 生效；当前账户计划对 private 仓库的分支保护 API 返回 403，这是 68
+切换后要核对的首项。安全报告入口写在根 `SECURITY.md`
+（`https://github.com/bingnnvjn/phanes/security/advisories/new`），明确这是个人项目、
+不承诺响应时限，责任人为仓库所有者。
 
 ## 泄露响应最小流程
 

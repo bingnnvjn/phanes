@@ -140,7 +140,7 @@ applicationId，可单独改。
 | `libtermux-bootstrap.so`、`liblocal-socket.so` | 上游名；改了要同改 `scripts/build-native-libs.sh` 的产物名、jniLibs 与加载点（原 `Android.mk`/`Application.mk` 已随工单 66 删除） |
 | bootstrap 变体 `apt-android-7` | 不能单独改（绑归档内容与 `$PREFIX`） |
 | 自有链接 `PHANES_GITHUB_REPO_URL`、`PHANES_GITHUB_ISSUES_URL`（工单 64 新增，供 App 内"报告问题"与关于页使用） | 能改；换账号或仓库名时只改 `TermuxConstants` 里这两行 |
-| 冻结的产物/仓库名：apt 仓库 `fable-repo`（托管于 `bingnnvjn/fable-bootstrap` 的 Release）、`android/app/<上游测试签名材料>`、旧 `<旧签名材料>` | 不建议单独改：`.deb` / bootstrap 按 `$PREFIX` 与 Release URL 构建，改名等于重建包仓库与改 `sources.list`，属独立决策 |
+| 冻结的产物/仓库名：apt 仓库 `fable-repo`（托管于 `bingnnvjn/fable-bootstrap` 的 Release）、`android/app/` 的上游测试 keystore 文件名、已退役的旧签名材料文件名 | 不建议单独改：`.deb` / bootstrap 按 `$PREFIX` 与 Release URL 构建，改名等于重建包仓库与改 `sources.list`，属独立决策；两个签名材料文件名按工单 67 脱敏，不在文档里复述 |
 
 ## 十、已用角色名的项
 

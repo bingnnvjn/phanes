@@ -45,7 +45,7 @@ Google build-tools 二进制是 x86_64，旧侧同样不能跑（构建一直走
 
 ### 旧侧备包数据（2026-08-09 核实）
 
-- 源：`<仓库外 android-sdk>`，1,049,916,201 B（du -sb），
+- 源：`$HOME/android-sdk`，1,049,916,201 B（du -sb），
   56,146 条目；打包后 `android-sdk.tar.gz` 547,882,103 B，56,146 条目（与源一致）。
 - 版本清单：platforms android-30/34/35/36；build-tools 30.0.2/34.0.0/36.0.0；
   cmdline-tools / platform-tools / licenses / ndk（21.4.7075529 22.1.7171670

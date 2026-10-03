@@ -15,7 +15,7 @@ if git grep -nE "storePassword[[:space:]]+['\"][^'\"]+['\"]|keyPassword[[:space:
     echo "ERROR: signing secret found in tracked source" >&2
     exit 1
 fi
-unexpected_keystores=$(git ls-files '*.jks' | grep -v '^app/<上游测试签名材料>\.jks$' || true)
+unexpected_keystores=$(git ls-files '*.jks' '*.keystore' || true)
 if [ -n "$unexpected_keystores" ]; then
     echo "ERROR: tracked keystore found:" >&2
     echo "$unexpected_keystores" >&2

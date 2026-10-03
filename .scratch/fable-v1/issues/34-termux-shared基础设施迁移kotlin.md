@@ -24,7 +24,7 @@ Status: 已完成
 - Kotlin/Java 互操作测试：新增 Java 调用方回归 5 项，`./gradlew :termux-shared:testDebugUnitTest --rerun-tasks` → 5/5 PASS。覆盖原静态工具 API（文件权限/类型/时间）、`null` 文件路径的 `IOException` 契约，以及 `Error` 接收不可变 `List<Throwable>` 的构造/更新路径。
 - 跨模块与 APK：`./gradlew :app:assembleDebug :fable-core:testDebugUnitTest :termux-shared:testDebugUnitTest --rerun-tasks` → BUILD SUCCESSFUL；fable-core 18/18 PASS；app、terminal-view、fable-core 均完成对 Kotlin 共享层的编译调用。
 - 最终全量命令 `./gradlew :app:assembleDebug :app:testDebugUnitTest :fable-core:testDebugUnitTest :termux-shared:testDebugUnitTest --rerun-tasks`：APK 打包成功；app 单测 34 项中 33 PASS、1 个既有失败 `FileReceiverActivityTest.testIsSharedTextAnUrl`（Robolectric 4.8.1 + JDK 25 的 `NoClassDefFoundError`，工单 15/28–33 已记录，非本单引入）；fable-core 18/18、termux-shared 5/5 PASS。
-- APK `app/build/outputs/apk/debug/fable-app_apt-android-7-debug_arm64-v8a.apk`（187,502,745B，sha256 `d5e1eb04…`）：包名 `com.gph.fable`、versionCode 1022、Fable 证书 SHA-256 `<证书指纹>…`；arm64 含 fable-render / fable-session / local-socket / termux-bootstrap 四个 `.so`，Apple 与 Noto emoji assets 均存在。
+- APK `app/build/outputs/apk/debug/fable-app_apt-android-7-debug_arm64-v8a.apk`（187,502,745B，sha256 `d5e1eb04…`）：包名 `com.gph.fable`、versionCode 1022、Fable 证书 SHA-256 `<证书指纹>`；arm64 含 fable-render / fable-session / local-socket / termux-bootstrap 四个 `.so`，Apple 与 Noto emoji assets 均存在。
 - ABI 审计：用工单 33 基线 `1d5e7c6` 编译 AAR 并与本单 AAR 做 `javap -public` 对照；既有 Java 调用点及新增 Java 测试均可编译。Kotlin 对工具类产生的 `final`/`INSTANCE`/`Companion` 是预期语言产物，静态入口用 `@JvmStatic` 保持。
 
 **2. 踩过的坑与解法**

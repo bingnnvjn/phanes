@@ -26,7 +26,7 @@ Status: 已完成
 - 离屏自检：`cargo run --release --bin spike-render` → **结果: ALL PASS**（UI 状态断言新增 DECCKM/DECKPAM/2004 各 6 项）；`cargo run --release --example api_offscreen_check` → **结果: ALL PASS**（mailbox 断言新增 9 项：三模式 on/off + `cursor_blink_phase` 经 rendererInfo 可查）。
 - JVM 缝契约：`:terminal-emulator:testDebugUnitTest --rerun-tasks` → **162/162 PASS**（新增 8 项：`fakeCoreCursorKeysKeypadBracketedAndBlinkPhase`、`legacyAdapterReportsDecCkmDeckpamModes`、`TerminalSessionUiStateTest` 5 项——getTitle 委托、title/bell 轮询投递与旧回调门控、旧路径回调保留、paste 的 bracketed 模式来自缝、旧路径 paste 回退）。
 - `:app:testDebugUnitTest --rerun-tasks` → 34 测 33 绿 1 败 = 既有基线 `FileReceiverActivityTest.testIsSharedTextAnUrl`（Robolectric 4.8.1 + JDK 25 NoClassDefFoundError，工单 15/28/29 已记录，非本次引入）。
-- `:app:assembleDebug` → **BUILD SUCCESSFUL**（JDK 25 / Gradle 9.7.0 / AGP 9.3.0）；APK `fable-app_apt-android-7-debug_arm64-v8a.apk` 校验：包名 `com.gph.fable`、versionCode 1022、5 个 arm64 .so（libfable-render.so 8,121,992B）、apksigner Fable 证书 SHA-256 `<证书指纹>…`。
+- `:app:assembleDebug` → **BUILD SUCCESSFUL**（JDK 25 / Gradle 9.7.0 / AGP 9.3.0）；APK `fable-app_apt-android-7-debug_arm64-v8a.apk` 校验：包名 `com.gph.fable`、versionCode 1022、5 个 arm64 .so（libfable-render.so 8,121,992B）、apksigner Fable 证书 SHA-256 `<证书指纹>`。
 - .so JNI 导出 **37 个**（新增 4 个：`rendererGetModeCursorKeysApplication` / `rendererGetModeKeypadApplication` / `rendererGetModeBracketedPaste` / `rendererSetCursorBlinkState`，APK 内 .so 复验一致）。
 
 **2. 踩过的坑与解法**

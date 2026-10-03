@@ -11,8 +11,8 @@
 本机安装位置（不属于仓库）：
 
 ```text
-<仓库外工具缓存目录>/gitleaks
-<仓库外工具缓存目录>/cargo-deny/bin/cargo-deny
+$HOME/.cache/fable-public-release-tools/gitleaks
+$HOME/.cache/fable-public-release-tools/cargo-deny/bin/cargo-deny
 ```
 
 复现安装（需人工选择仓库外的 `FABLE_PUBLIC_TOOL_ROOT`）：

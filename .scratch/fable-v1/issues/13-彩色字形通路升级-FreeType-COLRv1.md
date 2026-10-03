@@ -135,7 +135,7 @@ Status: 已完成
 - FreeType 不自动合成 COLRv1（最大坑，见上；因此多了约 800 行 paint graph 合成器，属 Ghostty 同款做法而非范围蔓延）。
 - 坐标 ×64 修正 / OpaquePaint 清零 / Palette_Data 字段顺序（均踩过并修）。
 - 家庭 emoji 设计为灰卡+黑色人形（SVG 源核实），不是"彩色"——离屏断言按"≠单人字形且更宽"设计，真机看效果。
-- fable-app `local.properties` 的 `sdk.dir` 指向旧路径 `/data/data/com.gph.fable/files/home/android-sdk`，已改为 `<仓库外 android-sdk>`（文件 gitignore，不入库；属环境漂移，非本单代码）。
+- fable-app `local.properties` 的 `sdk.dir` 指向旧路径 `/data/data/com.gph.fable/files/home/android-sdk`，已改为 `$HOME/android-sdk`（文件 gitignore，不入库；属环境漂移，非本单代码）。
 
 **结论写回（对后续影响）**
 

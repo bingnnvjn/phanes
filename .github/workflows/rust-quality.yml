@@ -1,0 +1,28 @@
+name: rust-quality
+
+# 工单 67：单仓库（ADR-0011）的只读质量检查。不读 secret，不上传 artifact。
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      # 第三方 Action 固定到完整 commit SHA（v4.2.2）。
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      # rust-toolchain.toml 固定版本与组件；cargo 经 rustup 自动安装。
+      - name: Rust quality gate (fmt / check / clippy / test / rustdoc)
+        run: scripts/rust-quality-gate.sh

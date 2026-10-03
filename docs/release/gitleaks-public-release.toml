@@ -7,7 +7,6 @@ useDefault = true
 description = "Files outside the public release input"
 paths = [
   '''(^|/)\.git(/|$)''',
-  '''(^|/)\.scratch(/|$)''',
   '''(^|/)\.crew(/|$)''',
   '''(^|/)target(/|$)''',
   '''(^|/)build(/|$)''',
@@ -22,3 +21,6 @@ paths = [
 # This is a path boundary, not a finding suppression. The gate's forbidden-path
 # check still rejects a tracked credential/build artifact anywhere in the tree.
 # Any new excluded path requires a corresponding ADR-0012 review.
+#
+# 工单 67：`.scratch/` 已按公开边界脱敏（移除个人环境细节并连同历史一起清理），
+# 因此不再排除在秘密扫描之外；扫描范围包含工程 journal。

@@ -1,8 +1,9 @@
 # Phanes（原名 Fable / 寓言）
 
 私人 Android 终端 App：打开就是终端。应用层是 Kotlin 壳，底层是 Rust（渲染器 +
-会话层），终端模拟核心用 libghostty-vt。仓库当前是**私有单仓库**，公开是另一次
-不可逆决策，尚未发生（ADR-0011、ADR-0012）。
+会话层），终端模拟核心用 libghostty-vt。仓库目前仍是**私有单仓库**；切成 public 是
+另一次不可逆决策，尚未发生（ADR-0011、ADR-0012）。公开前的收口已完成（工单 67），
+实际切换在工单 68、由用户确认后执行。
 
 词汇与分层见 [CONTEXT.md](CONTEXT.md)；架构决策见 [docs/adr/](docs/adr/)；工具链现状与
 路线图见 [项目总览与交接.md](项目总览与交接.md)。
@@ -33,8 +34,8 @@
 ## 从零配置一台新设备
 
 下面这套流程 2026-10-02 在本机（aarch64 + Termux）实测走通；x86_64 电脑的差异单独标注。
-仓库当前是私有的，远端 `bingnnvjn/phanes`（工单 65 建立，默认分支 `master`）；
-克隆用 `git clone https://github.com/bingnnvjn/phanes.git`。
+远端是 `bingnnvjn/phanes`（工单 65 建立，默认分支 `master`）；公开切换前克隆需要
+相应权限，克隆地址是 `git clone https://github.com/bingnnvjn/phanes.git`。
 
 ### 1. 工具链
 
@@ -123,12 +124,16 @@ debug 包由 AGP 的 debug keystore 签名。`./build-and-verify.sh` 会逐库�
 
 ## 许可与第三方来源
 
-- `android/`：GPLv3-only（termux-app fork），例外清单见 `android/LICENSE.md`
+- 根 [`LICENSE.md`](LICENSE.md) 是分区声明：`android/` 是 GPLv3-only，`renderer/`、
+  `session/`、`boo/` 是 MIT，各目录的完整文本为准
+- `android/`：GPLv3-only（termux-app fork）；例外清单见 `android/LICENSE.md`，
+  上游来源与改动说明见 `android/NOTICE.md`
 - `renderer/`、`session/`、`boo/`：MIT（各目录 `LICENSE`）
 - 第三方来源与许可证台账：[docs/release/third-party-sources.md](docs/release/third-party-sources.md)
 - 核心资产清单：[libghostty/README.md](libghostty/README.md)
 - Apple Color Emoji 许可上不可再分发，不入库：来源见
   [docs/fonts/apple-emoji-provenance.md](docs/fonts/apple-emoji-provenance.md)
+- 安全与漏洞报告：[SECURITY.md](SECURITY.md)
 
 ## 文档地图
 
@@ -141,3 +146,4 @@ debug 包由 AGP 的 debug keystore 签名。`./build-and-verify.sh` 会逐库�
 | `docs/rename-inventory.md` | 改名清单（各层现状、关联对象、冻结点） |
 | `项目总览与交接.md` | 工具链状态、路线图、常用命令 |
 | `.scratch/fable-v1/issues/` | 工单（本地 markdown tracker，规则见 `docs/agents/issue-tracker.md`） |
+| `LICENSE.md` / `SECURITY.md` | 许可分区声明 / 安全报告入口 |

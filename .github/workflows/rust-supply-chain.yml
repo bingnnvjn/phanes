@@ -1,0 +1,31 @@
+name: rust-supply-chain
+
+# 工单 67：逐 crate 的 cargo-deny 供应链门禁。不读 secret，不上传 artifact。
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-supply-chain-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  supply-chain-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      # 第三方 Action 固定到完整 commit SHA（v4.2.2）。
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      # 与 docs/release/public-release-tools.md 记录的固定版本一致。
+      - name: Install cargo-deny 0.20.2
+        run: cargo install cargo-deny --version 0.20.2 --locked
+
+      - name: Rust supply-chain gate (RustSec / licenses / sources / duplicates)
+        run: scripts/rust-supply-chain-gate.sh

@@ -15,7 +15,7 @@ Status: 已完成
 
 ## Comments
 
-2026-08-06 说明：bootstrap 本地副本已存在 `<仓库外临时目录>/fable06/bootstrap-aarch64.zip`（sha256 已验证）；Release 来源见工单 06。本工单不涉及迁移（工单 02），旧 Termux 数据保持原样。
+2026-08-06 说明：bootstrap 本地副本已存在 `$HOME/.codex_tmp/fable06/bootstrap-aarch64.zip`（sha256 已验证）；Release 来源见工单 06。本工单不涉及迁移（工单 02），旧 Termux 数据保持原样。
 
 2026-08-06 实施完成记录（主线程）：bootstrap 集成、重建、产物校验、交付全部完成；唯一未完成项是"用户安装后真机验收"。
 

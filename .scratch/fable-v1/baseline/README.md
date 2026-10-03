@@ -33,7 +33,7 @@
   - sha256 `968c2f7701934eca747d8363b33e52555651bf64d90a71ef09cde95682fd5992`
   - versionName `0.119.0-beta.3` / versionCode `1022`，包名 `com.gph.fable`
   - 构建产物时间 2026-08-11 03:07（UTC+8）
-- 设备：<测试机型>（<测试机型>）/ Android 15（SDK 35）/ <厂商 ROM 版本> / arm64-v8a / RAM 11.4GB
+- 设备：<测试机型>/ Android 15（SDK 35）/ <厂商 ROM 版本> / arm64-v8a / RAM 11.4GB
 - 仓库 HEAD（采集时）：`708718d`（2026-08-11）
 - 真机上已安装该 APK，且能开 4 个会话（抽屉多会话）、长按选择复制/粘贴、触摸滚动
 

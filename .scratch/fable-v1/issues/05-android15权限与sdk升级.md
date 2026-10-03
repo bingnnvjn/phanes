@@ -18,7 +18,7 @@ Status: 已完成
 #### 1. 升级前 baseline
 
 - master @ `aefeba6`（工单 04 完成后）；`./gradlew :app:assembleDebug` 通过。
-- arm64-v8a debug APK 163,619,856 B，`targetSdkVersion:'28'`，5 个 arm64 .so（含 libfable-render.so），Fable 签名 SHA-256 `fde7cd…`。
+- arm64-v8a debug APK 163,619,856 B，`targetSdkVersion:'28'`，5 个 arm64 .so（含 libfable-render.so），Fable 签名 SHA-256 `<证书指纹>`。
 - app 全量单测 28 个，其中 `FileReceiverActivityTest#testIsSharedTextAnUrl` 失败（Robolectric `NoClassDefFoundError: android/webkit/RoboCookieManager`）——既有失败，与本单无关（见坑 3）。
 
 #### 2. 改动清单
@@ -38,7 +38,7 @@ Status: 已完成
   - `aapt2 dump badging`：`targetSdkVersion:'35'`；uses-permission 含 POST_NOTIFICATIONS、FOREGROUND_SERVICE_SPECIAL_USE。
   - `aapt2 dump xmltree --file AndroidManifest.xml`：两个 service 均 `foregroundServiceType=0x40000000`（specialUse）+ PROPERTY_SPECIAL_USE_FGS_SUBTYPE ×2。
   - `unzip -l`：5 个 arm64 .so，含 libfable-render.so。
-  - `apksigner verify`：Signer #1 <签名证书主体>（SHA-256 `fde7cd…`，与 baseline 一致）。
+  - `apksigner verify`：Signer #1 <签名证书主体>（SHA-256 `<证书指纹>`，与 baseline 一致）。
 - lint：本单新增错误 0；剩余 4 个错误全部为既有 FableDiagnostics NewApi（MediaStore.Downloads 需 API 29、minSdk 24，工单 04 遗留，见结论）。
 
 #### 4. 权限与前台服务类型决策

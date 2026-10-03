@@ -89,8 +89,9 @@ for crate in "${CRATES[@]}"; do
         continue
     fi
 
-    for path in Cargo.toml Cargo.lock README.md LICENSE SECURITY.md CONTRIBUTING.md \
-        THIRD_PARTY.md; do
+    # 工单 67：crate 级 SECURITY.md / CONTRIBUTING.md 已删除，规则收敛到根级
+    # SECURITY.md 与 docs/agents/ 下的质量/供应链文档；LICENSE 与 THIRD_PARTY.md 仍在 crate 内。
+    for path in Cargo.toml Cargo.lock README.md LICENSE THIRD_PARTY.md; do
         required_file "$repo" "$path"
     done
     # ADR-0011 单仓库形态：crate 级 workflow 目录不再承载 required checks。
@@ -144,36 +145,47 @@ else
     fail "android role directory is missing"
 fi
 
-if [[ -z "$(git -C "$REPO_ROOT" remote)" ]]; then
-    pass "the merged repository has no remote yet; 工单 65 creates the private phanes remote"
+# 许可与声明（工单 67）：根级分区声明 + android 的上游 NOTICE 与 GPLv3 全文
+required_file "$REPO_ROOT" "LICENSE.md"
+required_file "$REPO_ROOT" "SECURITY.md"
+required_file "$REPO_ROOT" "android/LICENSE.md"
+required_file "$REPO_ROOT" "android/NOTICE.md"
+required_file "$REPO_ROOT" "android/GPL-3.0.txt"
+
+# 远端：只允许工单 65 建立的私有 Phanes origin；public 切换是独立的已确认步骤。
+remotes="$(git -C "$REPO_ROOT" remote)"
+if [[ -z "$remotes" ]]; then
+    pass "the merged repository has no remote; publication is a separate confirmed step"
+elif [[ "$remotes" == "origin" ]]; then
+    origin_url="$(git -C "$REPO_ROOT" remote get-url origin)"
+    case "$origin_url" in
+        https://github.com/bingnnvjn/phanes.git|https://github.com/bingnnvjn/phanes)
+            pass "the only remote is the private Phanes origin created by 工单 65" ;;
+        *)
+            fail "origin is not the expected Phanes repository; publication is a separate confirmed step" ;;
+    esac
 else
-    fail "the merged repository already has a remote; publication is a separate confirmed step (ADR-0012 决定 1)"
+    fail "unexpected remote set; publication is a separate confirmed step (ADR-0012 决定 1)"
 fi
 
-for sensitive in "$android_dir/keystore/<旧签名材料>" \
-    "$android_dir/release-missing-credentials.log"; do
-    if [[ -e "$sensitive" ]]; then
-        fail "sensitive app material exists locally and is outside publication scope"
-    else
-        pass "sensitive app material is absent from this workspace"
-    fi
-done
-
-testkey="$android_dir/app/<上游测试签名材料>"
-if [[ ! -f "$testkey" ]]; then
-    pass "android <上游测试签名材料> is absent from the working tree"
+# android 作为发布输入，不得跟踪任何签名、凭据、构建或环境产物。
+if has_forbidden_tracked_path android; then
+    fail "android contains a signing, credential, build, or environment artifact"
 else
-    fail "android <上游测试签名材料> is present in the merged working tree"
+    pass "android has no known signing or credential artifact in its publish tree"
 fi
 
-for historical_path in android/app/<上游测试签名材料> android/keystore/<旧签名材料>; do
-    if git -C "$REPO_ROOT" log --all --reflog --format=%H -- "$historical_path" |
-        grep -q .; then
-        fail "merged history or reflog retains $historical_path"
-    else
-        pass "merged history and reflog contain no $historical_path path"
-    fi
-done
+# 索引、全部 ref、reflog 与不可达对象中不得残留任何签名材料路径。
+# 只输出结论，不输出路径，避免二次泄露。
+historical_signing="$(
+    git -C "$REPO_ROOT" log --all --reflog --format= --name-only 2>/dev/null |
+        grep -aE '\.(jks|keystore|p12|pfx|pem|key|bks|pk8)$' || true
+)"
+if [[ -n "$historical_signing" ]]; then
+    fail "merged history or reflog retains a signing-material path"
+else
+    pass "merged history and reflog contain no signing-material path"
+fi
 
 secret_regex='BEGIN[[:space:]]+(RSA|EC|OPENSSH|DSA|PGP)[[:space:]]+PRIVATE KEY|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[0-9A-Za-z-]{10,}|aws_secret_access_key[[:space:]]*=[[:space:]]*[^[:space:]]{16,}|https?://[^[:space:]/]+:[^[:space:]@]+@'
 
@@ -328,10 +340,14 @@ else
     fail "cargo-deny is not installed; supply-chain rehearsal cannot be complete"
 fi
 
-if [[ -d "$REPO_ROOT/.github/workflows" ]]; then
-    fail "root workflow directory exists; public Rust workflows belong only in confirmed Fable-owned crate remotes"
+# 工单 67：三个只读检查工作流落库到根 .github/workflows（ADR-0011 单仓库形态）。
+workflow_dir="$REPO_ROOT/.github/workflows"
+if [[ -d "$workflow_dir" ]]; then
+    for workflow in rust-quality.yml rust-supply-chain.yml public-release-gate.yml; do
+        required_file "$REPO_ROOT" ".github/workflows/$workflow"
+    done
 else
-    pass "no root workflow can accidentally publish from the private engineering repository"
+    fail "root .github/workflows is missing; 工单 67 lands the three read-only checks"
 fi
 
 note "CI required checks, branch protection, private rehearsal, anonymous inspection, and leak-response ownership require a Fable-owned GitHub remote and remain human-gated."
