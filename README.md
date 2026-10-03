@@ -1,9 +1,8 @@
 # Phanes（原名 Fable / 寓言）
 
 私人 Android 终端 App：打开就是终端。应用层是 Kotlin 壳，底层是 Rust（渲染器 +
-会话层），终端模拟核心用 libghostty-vt。仓库目前仍是**私有单仓库**；切成 public 是
-另一次不可逆决策，尚未发生（ADR-0011、ADR-0012）。公开前的收口已完成（工单 67），
-实际切换在工单 68、由用户确认后执行。
+会话层），终端模拟核心用 libghostty-vt。仓库是**公开单仓库**（ADR-0011、ADR-0012）：
+公开前按 ADR-0016 同名重建以清掉旧对象，切换由工单 68 执行。
 
 词汇与分层见 [CONTEXT.md](CONTEXT.md)；架构决策见 [docs/adr/](docs/adr/)；工具链现状与
 路线图见 [项目总览与交接.md](项目总览与交接.md)。
@@ -34,8 +33,8 @@
 ## 从零配置一台新设备
 
 下面这套流程 2026-10-02 在本机（aarch64 + Termux）实测走通；x86_64 电脑的差异单独标注。
-远端是 `bingnnvjn/phanes`（工单 65 建立，默认分支 `master`）；公开切换前克隆需要
-相应权限，克隆地址是 `git clone https://github.com/bingnnvjn/phanes.git`。
+远端是 `bingnnvjn/phanes`（默认分支 `master`；2026-10-03 按 ADR-0016 同名重建后公开）。
+克隆：`git clone https://github.com/bingnnvjn/phanes.git`。
 
 ### 1. 工具链
 

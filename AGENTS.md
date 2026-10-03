@@ -1,6 +1,6 @@
 # Phanes（原名 Fable／寓言）
 
-私人 Android 终端 App：Kotlin 壳 + Rust 底层 + libghostty-vt 核心。仓库是私有单仓库，
+私人 Android 终端 App：Kotlin 壳 + Rust 底层 + libghostty-vt 核心。仓库是公开单仓库，
 目录用角色名。装配与构建见 `README.md`；工具链与路线图见 `项目总览与交接.md`。
 
 ## 三条硬规则
