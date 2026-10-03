@@ -160,7 +160,7 @@ elif [[ "$remotes" == "origin" ]]; then
     origin_url="$(git -C "$REPO_ROOT" remote get-url origin)"
     case "$origin_url" in
         https://github.com/bingnnvjn/phanes.git|https://github.com/bingnnvjn/phanes)
-            pass "the only remote is the private Phanes origin created by 工单 65" ;;
+            pass "the only remote is the expected Phanes origin (工单 65; 同名重建见 ADR-0016)" ;;
         *)
             fail "origin is not the expected Phanes repository; publication is a separate confirmed step" ;;
     esac

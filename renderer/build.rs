@@ -50,44 +50,55 @@ fn main() {
         std::process::exit(1);
     };
     let root = PathBuf::from(&manifest);
+    // ADR-0015 宿主矩阵：renderer 的产品目标是 aarch64-linux-android。
+    // Android 专用编译/链接选项只在 Android 目标上传，否则非 Android 宿主（CI 的
+    // x86_64-unknown-linux-gnu）会在 cc/链接阶段失败（例如 gcc 不认识 -fno-emulated-tls）。
+    let on_android = env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("android");
+    let on_aarch64 = env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("aarch64");
 
     // 工单 13：FreeType 静态接入（必须先于 tls_shim，保证 -fPIC 一致）。
     build_freetype(&root);
 
     // 工单 08 坑 1 复刻：TLS 对齐占位（ARM64 bionic 要求 PT_TLS p_align=64）。
     // 必须以 -fno-emulated-tls 编译，让占位真正产生 TLS 段。
-    cc::Build::new()
-        .file(root.join("src/tls_shim.c"))
-        .flag("-fPIC")
-        .flag("-fno-emulated-tls")
-        .flag("-ftls-model=global-dynamic")
-        .compile("tls_shim");
-    cc::Build::new()
-        .file(root.join("src/pty_shim.c"))
-        .flag("-fPIC")
-        .flag("-fno-emulated-tls")
-        .compile("pty_shim");
+    // 这两个开关是 Android 工具链专用的，只在 Android 目标上传。
+    let mut tls = cc::Build::new();
+    tls.file(root.join("src/tls_shim.c")).flag("-fPIC");
+    let mut pty = cc::Build::new();
+    pty.file(root.join("src/pty_shim.c")).flag("-fPIC");
+    if on_android {
+        tls.flag("-fno-emulated-tls")
+            .flag("-ftls-model=global-dynamic");
+        pty.flag("-fno-emulated-tls");
+    }
+    tls.compile("tls_shim");
+    pty.compile("pty_shim");
     cc::Build::new()
         .file(root.join("src/mmap_shim.c"))
         .flag("-fPIC")
         .compile("mmap_shim");
-    cc::Build::new()
-        .file(root.join("src/sha256_shim.c"))
-        .flag("-fPIC")
-        .flag("-march=armv8-a+crypto")
-        .compile("sha256_shim");
+    let mut sha = cc::Build::new();
+    sha.file(root.join("src/sha256_shim.c")).flag("-fPIC");
+    if on_aarch64 {
+        sha.flag("-march=armv8-a+crypto");
+    }
+    sha.compile("sha256_shim");
 
-    // 链接已验证的 expo 预编译 libghostty-vt（ghostty b0947378）。
-    println!(
-        "cargo:rustc-link-search=native={}",
-        root.join("../libghostty/lib/arm64-v8a").display()
-    );
-    println!("cargo:rustc-link-lib=static=ghostty-vt");
-    println!("cargo:rustc-link-lib=m");
-    println!("cargo:rustc-link-lib=dylib=log");
-    println!("cargo:rustc-link-lib=dylib=android");
+    // Android 目标才链接已验证的 expo 预编译 libghostty-vt（ghostty b0947378）
+    // 与 bionic 系统库。非 Android 宿主只做源码级检查（check/clippy/rustdoc），
+    // 不链接这个 arm64 构建输入——它按 ADR-0012 不入库，只在 Android 宿主上现取。
+    if on_android {
+        println!(
+            "cargo:rustc-link-search=native={}",
+            root.join("../libghostty/lib/arm64-v8a").display()
+        );
+        println!("cargo:rustc-link-lib=static=ghostty-vt");
+        println!("cargo:rustc-link-lib=m");
+        println!("cargo:rustc-link-lib=dylib=log");
+        println!("cargo:rustc-link-lib=dylib=android");
 
-    // 强制链接器拉取 tls_shim.o（静态库成员按需提取，未引用会被丢弃），
-    // 从而把 PT_TLS p_align 抬到 64。
-    println!("cargo:rustc-link-arg=-Wl,--undefined=fable_render_tls_pad");
+        // 强制链接器拉取 tls_shim.o（静态库成员按需提取，未引用会被丢弃），
+        // 从而把 PT_TLS p_align 抬到 64。
+        println!("cargo:rustc-link-arg=-Wl,--undefined=fable_render_tls_pad");
+    }
 }

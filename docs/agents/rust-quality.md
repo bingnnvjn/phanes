@@ -38,6 +38,18 @@ RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps --locked
 `Cargo.lock` 缺失会在该 crate 开始前直接失败。`--locked` 禁止门禁改写锁文件；
 门禁不自动安装第三方工具，也不依赖 nightly、CI 或远端仓库。
 
+### 宿主相关的例外：`renderer` 的 test
+
+`renderer` 的产品目标是 `aarch64-linux-android`（ADR-0015）。它的测试二进制要链接
+`libghostty/lib/arm64-v8a/libghostty-vt.a`——这是构建输入，按 ADR-0012 不入库，
+只在 Android 宿主上现取。因此在非 Android 宿主（例如 CI 的
+`x86_64-unknown-linux-gnu`）门禁只跑 `fmt`/`check`/`clippy`/`rustdoc`，**跳过**
+`renderer` 的 `test`，并在输出里写明原因；Android 宿主（Termux 开发机）五项全跑。
+`renderer/build.rs` 同样只对 Android 目标传 Android 专用编译/链接选项。
+
+这条例外不能当通用豁免：改动 `renderer` 的链接行为、JNI 边界或 `unsafe` 时，
+必须在 Android 宿主上跑完整门禁，再交付。
+
 ## 每个 crate 的提交要求
 
 本节收敛自三个 crate 原先各自的 `CONTRIBUTING.md`（工单 67 删除；单仓库后由根级

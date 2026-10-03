@@ -24,5 +24,8 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       # rust-toolchain.toml 固定版本与组件；cargo 经 rustup 自动安装。
+      # 注意：renderer 的 test 目标要链接 aarch64-linux-android 的预编译核心（构建输入，
+      # ADR-0012），GitHub-hosted runner 上不可用，门禁会跳过它并在日志里写明；
+      # fmt/check/clippy/rustdoc 与 boo/session 的 test 仍全部执行。见 docs/agents/rust-quality.md。
       - name: Rust quality gate (fmt / check / clippy / test / rustdoc)
         run: scripts/rust-quality-gate.sh
