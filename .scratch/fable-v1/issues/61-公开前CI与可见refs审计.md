@@ -3,7 +3,7 @@
 **What to build:** 审计并收紧三个 Rust crate 在公开后可见的 branch、tag、PR ref 和 GitHub Actions 工作流，保证公开 CI 不依赖秘密、第三方 Action 与下载输入可复现，Apple emoji 测试路径有明确的公开边界。
 
 **Blocked by:** fable-v1/60
-Status: 待开工
+Status: 挂起（被 fable-v1/67 取代：CI 与可见 ref 审计并入单仓库收口）
 
 ## 验收清单
 
@@ -20,3 +20,6 @@ Status: 待开工
 日志也会成为公开输入。现有 CI PR 已在 private remote 通过，仍需在公开前审计其
 workflow Action pin、下载资产和可见 ref。完成后交给工单 59 执行不可逆的可见性切换。
 
+2026-10-03 取代记录：公开前的 CI 与可见 ref 审计并入 fable-v1/67（公开前收口）。
+本单面对的是三个 crate 的 workflow 与公开 ref，那个拓扑已作废。单仓库版本在 67 的
+清单里：CI 工作流落库、可见 ref 收敛、第三方 Action 固定到完整 commit SHA。

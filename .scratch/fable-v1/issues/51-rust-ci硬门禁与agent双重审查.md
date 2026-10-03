@@ -3,7 +3,7 @@
 **What to build:** 将已经清零的 Rust 质量门禁变为不可绕过的 CI required checks，并建立“实施 Agent + 独立审查 Agent”的 Rust 合并协议、例外台账和失败反馈；不得向非 Fable 所有的远端仓库写入工作流。
 
 **Blocked by:** fable-v1/59、fable-v1/60、fable-v1/61、fable-v1/62
-Status: 挂起（ADR-0011 改单仓库拓扑；等 fable-v1/62–65 收口后在新仓库配置门禁）
+Status: 挂起（被 fable-v1/68 取代：门禁内容并入单仓库公开）
 
 ## 验收清单
 
@@ -135,3 +135,7 @@ public 发布。
    workflow 与 required check 的挂载点需要重写。
 4. Status 改为挂起并写明原因。恢复条件：fable-v1/62–65 收口、新仓库命名与
    可见性确认之后，重写 workflow 与分支保护目标，再按新的单仓库结构验收。
+
+2026-10-03 取代记录：公开决策窗口把门禁工作并入 fable-v1/68（切换公开与配置门禁）。
+本单的验收清单建立在三个独立 Rust crate 上，那个拓扑已作废，原先的恢复条件不再适用。
+需要改动时以 fable-v1/68 为准，本单保留作历史记录。
