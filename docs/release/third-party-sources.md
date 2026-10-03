@@ -12,7 +12,7 @@ termux-app fork，仍受其上游许可证边界约束。每次
 | Noto Color Emoji | `renderer/assets/NotoColorEmoji.ttf` | `googlefonts/noto-emoji` `Noto-COLRv1.ttf`, revision `e92753bfa55fd449e427d4d325f9c8c40408c74e` | SIL OFL 1.1；`renderer/assets/NOTO-EMOJI-LICENSE.txt`；资产 SHA-256 已固定 |
 | FreeType | `renderer/third_party/freetype/` | FreeType `VER-2-14-3`, dereferenced commit `0a0221a1347e2f1e07c395263540026e9a0aa7c7` | FreeType Project License；`LICENSE.TXT`、`docs/FTL.TXT`、`docs/GPLv2.TXT` |
 | portable-pty | `session/vendor/portable-pty/` | WezTerm revision `f8921727a11b9f8b073e8c24821d72fd41283500` | MIT；`vendor/portable-pty/LICENSE.md` 与 `supply-chain-exceptions.toml` |
-| Termux app host | 进入仓库的 `android/`（termux-app fork） | 上游 `termux/termux-app` `v0.119.0-beta.3`；合并后不再有独立 remote | GPLv3-only；`android/LICENSE.md` 及其例外清单；应用签名材料永不进入仓库 |
+| Termux app host | 进入仓库的 `android/`（termux-app fork） | 上游 `termux/termux-app` `v0.119.0-beta.3`（tag commit `816a4bf`）；合并后不再有独立 remote | GPLv3-only；`android/GPL-3.0.txt` 全文 + `android/LICENSE.md` 及其例外清单；上游来源、基线版本与"这是修改版"见 `android/NOTICE.md`；应用签名材料永不进入仓库 |
 | libghostty-vt / Phanes 核心边界 | `libghostty/README.md` 记录来源与 sha256；`.a`/头文件/字体属构建输入，不入库 | `libghostty-vt` expo-libghostty 预编译资产，由 `docs/build-inputs.md` 固定来源与摘要 | 构建输入按 ADR-0012 不入库；不得把内部源码、构建产物或诊断资料带入仓库 |
 
 `android/app/<上游测试签名材料>`、旧 `<旧签名材料>`、发布日志、APK/AAB、
