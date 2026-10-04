@@ -43,8 +43,14 @@ ext {
     bootstrapMaxRelease = packageVariant == "apt-android-5" ? "6.0" : null
 
     buildMinSdk = bootstrapMinSdk
-    // 工单 05：28 -> 35（Android 15 行为生效面）。compileSdk 36 / minSdk 24 不变。
-    buildTargetSdk = 35
+    // 2026-10-04 修复：35 -> 27（此前工单 05 从 28 升到 35，导致终端起不来）。
+    // 终端要 exec $PREFIX/bin/*（bash/dash/coreutils…），这依赖 SELinux 的 untrusted_app_27 域
+    // （该域 allow app_data_file:file execute_no_trans）。域由 targetSdk 阈值决定，本机实测
+    // （Android 15 / MIUI，SDK 35）阈值是 <=27：targetSdk 28 仍落 untrusted_app，引导包第二阶段
+    // exec bash 被拒（EACCES error=13）；27 落 untrusted_app_27，exec 放行，终端可用。
+    // 本次为「卸载后重装」验证通过；改 targetSdk 后是否需卸载重装未单独分离验证。
+    // compileSdk 36 / minSdk 24 不变。
+    buildTargetSdk = 27
 }
 
 android {
