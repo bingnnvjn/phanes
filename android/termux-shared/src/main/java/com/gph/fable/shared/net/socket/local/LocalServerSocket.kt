@@ -17,6 +17,8 @@ open class LocalServerSocket(
     @JvmField val mLocalSocketManagerClient = mLocalSocketRunConfig.getLocalSocketManagerClient()
     @JvmField val mClientSocketListener: Thread = Thread(ClientSocketListener())
 
+    // @Synchronized：与 Java 原件 public synchronized 等价，关闭与读/写/stop() 并发时需串行化。
+    @Synchronized
     @JvmOverloads
     fun start(): Error? {
         Logger.logDebug(LOG_TAG, "start")
@@ -52,6 +54,7 @@ open class LocalServerSocket(
         return null
     }
 
+    @Synchronized
     fun stop(): Error? {
         Logger.logDebug(LOG_TAG, "stop")
         try { mClientSocketListener.interrupt() } catch (_: Exception) {}
@@ -59,6 +62,7 @@ open class LocalServerSocket(
         return deleteServerSocketFile()
     }
 
+    @Synchronized
     fun closeServerSocket(logErrorMessage: Boolean): Error? {
         return try {
             close()
@@ -71,6 +75,7 @@ open class LocalServerSocket(
         }
     }
 
+    @Synchronized
     override fun close() {
         val fd = mLocalSocketRunConfig.getFD()
         if (fd >= 0) {

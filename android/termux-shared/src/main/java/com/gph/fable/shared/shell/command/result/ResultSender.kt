@@ -241,7 +241,9 @@ object ResultSender {
             )
         }
 
+        // 与 Java 原件等价：suffix 为 null 时回写 ""，调用方稍后读回的配置对象可见该副作用。
         val suffix = resultConfig.resultFilesSuffix ?: ""
+        resultConfig.resultFilesSuffix = suffix
         if (suffix.contains("/")) {
             return ResultSenderErrno.ERROR_RESULT_FILES_SUFFIX_INVALID.getError(suffix)
         }

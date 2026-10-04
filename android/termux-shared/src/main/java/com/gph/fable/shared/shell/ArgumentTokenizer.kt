@@ -56,7 +56,9 @@ object ArgumentTokenizer {
                         '\'' -> state = SINGLE_QUOTE_STATE
                         '"' -> state = DOUBLE_QUOTE_STATE
                         else -> {
-                            if (!c.isWhitespace()) {
+                            // 用 java.lang.Character.isWhitespace 而非 Char.isWhitespace()：后者把
+                            // NBSP(U+00A0) 等 SpaceChar 也算空白，会把 Java 原版的一个 token 拆成两个。
+                            if (!Character.isWhitespace(c)) {
                                 currArg.append(c)
                                 state = NORMAL_TOKEN_STATE
                             } else if (state == NORMAL_TOKEN_STATE) {

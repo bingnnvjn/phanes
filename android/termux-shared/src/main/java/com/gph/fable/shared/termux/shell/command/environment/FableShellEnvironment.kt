@@ -18,11 +18,15 @@ class FableShellEnvironment : AndroidShellEnvironment() {
         private const val LOG_TAG = "FableShellEnvironment"
         const val ENV_PREFIX = "PREFIX"
 
+        // @Synchronized：与 Java 原件 public synchronized static 等价；writeEnvironmentToFile 写固定
+        // 临时文件 termux.env.tmp 再 move，并发调用需串行化。
+        @Synchronized
         @JvmStatic
         fun init(currentPackageContext: Context) {
             FableAppShellEnvironment.setFableAppEnvironment(currentPackageContext)
         }
 
+        @Synchronized
         @JvmStatic
         fun writeEnvironmentToFile(currentPackageContext: Context) {
             val environmentString = ShellEnvironmentUtils.convertEnvironmentToDotEnvFile(

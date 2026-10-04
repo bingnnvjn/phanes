@@ -16,12 +16,20 @@ open class ShellCommandShellEnvironment {
         const val ENV_SHELL_CMD__APP_TERMINAL_SESSION_NUMBER_SINCE_APP_START = "${SHELL_CMD_ENV_PREFIX}APP_TERMINAL_SESSION_NUMBER_SINCE_APP_START"
     }
 
-    open fun getEnvironment(currentPackageContext: Context, executionCommand: ExecutionCommand): HashMap<String, String> {
+    open fun getEnvironment(currentPackageContext: Context, executionCommand: ExecutionCommand): HashMap<String, String> =
+        getEnvironmentForPackageName(currentPackageContext.packageName, executionCommand)
+
+    /**
+     * JVM 可测入口：行为与 [getEnvironment] 相同，只把 `packageName` 单独传入，
+     * 使环境组装逻辑不依赖 `android.content.Context`。公开是刻意的——本模块的
+     * 单测是 Java（AGP 内置 Kotlin 下 `internal` 对 Java 测试不可见）。
+     */
+    open fun getEnvironmentForPackageName(packageName: String, executionCommand: ExecutionCommand): HashMap<String, String> {
         val environment = HashMap<String, String>()
         val runner = ExecutionCommand.Runner.runnerOf(executionCommand.runner) ?: return environment
-        ShellEnvironmentUtils.putToEnvIfSet(environment, ENV_SHELL_CMD__RUNNER_NAME, runner.name)
-        ShellEnvironmentUtils.putToEnvIfSet(environment, ENV_SHELL_CMD__PACKAGE_NAME, currentPackageContext.packageName)
-        ShellEnvironmentUtils.putToEnvIfSet(environment, ENV_SHELL_CMD__SHELL_ID, executionCommand.id?.toString())
+        ShellEnvironmentUtils.putToEnvIfSet(environment, ENV_SHELL_CMD__RUNNER_NAME, runner.getName())
+        ShellEnvironmentUtils.putToEnvIfSet(environment, ENV_SHELL_CMD__PACKAGE_NAME, packageName)
+        ShellEnvironmentUtils.putToEnvIfSet(environment, ENV_SHELL_CMD__SHELL_ID, executionCommand.id.toString())
         ShellEnvironmentUtils.putToEnvIfSet(environment, ENV_SHELL_CMD__SHELL_NAME, executionCommand.shellName)
         return environment
     }

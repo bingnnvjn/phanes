@@ -35,6 +35,8 @@ open class LocalClientSocket(
         mPeerCred.fillPeerCred(mLocalSocketManager.getContext())
     }
 
+    // @Synchronized：与 Java 原件 public synchronized 等价。
+    @Synchronized
     @JvmOverloads
     fun closeClientSocket(logErrorMessage: Boolean = true): Error? {
         return try {
