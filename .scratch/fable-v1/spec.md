@@ -2,7 +2,7 @@
 
 > Status: 待开工
 > 功能目录：fable-v1
-> 更新：2026-08-12
+> 更新：2026-10-04
 > 来源：项目总览与交接 + 本仓库现状探索（to-spec）
 
 > 架构约束（2026-08-07 补，见 `docs/adr/0003`、`docs/adr/0004`）：v1 交付范围不变（纯终端、打开即终端）；UI 只对着 **CoreAdapter** 缝写，保证后续换核不动 UI；终态方向 = Kotlin 壳 + Rust 底层（渲染/会话/事件流）+ libghostty-vt 核心，渲染器定案 Rust + wgpu（安卓 Vulkan）。
@@ -58,6 +58,7 @@ Fable v1 是一个纯终端 Android App：包名 `com.gph.fable`、正式签名�
 13. **emoji 字体（2026-08-10 决策窗口 7 / 工单 22，ADR-0007）**：彩色 emoji 主字体切换为 Apple Color Emoji `21.4d3e1`（sbix，只保留 160px 档，恒 160 超采样缩放，Rust 自解析 sbix + png crate，不加 C 依赖）；Noto COLRv1 保留为兜底（回退以完整 cluster 为单位）；Apple 与 Noto 均改为 fable-app APK assets（noCompress）运行时加载（sha256 校验、失败自动降级）；布局保持原生比例（2 格、垂直居中、非透明包围盒视觉居中、行高稳定）；性能指标（新 emoji 首现 ≤50ms、加载 ≤200ms、预热 50 个热门、缓存 512 张 LRU）；更新机制含溯源文件 + 上游自动检查（每周比对，Emoji 18.0 发布后按流程换字体）。
 14. **会话层搬 Rust（2026-08-10 决策窗口 8，ADR-0008）**：终态会话层（PTY 生命周期 spawn/close/resize、进程管理、环境注入、字节 I/O）全进 Rust；Java 壳只保留 UI、设置、系统集成（通知/前台服务/Intent）。驱动优先级 = 多 Agent 并行（2–4 个 Agent 同时跑）的并发安全与稳定性第一，语言统一（壳内单一 Kotlin↔Rust 边界、去 Java 第三套 JNI）与事件流为综合收益一并覆盖。零件选型 = **portable-pty 0.9.0（MIT）主选 + nix 自拼（posix_openpt 序列）兜底**——事实依据：portable-pty Unix 实现依赖 `libc::openpty()`，Bionic 自 API 23 起提供该符号（本项目 minSdk 24），Termux clang 实测编译链接运行通过；仅 NDK/GitHub Actions 备用构建线需显式 min API ≥ 23（见 `.scratch/fable-v1/research-会话层Rust零件.md`）。排期 = 独立先行、验证切片先行（工单 24 试编 + 真机探针），不并入 Kotlin 壳重构；过渡 = 双实现并行 + 切换开关，Java 会话层原样保留至验收对比后再评估去留。并发指标 = 2–4 会话硬指标、8 并发设计余量；先采 Java 会话层并发基线（工单 23）作验收对比。事件流（头脑风暴 §3.3 转正）第一版 = 最小集六事件：`command_started` / `output_chunk` / `command_finished` / `exit_code` / `session_created` / `session_closed`，schema 含 session_id、时间戳并留扩展 metadata；Rust 侧产出、经 JNI 事件回调暴露 Kotlin，Kotlin 第一版只接诊断/日志订阅。
 15. **Kotlin 壳重构（2026-08-12 决策窗口 9，ADR-0009）**：终态收口——全仓自有 Java→Kotlin（app / termux-shared / terminal-view / fable-core）；UI 框架保持 XML/经典 View（ADR-0001 不用 Compose 部分继续有效），工具链 = AGP 9 内置 Kotlin（默认启用，不引 KGP）；旧模拟器/旧渲染器先扩 CoreAdapter UI 状态 API（title/bell/mode，libghostty-vt 原生已具备）再删除；模块保留四个，terminal-emulator 改名 fable-core；顺序 = Kotlin pilot → 补缝/切缝 → 删旧 → 清理探针与死代码 → 品牌化（Termux*→Fable*，`termux.properties`/`~/.termux` 兼容）→ 分模块迁移 → 选择浮条 + 更多入口 → 全量回归真机验收。外部入口（RUN_COMMAND/文件分享/查看/DocumentsProvider/OpenReceiver）本次暂保留，稳定后原生化再删（用户 2026-08-12 拍板）。范围外：浅色专项 fable-v1/16、内存优化窗口、渲染器新功能。
+16. **核心读取缝（2026-10-04 决策窗口 12，来源：代码库架构体检 C1）**：渲染器"从核心读数据"的代码此前散成 9 份（渲染器本体、头部验收程序、7 个无引用的诊断程序），且已经各自漂移——同一段 unsafe 取值有 4 种写法（`truncate` 与 `from_utf8_lossy` 混用），`check` 有两种不兼容策略（一个 panic、一个返回 bool），头部验收程序还有自己的一份格子类型。终态 = 读取能力从渲染线程内部搬出，成一个独立 module，由两个对象组成：一个持核心连接（喂字节、resize、滚动、标题与模式等窄查询），一个持渲染状态（快照与文本读取）。分两个对象不是自造抽象：核心本身就是两个东西，且规定 update 时独占核心实例、读渲染状态时不碰核心（`libghostty/lib/include/ghostty/vt/render.h`，2026-10-04 核实），所以照核心自己的分界切。渲染器本体只保留 GPU 与渲染线程，持有这两个对象。读取的 unsafe 推导、"读之前必须先 update"的规矩、出错语义都只在一处。出错语义按后果分：会改变结果的调用返回错误，单字段读取失败按内部不变量处理（测试期断言）；module 自身不写日志，由调用方决定策略。7 个无引用且无断言的诊断程序删除；快照与格子等数据类型随读取能力迁移，不留旧 import 路径。测试只覆盖抽出来的纯逻辑（取词边界、去行尾空白、续行判断）——renderer 的测试目标必须链接不入库的预编译核心，该 crate 的测试只在 Android 宿主运行（恢复 CI 测试面另单）。范围外：界面侧查询扇形（体检 C2）、离屏画法（体检 C4）、恢复 renderer 的 CI 测试面。
 
 ## Rust 严格安全编码门禁（2026-08-14 决策窗口）
 
@@ -76,6 +77,7 @@ Rust 底层的质量目标是“默认不信任，除非通过可重复的自动
 - **缝 2（复用缝 · 核心逻辑 JVM 单元测试）**：仿真核心行为沿用 terminal-emulator 既有 JUnit 测试族（TerminalTest、CursorAndScreenTest、HistoryTest 等为先例）；新增纯逻辑（迁移规划、会话清单、包名相关常量）沿用 app 模块 plain JUnit 模式（TermuxActivityTest 为先例）。
 - **缝 3（产物缝）**：构建产物校验——包名/版本用 aapt2 badging、签名用 apksigner verify、原生库存在性用 APK 内容清单检查；先例为交接文档中的验证命令。
 - **emoji 验收（工单 22）**：离屏自动化覆盖类别化样例（旗帜/家庭/肤色/职业 ZWJ/keycap/tag/Emoji 17 新码位/冷门码位）、VS16 行为、Noto 兜底路径与 Apple 36/36 覆盖；性能指标（首现 ≤50ms、加载 ≤200ms、预热时限、缓存上限）进程序化断言；真机主观验收含两档终端尺寸、字号 12–48、深浅主题、对比图、RTL 与选中/滚动无残影。
+- **核心读取缝（工单 69）**：读取能力搬出渲染线程后，测试面 = 抽出来的纯逻辑（取词边界、去行尾空白、续行判断），用不接触核心的函数驱动；跨行取词一类语义仍靠真机验收。renderer 的测试目标必须链接不入库的预编译核心，因此该 crate 的测试只在 Android 宿主运行，恢复 CI 测试面单独立项。
 - **模块测试范围**：app（启动/会话/迁移）、terminal-emulator（行为回归）、termux-shared（常量/工具逻辑）、terminal-view（渲染集成）。
 
 ## Out of Scope
