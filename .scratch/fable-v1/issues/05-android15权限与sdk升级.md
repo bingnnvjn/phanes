@@ -111,3 +111,30 @@ Status: 已完成
 - 用户验收反馈的三项（设置页状态栏重叠、底部遮罩、子页无动画）代码层已修，待真机复验；通知汉化待真机确认。
 - 设置 fragment 手势条适配统一收口到 `FablePreferenceFragment` 基类，后续新增设置页自动继承。
 - <厂商 ROM> 小窗问题与 edge-to-edge 适配有交集，但本体走独立 triage（`.scratch/fable-v1/triage.md`），不在本单。
+
+### 2026-10-04 后续修复：targetSdk 升到 35 导致终端起不来，需降到 27
+
+真机（Android 15 / <厂商 ROM>，SDK 35）实测：本单把 targetSdk 升到 35 后，终端完全起不来，引导包第二阶段失败（「Phanes 无法安装引导包」）。根因是 SELinux 域，结论如下。
+
+**根因**：终端要执行 `$PREFIX/bin/*`（bootstrap 第二阶段的 `bash`，以及后续 `dash`/`coreutils` 等），这依赖 SELinux 的 `untrusted_app_27` 域——该域 `allow app_data_file:file execute_no_trans`（AOSP `private/untrusted_app_27.te`），而 `untrusted_app` 域不允许。域按 `targetSdk` 阈值分配（seapp_contexts `minTargetSdkVersion`）。**本机实测阈值是 <=27**（比 AOSP 的 <=28 低一档）：
+
+- `targetSdk 35`：域 `untrusted_app`，exec 被拒 → bootstrap 第二阶段 `java.io.IOException: Cannot run program ".../files/usr/bin/bash" ... error=13, Permission denied`。
+- `targetSdk 28`：域**仍是** `untrusted_app`（app 内自报 `/proc/self/attr/current` = `u:r:untrusted_app:s0:...`，`applicationInfo.targetSdkVersion`=28），仍失败。
+- `targetSdk 27`：域 `untrusted_app_27`，exec 放行，bootstrap 通过，终端可用。
+
+**证据**（2026-10-04 logcat，auditd）：
+- 28 时：`avc: denied { execute_no_trans } ... path="/data/data/com.gph.fable/files/usr/bin/bash" scontext=u:r:untrusted_app:s0:...`
+- 27 时：`avc: granted { execute_no_trans } ... /usr/bin/dash`、`.../usr/bin/coreutils`、`comm="ls"`，`scontext=u:r:untrusted_app_27:s0:...`
+
+**改动**：`app/build.gradle` `buildTargetSdk` 35 → **27**（commit `d611fba`）。compileSdk 36 / minSdk 24 不变。
+
+**对后续影响**：
+- 本单"升到 targetSdk 35"的结论在真机上作废；当前可用配置是 **27**。
+- 本单的 Android 15 行为适配（POST_NOTIFICATIONS、FGS specialUse、edge-to-edge 等）代码仍在；targetSdk 27 下这些由系统按老规则处理，不影响终端可用。
+- 若将来要回到高 targetSdk（合规/上架），必须先另解 exec 通路——业内方向是 termux-exec 的「系统链接器执行」（`/system/bin/linker64`）或把二进制放进 APK 的 `lib/<abi>/`（`apk_data_file` 可执行）。届时另开工单。
+- 本机 Termux（同 targetSdk 28）却是 `untrusted_app_27`，说明该 ROM 的发域规则与 AOSP 有出入，未查明；本机以 27 为准。
+
+**坑**：
+1. <厂商 ROM> 默认过滤第三方 app 的 logcat（`FableInstaller` tag 无任何输出），引导包真实错误只进崩溃通知；本次临时改 `showBootstrapErrorDialog` 把真实错误显示出来才拿到根因（排查后已还原，未入库）。
+2. `termux-open <apk>` 安装本机 APK 会报「解析错误」（`file://` URI 跨进程不可读）；改用文件管理器点装即可。
+3. 本次是「卸载 + 重装」后验证通过；「改 targetSdk 是否必须卸载重装才生效」未单独分离验证。
