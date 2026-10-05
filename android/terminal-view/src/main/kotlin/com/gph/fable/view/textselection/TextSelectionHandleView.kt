@@ -12,7 +12,7 @@ import android.view.ViewGroup
 import android.view.ViewParent
 import android.view.WindowManager
 import android.widget.PopupWindow
-import com.gph.fable.view.R
+import androidx.annotation.DrawableRes
 import com.gph.fable.view.TerminalView
 import com.gph.fable.view.support.PopupWindowCompatGingerbread
 import kotlin.math.roundToInt
@@ -21,19 +21,16 @@ import kotlin.math.roundToInt
 open class TextSelectionHandleView(
     private val terminalView: TerminalView,
     private val cursorController: CursorController,
-    private val initialOrientation: Int
+    private val initialOrientation: Int,
+    private val handleStyle: TextSelectionHandleStyle
 ) : View(terminalView.context) {
     companion object {
         const val LEFT = 0
         const val RIGHT = 2
     }
 
-    private val leftDrawable: Drawable = if (Build.VERSION.SDK_INT >= 21) {
-        checkNotNull(context.getDrawable(R.drawable.text_select_handle_left_material))
-    } else resources.getDrawable(R.drawable.text_select_handle_left_material)
-    private val rightDrawable: Drawable = if (Build.VERSION.SDK_INT >= 21) {
-        checkNotNull(context.getDrawable(R.drawable.text_select_handle_right_material))
-    } else resources.getDrawable(R.drawable.text_select_handle_right_material)
+    private val leftDrawable: Drawable = loadDrawable(handleStyle.leftDrawableRes)
+    private val rightDrawable: Drawable = loadDrawable(handleStyle.rightDrawableRes)
     private var drawable: Drawable = leftDrawable
     private var popup: PopupWindow? = null
     private var dragging = false
@@ -60,12 +57,19 @@ open class TextSelectionHandleView(
         drawable = if (value == RIGHT) rightDrawable else leftDrawable
         handleWidth = drawable.intrinsicWidth
         handleHeight = drawable.intrinsicHeight
-        hotspotX = if (value == RIGHT) handleWidth / 4f else handleWidth * 3 / 4f
+        hotspotX = handleStyle.hotspotX(handleWidth, value == RIGHT)
         hotspotY = 0f
-        touchOffsetY = -handleHeight * .3f
+        touchOffsetY = handleStyle.touchOffsetY(handleHeight)
         requestLayout()
         invalidate()
     }
+
+    private fun loadDrawable(@DrawableRes resId: Int): Drawable =
+        if (Build.VERSION.SDK_INT >= 21) {
+            checkNotNull(context.getDrawable(resId))
+        } else {
+            resources.getDrawable(resId)
+        }
     open fun changeOrientation(value: Int) { if (orientation != value) setOrientation(value) }
     open fun isDragging() = dragging
     open fun getHandleHeight() = handleHeight
@@ -173,7 +177,6 @@ open class TextSelectionHandleView(
 
     @SuppressLint("ClickableViewAccessibility")
     override open fun onTouchEvent(event: MotionEvent): Boolean {
-        terminalView.updateFloatingToolbarVisibility(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 touchToWindowOffsetX = event.rawX - pointX
@@ -181,13 +184,17 @@ open class TextSelectionHandleView(
                 terminalView.getLocationInWindow(tempCoords)
                 lastParentX = tempCoords[0]; lastParentY = tempCoords[1]
                 dragging = true
+                cursorController.onHandleDragStart()
             }
             MotionEvent.ACTION_MOVE -> {
                 val x = event.rawX - touchToWindowOffsetX + hotspotX
                 val y = event.rawY - touchToWindowOffsetY + hotspotY + touchOffsetY
                 cursorController.updatePosition(this, x.roundToInt(), y.roundToInt())
             }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> dragging = false
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                dragging = false
+                cursorController.onHandleDragEnd()
+            }
         }
         return true
     }

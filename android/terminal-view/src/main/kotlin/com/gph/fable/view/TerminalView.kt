@@ -23,7 +23,11 @@ import androidx.annotation.RequiresApi
 import com.gph.fable.core.KeyHandler
 import com.gph.fable.core.TerminalSession
 import com.gph.fable.core.adapter.CoreAdapter
+import com.gph.fable.view.textselection.DefaultTextSelectionBarStyleProvider
+import com.gph.fable.view.textselection.DefaultTextSelectionHandleStyleProvider
+import com.gph.fable.view.textselection.TextSelectionBarStyleProvider
 import com.gph.fable.view.textselection.TextSelectionCursorController
+import com.gph.fable.view.textselection.TextSelectionHandleStyleProvider
 import java.util.function.Consumer
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -70,6 +74,12 @@ open class TerminalView @JvmOverloads constructor(
     private var autoFillImportance = IMPORTANT_FOR_AUTOFILL_NO
     private var autoFillHints = emptyArray<String>()
     private var selectionController: TextSelectionCursorController? = null
+
+    /** 选择浮条的样式来源；替换它即可整体换肤（见 [TextSelectionBarStyleProvider]）。 */
+    var textSelectionBarStyleProvider: TextSelectionBarStyleProvider = DefaultTextSelectionBarStyleProvider
+
+    /** 选择手柄的样式来源（见 [TextSelectionHandleStyleProvider]）。 */
+    var textSelectionHandleStyleProvider: TextSelectionHandleStyleProvider = DefaultTextSelectionHandleStyleProvider
     private val scroller = Scroller(context)
     private val handler = Handler(Looper.getMainLooper())
     private var scrollRemainder = 0f
@@ -265,7 +275,6 @@ open class TerminalView @JvmOverloads constructor(
     override open fun onTouchEvent(event: MotionEvent): Boolean {
         val session = mTermSession ?: return true
         if (isSelectingText()) {
-            updateFloatingToolbarVisibility(event)
             gestureRecognizer.onTouchEvent(event)
             return true
         }
@@ -306,7 +315,11 @@ open class TerminalView @JvmOverloads constructor(
     override open fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         val session = mTermSession ?: return true
         if (keyLoggingEnabled) mClient?.logInfo("TerminalView", "onKeyDown(keyCode=$keyCode, event=$event)")
-        if (isSelectingText()) stopTextSelectionMode()
+        if (isSelectingText()) {
+            forceStopTextSelectionMode()
+            // 没有 ActionMode 兜底后，BACK 仍只收起选择，不退出 Activity。
+            if (keyCode == KeyEvent.KEYCODE_BACK) return true
+        }
         if (mClient?.onKeyDown(keyCode, event, session) == true) {
             invalidate()
             return true
@@ -612,25 +625,27 @@ open class TerminalView @JvmOverloads constructor(
     open fun getTextSelectionCursorController(): TextSelectionCursorController {
         val existing = selectionController
         if (existing != null) return existing
-        val created = TextSelectionCursorController(this)
+        val created =
+            TextSelectionCursorController(this, textSelectionBarStyleProvider, textSelectionHandleStyleProvider)
         selectionController = created
         if (isAttachedToWindow) viewTreeObserver.addOnTouchModeChangeListener(created)
         return created
     }
-    private val showFloatingToolbar = Runnable {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) selectionController?.actionMode?.hide(0)
+
+    /** 立即结束选择，跳过 300ms 长按防抖（供浮条动作等明确操作使用）。 */
+    open fun forceStopTextSelectionMode() {
+        val controller = selectionController ?: return
+        if (!controller.isActive()) return
+        controller.forceHide()
+        mClient?.copyModeChanged(false)
+        invalidate()
     }
-    open fun updateFloatingToolbarVisibility(event: MotionEvent?) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || selectionController?.actionMode == null || event == null) return
-        when (event.actionMasked) {
-            MotionEvent.ACTION_MOVE -> hideFloatingToolbar()
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> postDelayed(showFloatingToolbar, ViewConfiguration.getDoubleTapTimeout().toLong())
-        }
+
+    /** 留存当前选中文本，供上下文菜单的「分享选中文本」使用。 */
+    open fun captureSelectedTextForContextMenu() {
+        selectionController?.storeSelectedText()
     }
-    open fun hideFloatingToolbar() {
-        removeCallbacks(showFloatingToolbar)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) selectionController?.actionMode?.hide(-1)
-    }
+
     open fun onContextMenuClosed(menu: Menu?) { unsetStoredSelectedText() }
 
     @RequiresApi(Build.VERSION_CODES.O)

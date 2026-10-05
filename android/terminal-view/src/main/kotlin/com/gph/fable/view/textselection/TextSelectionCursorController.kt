@@ -3,23 +3,36 @@ package com.gph.fable.view.textselection
 import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.Rect
-import android.os.Build
-import android.view.ActionMode
-import android.view.Menu
-import android.view.MenuItem
 import android.view.MotionEvent
-import android.view.View
-import com.gph.fable.view.R
 import com.gph.fable.view.TerminalView
 import kotlin.math.roundToInt
 
-open class TextSelectionCursorController(private val terminalView: TerminalView) : CursorController {
-    @JvmField val ACTION_COPY = 1
-    @JvmField val ACTION_PASTE = 2
-    @JvmField val ACTION_MORE = 3
+/**
+ * 文本选择控制器：手柄 + 自绘浮条（工单 39）。
+ *
+ * 不再使用系统 ActionMode：其悬浮形态是本 ROM 上「选择空白」的根因
+ * （工单 04 第十二轮），其非悬浮形态又只能给出顶部系统菜单，拿不到目标观感。
+ * 选择生命周期、浮条与手柄都由本控制器自管；浮条外观见 [TextSelectionBarStyleProvider]。
+ */
+open class TextSelectionCursorController(
+    private val terminalView: TerminalView,
+    styleProvider: TextSelectionBarStyleProvider = DefaultTextSelectionBarStyleProvider,
+    handleStyleProvider: TextSelectionHandleStyleProvider = DefaultTextSelectionHandleStyleProvider
+) : CursorController {
 
-    private val startHandle = TextSelectionHandleView(terminalView, this, TextSelectionHandleView.LEFT)
-    private val endHandle = TextSelectionHandleView(terminalView, this, TextSelectionHandleView.RIGHT)
+    private val handleStyle = handleStyleProvider.resolve(terminalView.context)
+    private val startHandle =
+        TextSelectionHandleView(terminalView, this, TextSelectionHandleView.LEFT, handleStyle)
+    private val endHandle =
+        TextSelectionHandleView(terminalView, this, TextSelectionHandleView.RIGHT, handleStyle)
+    private val actionBar = TextSelectionActionBar(terminalView, styleProvider)
+    private val actionRunner = TextSelectionActionRunner(
+        selectedText = { terminalView.getSelectedText() },
+        copyToClipboard = { terminalView.mTermSession?.onCopyTextToClipboard(it) },
+        stopSelection = { terminalView.forceStopTextSelectionMode() },
+        pasteFromClipboard = { terminalView.mTermSession?.onPasteTextFromClipboard() }
+    )
+
     private var isSelecting = false
     private var showStartTime = 0L
     private var storedText: String? = null
@@ -27,10 +40,6 @@ open class TextSelectionCursorController(private val terminalView: TerminalView)
     private var selX2 = -1
     private var selY1 = -1
     private var selY2 = -1
-    private var currentActionMode: ActionMode? = null
-    open val actionMode: ActionMode?
-        get() = currentActionMode
-    private var privateActionMode: ActionMode? = null
 
     open val selectedText: String?
         get() = terminalView.getCoreSelectionText()?.takeIf { it.isNotEmpty() }
@@ -38,15 +47,19 @@ open class TextSelectionCursorController(private val terminalView: TerminalView)
     open val storedSelectedText: String?
         get() = storedText
 
+    init {
+        actionBar.onAction = { actionRunner.run(it) }
+    }
+
     override open fun show(event: MotionEvent) {
         setInitialTextSelectionPosition(event)
         startHandle.positionAtCursor(selX1, selY1, true)
         endHandle.positionAtCursor(selX2 + 1, selY2, true)
-        setActionModeCallbacks()
         showStartTime = System.currentTimeMillis()
         isSelecting = true
         updateCoreSelection()
-        TerminalView.logDiagnostic("selection:actionModeStarted")
+        showActionBar()
+        TerminalView.logDiagnostic("selection:started")
     }
 
     override open fun hide(): Boolean {
@@ -62,9 +75,7 @@ open class TextSelectionCursorController(private val terminalView: TerminalView)
     private fun hideImmediately(): Boolean {
         startHandle.hide()
         endHandle.hide()
-        privateActionMode?.finish()
-        privateActionMode = null
-        currentActionMode = null
+        actionBar.hide()
         selX1 = -1; selX2 = -1; selY1 = -1; selY2 = -1
         isSelecting = false
         terminalView.clearSelectionOverlays()
@@ -75,7 +86,21 @@ open class TextSelectionCursorController(private val terminalView: TerminalView)
         if (!isSelecting) return
         startHandle.positionAtCursor(selX1, selY1, false)
         endHandle.positionAtCursor(selX2 + 1, selY2, false)
-        privateActionMode?.invalidate()
+        actionBar.moveTo(selectionAnchor())
+    }
+
+    /** 手柄拖动期间收起浮条，松手后按当前选区重新显示。 */
+    override open fun onHandleDragStart() {
+        actionBar.hide()
+    }
+
+    override open fun onHandleDragEnd() {
+        if (isSelecting) showActionBar()
+    }
+
+    /** 打开上下文菜单前留存当前选中文本（供「分享选中文本」入口使用）。 */
+    open fun storeSelectedText() {
+        storedText = terminalView.getSelectedText()
     }
 
     open fun setInitialTextSelectionPosition(event: MotionEvent) {
@@ -88,66 +113,28 @@ open class TextSelectionCursorController(private val terminalView: TerminalView)
         }
     }
 
-    open fun setActionModeCallbacks() {
-        val callback = object : ActionMode.Callback {
-            override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
-                val show = MenuItem.SHOW_AS_ACTION_IF_ROOM or MenuItem.SHOW_AS_ACTION_WITH_TEXT
-                val clipboard = terminalView.context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                menu.add(Menu.NONE, ACTION_COPY, Menu.NONE, R.string.copy_text).setShowAsAction(show)
-                menu.add(Menu.NONE, ACTION_PASTE, Menu.NONE, R.string.paste_text)
-                    .setEnabled(clipboard?.hasPrimaryClip() == true).setShowAsAction(show)
-                menu.add(Menu.NONE, ACTION_MORE, Menu.NONE, R.string.text_selection_more)
-                return true
-            }
-            override fun onPrepareActionMode(mode: ActionMode, menu: Menu) = false
-            override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
-                if (!isSelecting) return true
-                when (item.itemId) {
-                    ACTION_COPY -> {
-                        terminalView.mTermSession?.onCopyTextToClipboard(terminalView.getSelectedText() ?: "")
-                        terminalView.stopTextSelectionMode()
-                    }
-                    ACTION_PASTE -> {
-                        terminalView.stopTextSelectionMode()
-                        terminalView.mTermSession?.onPasteTextFromClipboard()
-                    }
-                    ACTION_MORE -> {
-                        storedText = terminalView.getSelectedText()
-                        terminalView.stopTextSelectionMode()
-                        terminalView.showContextMenu()
-                    }
-                }
-                return true
-            }
-            override fun onDestroyActionMode(mode: ActionMode) {}
+    /** 选区在终端视图坐标系里的像素矩形（供浮条定位）。 */
+    private fun selectionAnchor(): Rect {
+        var x1 = (selX1 * terminalView.getCellWidthPx()).roundToInt()
+        var x2 = (selX2 * terminalView.getCellWidthPx()).roundToInt()
+        if (x1 > x2) {
+            val tmp = x1
+            x1 = x2
+            x2 = tmp
         }
-        privateActionMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            terminalView.startActionMode(object : ActionMode.Callback2() {
-                override fun onCreateActionMode(mode: ActionMode, menu: Menu) = callback.onCreateActionMode(mode, menu)
-                override fun onPrepareActionMode(mode: ActionMode, menu: Menu) = callback.onPrepareActionMode(mode, menu)
-                override fun onActionItemClicked(mode: ActionMode, item: MenuItem) = callback.onActionItemClicked(mode, item)
-                override fun onDestroyActionMode(mode: ActionMode) = callback.onDestroyActionMode(mode)
-                override fun onGetContentRect(mode: ActionMode, view: View, outRect: Rect) {
-                    var x1 = (selX1 * terminalView.getCellWidthPx()).roundToInt()
-                    var x2 = (selX2 * terminalView.getCellWidthPx()).roundToInt()
-                    if (x1 > x2) {
-                        val tmp = x1
-                        x1 = x2
-                        x2 = tmp
-                    }
-                    val y1 = ((selY1 - 1 - terminalView.getTopRow()) * terminalView.getCellHeightPx()).roundToInt()
-                    val y2 = ((selY2 + 1 - terminalView.getTopRow()) * terminalView.getCellHeightPx()).roundToInt()
-                    val handleHeight = maxOf(startHandle.getHandleHeight(), endHandle.getHandleHeight())
-                    val terminalBottom = terminalView.bottom
-                    var top = y1 + handleHeight
-                    var bottom = y2 + handleHeight
-                    if (top > terminalBottom) top = terminalBottom
-                    if (bottom > terminalBottom) bottom = terminalBottom
-                    outRect.set(x1, top, x2, bottom)
-                }
-            }, ActionMode.TYPE_PRIMARY)
-        } else terminalView.startActionMode(callback)
-        currentActionMode = privateActionMode
+        val y1 = ((selY1 - terminalView.getTopRow()) * terminalView.getCellHeightPx()).roundToInt()
+        val y2 = ((selY2 + 1 - terminalView.getTopRow()) * terminalView.getCellHeightPx()).roundToInt()
+        return Rect(x1, y1, x2, y2)
+    }
+
+    private fun showActionBar() {
+        actionBar.show(selectionAnchor(), hasClipboardText())
+    }
+
+    private fun hasClipboardText(): Boolean {
+        val clipboard =
+            terminalView.context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        return clipboard?.hasPrimaryClip() == true
     }
 
     override open fun updatePosition(handle: TextSelectionHandleView, x: Int, y: Int) {
@@ -204,15 +191,10 @@ open class TextSelectionCursorController(private val terminalView: TerminalView)
     open fun unsetStoredSelectedText() { storedText = null }
     open fun decrementY(decrement: Int) { if (isSelecting) { selY1 -= decrement; selY2 -= decrement } }
 
-    open fun setActionModeCallBacks() {
-        setActionModeCallbacks()
-    }
-
     open fun decrementYTextSelectionCursors(decrement: Int) {
         decrementY(decrement)
     }
 
     open fun isSelectionStartDragged() = startHandle.isDragging()
     open fun isSelectionEndDragged() = endHandle.isDragging()
-
 }

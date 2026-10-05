@@ -63,6 +63,14 @@
     <string name="action_open_help">Termux 文档</string>
     <string name="action_open_settings">设置</string>
 
+    <!-- 抽屉「更多」面板（会话/界面设置） -->
+    <string name="action_more">更多</string>
+    <string name="action_close_session">关闭会话</string>
+    <string name="action_rename_session">重命名会话</string>
+    <string name="action_theme">主题</string>
+    <string name="action_font_size">字号</string>
+    <string name="font_size_dp_value">%1$d dp</string>
+
     <string name="action_report_issue">报告问题</string>
     <string name="msg_generating_report">正在生成报告</string>
     <string name="msg_add_fable_debug_info">在报告中附加 Phanes 调试信息？</string>

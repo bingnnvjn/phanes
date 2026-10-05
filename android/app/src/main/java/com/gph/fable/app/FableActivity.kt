@@ -23,8 +23,11 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.EditText
 import android.widget.ImageButton
+import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.RelativeLayout
+import android.widget.SeekBar
+import android.widget.TextView
 import android.widget.Toast
 import androidx.annotation.NonNull
 import androidx.annotation.Nullable
@@ -39,6 +42,8 @@ import com.gph.fable.app.api.file.FileReceiverActivity
 import com.gph.fable.app.session.RecentSessionStore
 import com.gph.fable.app.session.RecentSessionStore.RecentSession
 import com.gph.fable.app.terminal.FableActivityRootView
+import com.gph.fable.app.terminal.FableMorePanel
+import com.gph.fable.app.terminal.FableMorePanelLogic
 import com.gph.fable.app.terminal.FableShellSessionsListViewController
 import com.gph.fable.app.terminal.FableTerminalPalette
 import com.gph.fable.app.terminal.FableTerminalSessionActivityClient
@@ -70,6 +75,7 @@ import com.gph.fable.shared.view.ViewUtils
 import com.gph.fable.view.FableInputTerminalView
 import com.gph.fable.view.TerminalView
 import java.util.Arrays
+import kotlin.math.roundToInt
 
 /**
  * A terminal emulator activity.
@@ -176,6 +182,7 @@ class FableActivity : AppCompatActivity(), ServiceConnection {
         setFableTerminalViewAndClients()
         setTerminalToolbarView(savedInstanceState)
         setSettingsButtonView()
+        setMoreButtonView()
         setNewSessionButtonView()
         setToggleKeyboardView()
         registerForContextMenu(mTerminalView!!)
@@ -490,6 +497,99 @@ class FableActivity : AppCompatActivity(), ServiceConnection {
         }
     }
 
+    private fun setMoreButtonView() {
+        findViewById<ImageButton>(R.id.more_button).setOnClickListener { showMorePanel() }
+    }
+
+    /** 抽屉顶部「更多」：会话/界面设置快捷面板。 */
+    private fun showMorePanel() {
+        FableMorePanel(this, findViewById(R.id.more_button)) { action -> onMorePanelAction(action) }.show()
+    }
+
+    private fun onMorePanelAction(action: FableMorePanelLogic.Action) {
+        getDrawer().closeDrawers()
+        when (action) {
+            FableMorePanelLogic.Action.NEW_SESSION ->
+                mFableTerminalSessionActivityClient!!.addNewSession(false, null)
+            FableMorePanelLogic.Action.CLOSE_SESSION ->
+                showKillSessionDialog(getCurrentSession())
+            FableMorePanelLogic.Action.RENAME_SESSION ->
+                mFableTerminalSessionActivityClient!!.renameSession(getCurrentSession())
+            FableMorePanelLogic.Action.THEME -> showThemeDialog()
+            FableMorePanelLogic.Action.FONT_SIZE -> showFontSizeDialog()
+            FableMorePanelLogic.Action.SETTINGS ->
+                ActivityUtils.startActivity(this, Intent(this, SettingsActivity::class.java))
+        }
+    }
+
+    private fun showThemeDialog() {
+        val entries = resources.getStringArray(R.array.theme_mode_entries)
+        val selected = FableMorePanelLogic.themeIndex(mPreferences!!.getThemeMode())
+        AlertDialog.Builder(this)
+            .setTitle(R.string.action_theme)
+            .setSingleChoiceItems(entries, selected) { dialog, which ->
+                dialog.dismiss()
+                applyThemeMode(FableMorePanelLogic.themeValue(which))
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun applyThemeMode(mode: String) {
+        mPreferences!!.setThemeMode(mode)
+        FableThemeUtils.setAppNightMode(mode)
+        AppCompatActivityUtils.setNightMode(this, mode, true)
+        recreate()
+    }
+
+    /** 字号快捷滑杆：滑动即生效，取消则还原原值。 */
+    private fun showFontSizeDialog() {
+        val startPx = mPreferences!!.getFontSize()
+        val seekBar = SeekBar(this).apply {
+            max = FableMorePanelLogic.MAX_FONT_DP - FableMorePanelLogic.MIN_FONT_DP
+            progress = FableMorePanelLogic.clampFontDp(mPreferences!!.getFontSizeDp(this@FableActivity)) -
+                FableMorePanelLogic.MIN_FONT_DP
+        }
+        val valueView = TextView(this).apply {
+            gravity = Gravity.CENTER
+            text = getString(
+                R.string.font_size_dp_value,
+                FableMorePanelLogic.MIN_FONT_DP + seekBar.progress
+            )
+        }
+        seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                val sizeDp = FableMorePanelLogic.MIN_FONT_DP + progress
+                mPreferences!!.setFontSizeDp(this@FableActivity, sizeDp)
+                mTerminalView!!.setTextSize(mPreferences!!.getFontSize())
+                valueView.text = getString(R.string.font_size_dp_value, sizeDp)
+            }
+
+            override fun onStartTrackingTouch(bar: SeekBar?) {}
+
+            override fun onStopTrackingTouch(bar: SeekBar?) {}
+        })
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dpToPx(24f), dpToPx(8f), dpToPx(24f), 0)
+            addView(valueView)
+            addView(seekBar)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.action_font_size)
+            .setView(container)
+            .setPositiveButton(android.R.string.ok, null)
+            .setNegativeButton(android.R.string.cancel) { _, _ ->
+                mPreferences!!.setFontSize(startPx)
+                mTerminalView!!.setTextSize(startPx)
+            }
+            .show()
+    }
+
+    private fun dpToPx(value: Float): Int =
+        (value * resources.displayMetrics.density).roundToInt()
+
     private fun setNewSessionButtonView() {
         val newSessionButton = findViewById<View>(R.id.new_session_button)
         newSessionButton.setOnClickListener {
@@ -525,6 +625,11 @@ class FableActivity : AppCompatActivity(), ServiceConnection {
 
     @SuppressLint("RtlHardcoded")
     override fun onBackPressed() {
+        if (mTerminalView?.isSelectingText() == true) {
+            // 自绘浮条取代系统 ActionMode 后，BACK 需在这里收起选择。
+            mTerminalView!!.forceStopTextSelectionMode()
+            return
+        }
         if (getDrawer().isDrawerOpen(Gravity.LEFT)) {
             getDrawer().closeDrawers()
         } else {
@@ -549,6 +654,8 @@ class FableActivity : AppCompatActivity(), ServiceConnection {
 
     override fun onCreateContextMenu(menu: ContextMenu, v: View, menuInfo: ContextMenuInfo?) {
         val currentSession = getCurrentSession() ?: return
+        // 「选择菜单」不再有「更多…」，改由右键/快捷键直接开上下文菜单时留存当前选区。
+        mTerminalView!!.captureSelectedTextForContextMenu()
         val autoFillEnabled = mTerminalView!!.isAutoFillEnabled()
 
         menu.add(Menu.NONE, CONTEXT_MENU_SELECT_URL_ID, Menu.NONE, R.string.action_select_url)

@@ -11,4 +11,7 @@ interface CursorController : ViewTreeObserver.OnTouchModeChangeListener {
     fun onTouchEvent(event: MotionEvent): Boolean
     fun onDetached()
     fun isActive(): Boolean
+    /** 手柄开始/结束拖动；控制器据此收起或重显浮条。 */
+    fun onHandleDragStart()
+    fun onHandleDragEnd()
 }

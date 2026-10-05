@@ -63,6 +63,14 @@
                         android:background="@null"
                         android:contentDescription="@string/action_open_settings"
                         app:tint="?attr/fableActivityDrawerImageTint" />
+                    <ImageButton
+                        android:id="@+id/more_button"
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:src="@drawable/ic_more"
+                        android:background="@null"
+                        android:contentDescription="@string/action_more"
+                        app:tint="?attr/fableActivityDrawerImageTint" />
                 </LinearLayout>
 
                 <ListView
